@@ -136,3 +136,28 @@ surface or normal fidelity.
 document layer. Direct versions, the `craft-atomic` revision and the resolved
 dependency graph are pinned. Debug symbols and incremental builds are disabled
 in development/test profiles to limit local disk use.
+
+## Maya Binary container inspection
+
+`maya_binary::container::inspect` inspects an immutable byte buffer and retains
+the original bytes, header bits and padding with checked chunk spans. It admits
+40 explicitly observed FOR8/LIS8 group layouts, rejects unseen group layouts and
+malformed nested extents, and keeps unknown leaf payloads inert. Its 16 MiB,
+100,000-chunk and 64-level limits are application resource policy, not Maya
+format limits. This library slice does not decode native scene semantics or
+enable Maya Binary Open, editing, display or Save.
+
+The layout observations were compared with
+[MayaSceneKit's pinned raw parser](https://github.com/yamahigashi/MayaSceneKit/blob/95a11db062689285604b3a647385dc9388402865/crates/maya-scene-kit-formats/src/mb/parser.rs)
+and independently audited private streams. Its parser engine and generated MEL
+metadata are not included. Pinned `nom` 8.0.0 supplies complete big-endian integer
+primitives under its MIT license, copyright 2014-2019 Geoffroy Couprie.
+
+Public tests use independently authored synthetic containers. The ignored
+`private_fixture_manifest_partitions_all_bytes` integration test requires an
+explicit external manifest through `AZTECCRAFT_MB_FIXTURE_MANIFEST`; invoke it
+with `cargo test --test maya_binary_container --no-default-features --locked
+private_fixture_manifest_partitions_all_bytes -- --ignored --exact`. It checks
+bounded file reads, byte sizes, chunk counts and complete partitions. Fixture
+SHA256 verification is a separate recorded precheck, not performed by that test.
+Private assets and manifests are not distributed or silently counted as tested.
