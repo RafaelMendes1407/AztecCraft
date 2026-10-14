@@ -2,6 +2,7 @@ use azteccraft::scene;
 use azteccraft::viewport::Camera;
 use glam::{Vec2, Vec3};
 use scene::{Primitive, Scene, Transform};
+mod common;
 
 fn front_camera() -> Camera {
     Camera::new(Vec3::ZERO, 0.0, 0.0, 5.0, 90_f32.to_radians(), 0.1, 20.0).unwrap()
@@ -209,4 +210,47 @@ fn projection_rejects_finite_world_point_when_ndc_division_overflows() {
             .project(Vec3::new(f32::MAX, 0.0, 4.75), 2.0)
             .is_err()
     );
+}
+
+#[test]
+fn reloaded_extrusion_frames_and_picks_the_new_side_outside_original_cube() {
+    let dir = tempfile::tempdir().unwrap();
+    let (history, id) = common::extruded_corner();
+    let path = dir.path().join("corner.aztec");
+    azteccraft::document::save_new(&path, history.scene()).unwrap();
+    let loaded = azteccraft::document::load(&path).unwrap();
+    let mut camera = front_camera();
+    camera.frame(loaded.node(id).unwrap(), 1.0).unwrap();
+    for vertex in loaded.node(id).unwrap().world_vertices() {
+        let projected = camera.project(vertex, 1.0).unwrap().unwrap();
+        assert!(projected.truncate().abs().max_element() < 1.0);
+    }
+    let projected = camera
+        .project(Vec3::new(0.75, 0.0, 1.0), 1.0)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        camera.pick(&loaded, projected.truncate(), 1.0).unwrap(),
+        Some(id)
+    );
+    let mut original = Scene::default();
+    original.create(Primitive::Cube, "original").unwrap();
+    assert_eq!(
+        camera.pick(&original, projected.truncate(), 1.0).unwrap(),
+        None
+    );
+}
+
+#[test]
+fn empty_mesh_is_unpickable_and_framing_returns_error_without_camera_mutation() {
+    let mut scene = Scene::default();
+    let id = scene.create(Primitive::Cube, "empty").unwrap();
+    let mut value = serde_json::to_value(scene).unwrap();
+    value["nodes"][0]["mesh"] = serde_json::json!({"vertices": [], "faces": []});
+    let scene: Scene = serde_json::from_value(value).unwrap();
+    let mut camera = front_camera();
+    let before = camera.clone();
+    assert_eq!(camera.pick(&scene, Vec2::ZERO, 1.0).unwrap(), None);
+    assert!(camera.frame(scene.node(id).unwrap(), 1.0).is_err());
+    assert_eq!(camera, before);
 }

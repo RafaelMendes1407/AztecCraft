@@ -29,6 +29,12 @@ Core workflow tests and UI event regression tests cover implemented behavior. Th
 The native shelf and toolbox use colorful vector tool symbols with readable labels.
 Unsupported transform tools remain disabled, and Select remains a mode indicator.
 
+[The extruded cube example](examples/extruded-cube.aztec) is a synthetic AztecCraft
+scene generated through two real extrusion commands. Open it with File → Open to
+inspect the resulting L-shaped quad mesh. Tests reconstruct it, exercise
+undo/redo, save/reload, reflected OBJ export and camera picking. It is not a Maya
+reference scene; native face selection/extrusion controls remain pending.
+
 ## Build and test
 
 Install Rust through rustup and GNU Make. [rust-toolchain.toml](rust-toolchain.toml) pins Rust 1.99.0, rustfmt and Clippy. Run these commands from the repository root:

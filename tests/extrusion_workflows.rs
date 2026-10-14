@@ -4,7 +4,8 @@ use azteccraft::{
 };
 use glam::Vec3;
 use serde_json::json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+mod common;
 
 fn cube() -> (Scene, NodeId) {
     let mut scene = Scene::default();
@@ -217,4 +218,83 @@ fn undefined_normal_and_local_or_world_overflow_do_not_publish_candidates() {
         assert!(history.can_redo());
         assert!(history.redo());
     }
+}
+
+#[test]
+fn committed_example_matches_real_editing_history_and_closed_corner_topology() {
+    let (mut history, id) = common::extruded_corner();
+    let expected = history.scene().clone();
+    assert!(history.undo());
+    assert_eq!(
+        history.scene().node(id).unwrap().mesh().vertices().len(),
+        12
+    );
+    assert!(history.redo());
+    assert_eq!(history.scene(), &expected);
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/extruded-cube.aztec");
+    let loaded = azteccraft::document::load(&path).unwrap();
+    assert_eq!(loaded, expected);
+    let mesh = loaded.node(id).unwrap().mesh();
+    assert_eq!(mesh.vertices().len(), 16);
+    assert_eq!(mesh.faces().len(), 14);
+    let mut edges = HashMap::new();
+    for face in mesh.faces() {
+        for i in 0..4 {
+            *edges.entry((face[i], face[(i + 1) % 4])).or_insert(0) += 1;
+        }
+    }
+    for ((a, b), count) in &edges {
+        assert_eq!(*count, 1);
+        assert_eq!(edges.get(&(*b, *a)), Some(&1));
+    }
+    for index in mesh.faces()[1] {
+        assert_eq!(mesh.vertices()[index].z, 1.0);
+    }
+    for index in mesh.faces()[7] {
+        assert_eq!(mesh.vertices()[index].x, 1.0);
+    }
+    for vertex in 0..mesh.vertices().len() {
+        let mut links: HashMap<usize, Vec<usize>> = HashMap::new();
+        for face in mesh.faces() {
+            if let Some(i) = face.iter().position(|index| *index == vertex) {
+                let (a, b) = (face[(i + 3) % 4], face[(i + 1) % 4]);
+                links.entry(a).or_default().push(b);
+                links.entry(b).or_default().push(a);
+            }
+        }
+        assert!(links.values().all(|neighbors| neighbors.len() == 2));
+        let mut pending = vec![*links.keys().next().unwrap()];
+        let mut seen = HashSet::new();
+        while let Some(neighbor) = pending.pop() {
+            if seen.insert(neighbor) {
+                pending.extend(&links[&neighbor]);
+            }
+        }
+        assert_eq!(seen.len(), links.len());
+    }
+    history
+        .execute(Command::SetTransform {
+            id,
+            transform: Transform {
+                translation: Vec3::new(4.0, 5.0, 6.0),
+                rotation_degrees: Vec3::new(0.0, 0.0, 90.0),
+                scale: Vec3::new(-2.0, 3.0, 0.5),
+            },
+        })
+        .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let native = dir.path().join("journey.aztec");
+    azteccraft::document::save_new(&native, history.scene()).unwrap();
+    let loaded = azteccraft::document::load(&native).unwrap();
+    assert_eq!(&loaded, history.scene());
+    let obj = dir.path().join("journey.obj");
+    azteccraft::obj::export_new(&obj, &loaded).unwrap();
+    assert!(std::fs::metadata(obj).unwrap().len() > 0);
+    let mut camera = azteccraft::viewport::Camera::default();
+    camera.frame(loaded.node(id).unwrap(), 1.0).unwrap();
+    assert_eq!(
+        camera.pick(&loaded, glam::Vec2::ZERO, 1.0).unwrap(),
+        Some(id)
+    );
 }

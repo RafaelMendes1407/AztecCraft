@@ -4,6 +4,7 @@ use azteccraft::scene::{Primitive, Scene, Transform};
 use glam::Vec3;
 use serde_json::{Value, json};
 use std::fs;
+mod common;
 
 fn fixture() -> Scene {
     let mut scene = Scene::default();
@@ -230,5 +231,35 @@ fn edited_and_empty_quad_meshes_round_trip_without_geometry_cleanup() {
         save_new(&output, &loaded).unwrap();
         assert_eq!(load(&output).unwrap(), loaded);
         assert_eq!(loaded.nodes()[0].mesh(), &expected);
+    }
+}
+
+#[test]
+fn extruded_and_zero_distance_topology_round_trips_and_rejects_malformed_edits() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut history, id) = common::extruded_corner();
+    history
+        .execute(Command::ExtrudeFace {
+            id,
+            face_index: 1,
+            distance: 0.0,
+        })
+        .unwrap();
+    let path = dir.path().join("extruded.aztec");
+    save_new(&path, history.scene()).unwrap();
+    let bytes = fs::read(&path).unwrap();
+    let loaded = load(&path).unwrap();
+    assert_eq!(&loaded, history.scene());
+    assert_eq!(loaded.node(id).unwrap().mesh().vertices().len(), 20);
+    assert_eq!(loaded.node(id).unwrap().mesh().faces().len(), 18);
+    assert!(save_new(&path, history.scene()).is_err());
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+    let malformed = dir.path().join("malformed.aztec");
+    for face in [json!([0, 1, 2, 20]), json!([0, 1, 1, 3])] {
+        let mut document = value(history.scene());
+        document["scene"]["nodes"][0]["mesh"]["faces"][1] = face;
+        fs::write(&malformed, document.to_string()).unwrap();
+        assert!(load(&malformed).is_err());
+        assert_eq!(history.scene(), &loaded);
     }
 }

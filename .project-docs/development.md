@@ -72,6 +72,13 @@ leave the scene/history unchanged. World/region extrusion, divisions, taper,
 offset, UVs/normals, construction-history nodes and native face controls remain
 pending. Tests establish this subset's geometry, not Maya parity.
 
+`examples/extruded-cube.aztec` was generated through cube creation and two
+History extrusion commands: front face 1 by +0.5, then its right side face 7 by
++0.5. Integration tests reconstruct the 16-vertex/14-face closed quad mesh and
+verify undo/redo, save/reload, reflected OBJ cap/side geometry and picking outside
+the original cube. File → Open provides a native inspection path; it does not
+add native face-editing controls or prove Maya equivalence.
+
 ## History
 
 `History` wraps scene edits as explicit create/remove/rename/set-transform/extrude-face commands
@@ -119,6 +126,11 @@ Tests exercise projection/ray agreement, transforms, clipping, framing, nearest
 hits and invalid inputs. Current drawing sorts projected faces by average depth
 instead of using a depth-tested mesh renderer. Occlusion/clipping fidelity and
 comparison with Maya's camera controls remain pending.
+
+An empty mesh is unpickable; framing it returns an error and preserves the camera.
+Unused vertices are retained by native documents and OBJ export. Structural
+validation preserves degenerate geometry; those states don't establish drawable
+surface or normal fidelity.
 
 `glam` supplies vector/quaternion math, and `serde`/`serde_json` implement the
 document layer. Direct versions, the `craft-atomic` revision and the resolved

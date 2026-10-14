@@ -4,6 +4,7 @@ use azteccraft::{
 };
 use glam::Vec3;
 use std::{fs, io};
+mod common;
 
 #[derive(Default)]
 struct Parsed {
@@ -250,5 +251,93 @@ fn zero_scale_exports_finite_degenerate_geometry_with_original_topology() {
         .zip(parsed.faces)
     {
         assert_eq!(exported, original.map(|i| i + 1));
+    }
+}
+
+#[test]
+fn saved_extrusion_exports_reflected_cap_and_side_geometry_with_global_offsets() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut history, id) = common::extruded_corner();
+    history
+        .execute(azteccraft::history::Command::SetTransform {
+            id,
+            transform: Transform {
+                translation: Vec3::new(4.0, 5.0, 6.0),
+                rotation_degrees: Vec3::new(0.0, 0.0, 90.0),
+                scale: Vec3::new(-2.0, 3.0, 0.5),
+            },
+        })
+        .unwrap();
+    history
+        .execute(azteccraft::history::Command::Create {
+            primitive: Primitive::Plane,
+            name: "other".into(),
+        })
+        .unwrap();
+    let native = dir.path().join("extruded.aztec");
+    azteccraft::document::save_new(&native, history.scene()).unwrap();
+    let loaded = azteccraft::document::load(&native).unwrap();
+    let output = dir.path().join("extruded.obj");
+    export_new(&output, &loaded).unwrap();
+    let bytes = fs::read_to_string(&output).unwrap();
+    let parsed = parse(&bytes);
+    assert_eq!(parsed.vertices.len(), 20);
+    assert_eq!(parsed.faces.len(), 15);
+    for (actual, local) in parsed.vertices[..16]
+        .iter()
+        .zip(loaded.node(id).unwrap().mesh().vertices())
+    {
+        let expected = Vec3::new(
+            4.0 - 3.0 * local.y,
+            5.0 - 2.0 * local.x,
+            6.0 + 0.5 * local.z,
+        );
+        assert!(actual.distance(expected) < 0.00001);
+    }
+    assert_eq!(parsed.faces[14], [17, 18, 19, 20]);
+    for index in &parsed.faces[1] {
+        assert_eq!(parsed.vertices[index - 1].z, 6.5);
+    }
+    for index in &parsed.faces[7] {
+        assert!((parsed.vertices[index - 1].y - 3.0).abs() < 0.00001);
+    }
+    let cap_normal = (parsed.vertices[parsed.faces[1][1] - 1]
+        - parsed.vertices[parsed.faces[1][0] - 1])
+        .cross(parsed.vertices[parsed.faces[1][2] - 1] - parsed.vertices[parsed.faces[1][0] - 1]);
+    let side_normal = (parsed.vertices[parsed.faces[7][1] - 1]
+        - parsed.vertices[parsed.faces[7][0] - 1])
+        .cross(parsed.vertices[parsed.faces[7][2] - 1] - parsed.vertices[parsed.faces[7][0] - 1]);
+    assert!(cap_normal.z > 0.0);
+    assert!(side_normal.y < 0.0);
+    assert!(export_new(&output, &loaded).is_err());
+    assert_eq!(fs::read_to_string(&output).unwrap(), bytes);
+}
+
+#[test]
+fn zero_extrusion_and_unused_vertices_export_without_cleanup() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut history, id) = common::extruded_corner();
+    history
+        .execute(azteccraft::history::Command::ExtrudeFace {
+            id,
+            face_index: 1,
+            distance: 0.0,
+        })
+        .unwrap();
+    let mut value = serde_json::to_value(history.scene()).unwrap();
+    value["nodes"][0]["mesh"]["vertices"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!([99, 99, 99]));
+    let scene: Scene = serde_json::from_value(value).unwrap();
+    let path = dir.path().join("zero.obj");
+    export_new(&path, &scene).unwrap();
+    let parsed = parse(&fs::read_to_string(path).unwrap());
+    assert_eq!(parsed.vertices.len(), 21);
+    assert_eq!(parsed.faces.len(), 18);
+    assert_eq!(parsed.vertices[20], Vec3::splat(99.0));
+    assert!(parsed.faces.iter().flatten().all(|i| *i <= 20));
+    for index in &parsed.faces[1] {
+        assert_eq!(parsed.vertices[index - 1].z, 1.0);
     }
 }

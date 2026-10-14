@@ -38,6 +38,10 @@ is explicitly unsupported until a pinned Maya fixture establishes default behavi
 Region/world extrusion, divisions, offset/taper, UVs/normals, construction-history
 nodes and native face selection/extrusion controls remain pending.
 
+The synthetic extruded-cube example and core journey tests exercise geometry,
+history, document persistence, OBJ export and camera picking. They don't replace
+native face-tool interaction checks or comparison against a pinned Maya scene.
+
 ## Existing Maya plug-in compatibility unverified
 
 **Severity:** high
