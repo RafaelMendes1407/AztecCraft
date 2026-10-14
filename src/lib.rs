@@ -7,4 +7,5 @@ pub mod mesh;
 pub mod native_scene;
 pub mod obj;
 pub mod scene;
+pub mod view_scene;
 pub mod viewport;

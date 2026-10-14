@@ -1,4 +1,8 @@
 use crate::scene::{Node, NodeId, Scene};
+use crate::{
+    native_scene::FaceTarget,
+    view_scene::{ViewError, ViewScene},
+};
 use glam::{Mat4, Vec2, Vec3, Vec4};
 use std::fmt;
 
@@ -173,11 +177,21 @@ impl Camera {
     }
 
     pub fn frame(&mut self, node: &Node, aspect: f32) -> Result<(), InvalidCameraInput> {
+        self.frame_points(&node.world_vertices(), aspect)
+    }
+
+    pub fn frame_points(
+        &mut self,
+        vertices: &[Vec3],
+        aspect: f32,
+    ) -> Result<(), InvalidCameraInput> {
         self.projection_matrix(aspect)?;
-        let vertices = node.world_vertices();
+        if vertices.is_empty() || vertices.iter().any(|point| !point.is_finite()) {
+            return Err(InvalidCameraInput);
+        }
         let mut min = Vec3::splat(f32::INFINITY);
         let mut max = Vec3::splat(f32::NEG_INFINITY);
-        for vertex in &vertices {
+        for vertex in vertices {
             min = min.min(*vertex);
             max = max.max(*vertex);
         }
@@ -247,27 +261,75 @@ impl Camera {
         aspect: f32,
     ) -> Result<Option<NodeId>, InvalidCameraInput> {
         let ray = self.ray(ndc, aspect)?;
-        let view = self.view_matrix();
-        let mut closest = f32::INFINITY;
-        let mut selected = None;
+        let mut closest = None;
         for node in scene.nodes() {
             let vertices = node.world_vertices();
-            for face in node.mesh().faces() {
-                for triangle in [[face[0], face[1], face[2]], [face[0], face[2], face[3]]] {
-                    let [a, b, c] = triangle.map(|i| vertices[i]);
-                    if let Some(distance) = intersect(ray, a, b, c) {
-                        let depth = -view
-                            .transform_point3(ray.origin + distance * ray.direction)
-                            .z;
-                        if depth >= self.near && depth <= self.far && distance < closest {
-                            closest = distance;
-                            selected = Some(node.id());
-                        }
-                    }
+            let triangles = node.mesh().faces().iter().flat_map(|face| {
+                [[face[0], face[1], face[2]], [face[0], face[2], face[3]]]
+                    .map(|triangle| (node.id(), triangle.map(|index| vertices[index])))
+            });
+            self.closest_triangle(ray, triangles, &mut closest);
+        }
+        Ok(closest.map(|(_, id)| id))
+    }
+
+    /// The caller must consume this hit before any edit, or rebuild and repick its NDC.
+    pub fn pick_view(
+        &self,
+        scene: &ViewScene,
+        ndc: Vec2,
+        aspect: f32,
+    ) -> Result<Option<FaceTarget>, ViewError> {
+        let ray = self.ray(ndc, aspect).map_err(ViewError::Camera)?;
+        let mut closest = None;
+        for instance in scene.instances() {
+            let triangles = instance.faces().iter().flat_map(|face| {
+                face.triangles().map(move |triangle| {
+                    (
+                        (instance, face.source_index()),
+                        triangle.map(|index| instance.world_vertices()[index]),
+                    )
+                })
+            });
+            self.closest_triangle(ray, triangles, &mut closest);
+        }
+        let Some((_, (instance, face_index))) = closest else {
+            return Ok(None);
+        };
+        let mut path = Vec::new();
+        path.try_reserve_exact(instance.path().len())
+            .map_err(|_| ViewError::ResourceLimit)?;
+        path.extend_from_slice(instance.path());
+        Ok(Some(FaceTarget {
+            transform: instance.transform(),
+            shape: instance.shape(),
+            path,
+            face_index,
+        }))
+    }
+
+    fn closest_triangle<T>(
+        &self,
+        ray: Ray,
+        triangles: impl IntoIterator<Item = (T, [Vec3; 3])>,
+        closest: &mut Option<(f32, T)>,
+    ) {
+        let view = self.view_matrix();
+        for (target, [a, b, c]) in triangles {
+            if let Some(distance) = intersect(ray, a, b, c) {
+                let depth = -view
+                    .transform_point3(ray.origin + distance * ray.direction)
+                    .z;
+                if depth >= self.near
+                    && depth <= self.far
+                    && closest
+                        .as_ref()
+                        .is_none_or(|(previous, _)| distance < *previous)
+                {
+                    *closest = Some((distance, target));
                 }
             }
         }
-        Ok(selected)
     }
 }
 
