@@ -4,7 +4,9 @@ use super::*;
 fn retain(scene: &mut NativeScene, bytes: &[u8], records: Vec<Range<usize>>) {
     scene.source = Some(SourceRetention {
         bytes: bytes.into(),
+        format: SourceFormat::Ascii,
         records,
+        leaves: Vec::new(),
     });
     scene.validate().unwrap();
 }
@@ -15,16 +17,16 @@ fn retained_source_and_lexemes_have_one_effective_value_and_survive_restore() {
     retain(
         &mut scene,
         b"setAttr .tx +0.000;",
-        std::iter::once(0..18).collect(),
+        std::iter::once(0..19).collect(),
     );
-    scene.nodes[0].channels[0].source_lexeme = Some("+0.000".into());
+    scene.nodes[0].channels[0].origin = Some(ScalarOrigin::Ascii { literal: 12..18 });
     let before = scene.clone();
     scene.set_channel(id, Channel::TranslateX, 0.0).unwrap();
     assert_ne!(scene, before);
     assert_eq!(scene.source, before.source);
     assert_eq!(
-        scene.nodes[0].channels[0].source_lexeme,
-        before.nodes[0].channels[0].source_lexeme
+        scene.nodes[0].channels[0].origin,
+        before.nodes[0].channels[0].origin
     );
     let plus_zero = scene.clone();
     scene.set_channel(id, Channel::TranslateX, -0.0).unwrap();
@@ -55,7 +57,7 @@ fn retained_source_and_lexemes_have_one_effective_value_and_survive_restore() {
     deleted.source = None;
     assert_ne!(deleted, before);
     deleted = before.clone();
-    deleted.nodes[0].channels[0].source_lexeme = Some("0".into());
+    deleted.nodes[0].channels[0].origin = Some(ScalarOrigin::Ascii { literal: 13..18 });
     assert_ne!(deleted, before);
 }
 
@@ -182,13 +184,17 @@ fn unit_conversion_only_changes_derived_view() {
 fn retained_ranges_and_exhausted_allocators_are_checked() {
     let (mut scene, _) = cube();
     scene.source = Some(SourceRetention {
-        bytes: vec![0; 4],
+        bytes: vec![0; 4].into(),
+        format: SourceFormat::Ascii,
         records: vec![0..3, 2..4],
+        leaves: Vec::new(),
     });
     assert_eq!(scene.validate(), Err(NativeError::InvalidRetention));
     scene.source = Some(SourceRetention {
-        bytes: vec![0; 4],
+        bytes: vec![0; 4].into(),
+        format: SourceFormat::Ascii,
         records: std::iter::once(0..5).collect(),
+        leaves: Vec::new(),
     });
     assert_eq!(scene.validate(), Err(NativeError::InvalidRetention));
     scene.source = None;

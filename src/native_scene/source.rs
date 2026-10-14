@@ -1,0 +1,184 @@
+use super::{AngularUnit, NativeError, NativeId, Units};
+use std::{fmt, ops::Range, sync::Arc};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SourceFormat {
+    Ascii,
+    Binary,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum TransformField {
+    Translation,
+    Rotation,
+    Scale,
+    RotatePivot,
+    ScalePivot,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Storage {
+    Centimeters,
+    Radians,
+    Unitless,
+}
+
+impl TransformField {
+    pub(super) fn storage(self) -> Storage {
+        match self {
+            Self::Translation | Self::RotatePivot | Self::ScalePivot => Storage::Centimeters,
+            Self::Rotation => Storage::Radians,
+            Self::Scale => Storage::Unitless,
+        }
+    }
+}
+
+impl Storage {
+    fn factor(self, units: &Units) -> Result<f64, NativeError> {
+        match self {
+            Self::Centimeters => units.linear_factor(),
+            Self::Radians => match &units.angular {
+                AngularUnit::Degree => Ok(std::f64::consts::PI / 180.0),
+                AngularUnit::Radian => Ok(1.0),
+                AngularUnit::Unsupported(_) => Err(NativeError::UnsupportedView("angular unit")),
+            },
+            Self::Unitless => Ok(1.0),
+        }
+    }
+    pub(super) fn internal(self, value: f64, units: &Units) -> Result<f64, NativeError> {
+        finite(value * self.factor(units)?)
+    }
+    pub(super) fn declared(self, value: f64, units: &Units) -> Result<f64, NativeError> {
+        finite(value / self.factor(units)?)
+    }
+}
+
+fn finite(value: f64) -> Result<f64, NativeError> {
+    if value.is_finite() {
+        Ok(value)
+    } else {
+        Err(NativeError::NonFinite)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct SourceLeaf {
+    pub(super) payload: Range<usize>,
+    pub(super) numeric: Range<usize>,
+    pub(super) owner: NativeId,
+    pub(super) field: TransformField,
+    pub(super) storage: Storage,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub(super) struct SourceRetention {
+    pub(super) bytes: Arc<[u8]>,
+    pub(super) format: SourceFormat,
+    pub(super) records: Vec<Range<usize>>,
+    pub(super) leaves: Vec<SourceLeaf>,
+}
+
+impl fmt::Debug for SourceRetention {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SourceRetention")
+            .field("format", &self.format)
+            .field("byte_count", &self.bytes.len())
+            .field("atom_count", &self.records.len())
+            .field("leaf_count", &self.leaves.len())
+            .finish()
+    }
+}
+
+impl SourceRetention {
+    pub(super) fn validate(&self) -> Result<(), NativeError> {
+        let mut end = 0;
+        for range in &self.records {
+            if range.start != end || range.end <= range.start || range.end > self.bytes.len() {
+                return Err(NativeError::InvalidRetention);
+            }
+            end = range.end;
+        }
+        if end != self.bytes.len()
+            || (self.format == SourceFormat::Ascii && !self.leaves.is_empty())
+        {
+            return Err(NativeError::InvalidRetention);
+        }
+        for (index, leaf) in self.leaves.iter().enumerate() {
+            if leaf.payload.start > leaf.numeric.start
+                || leaf.numeric.end > leaf.payload.end
+                || leaf.payload.end > self.bytes.len()
+                || leaf.numeric.end.checked_sub(leaf.numeric.start) != Some(24)
+                || leaf.storage != leaf.field.storage()
+                || self.leaves[..index].iter().any(|other| {
+                    leaf.numeric.start < other.numeric.end && other.numeric.start < leaf.numeric.end
+                })
+            {
+                return Err(NativeError::InvalidRetention);
+            }
+        }
+        Ok(())
+    }
+    pub(super) fn binary_leaf(
+        &self,
+        origin: &ScalarOrigin,
+        owner: NativeId,
+        field: TransformField,
+        component: usize,
+    ) -> Result<&SourceLeaf, NativeError> {
+        let (leaf, bound) = match origin {
+            ScalarOrigin::Binary { leaf, component } => (*leaf, *component),
+            #[cfg(test)]
+            ScalarOrigin::Ascii { .. } => return Err(NativeError::InvalidRetention),
+        };
+        let leaf = self.leaves.get(leaf).ok_or(NativeError::InvalidRetention)?;
+        if self.format != SourceFormat::Binary
+            || leaf.owner != owner
+            || leaf.field != field
+            || bound != component
+            || component >= 3
+            || leaf.storage != field.storage()
+        {
+            return Err(NativeError::InvalidRetention);
+        }
+        Ok(leaf)
+    }
+    pub(super) fn original(
+        &self,
+        origin: &ScalarOrigin,
+        owner: NativeId,
+        field: TransformField,
+        component: usize,
+    ) -> Result<f64, NativeError> {
+        let leaf = self.binary_leaf(origin, owner, field, component)?;
+        let start = component
+            .checked_mul(8)
+            .and_then(|offset| leaf.numeric.start.checked_add(offset))
+            .ok_or(NativeError::InvalidRetention)?;
+        let end = start.checked_add(8).ok_or(NativeError::InvalidRetention)?;
+        if end > leaf.numeric.end {
+            return Err(NativeError::InvalidRetention);
+        }
+        let word: [u8; 8] = self
+            .bytes
+            .get(start..end)
+            .ok_or(NativeError::InvalidRetention)?
+            .try_into()
+            .map_err(|_| NativeError::InvalidRetention)?;
+        finite(f64::from_be_bytes(word))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum ScalarOrigin {
+    #[cfg(test)]
+    Ascii {
+        literal: Range<usize>,
+    },
+    Binary {
+        leaf: usize,
+        component: usize,
+    },
+}
+
+#[cfg(test)]
+mod tests;

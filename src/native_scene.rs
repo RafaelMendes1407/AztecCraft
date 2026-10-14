@@ -1,9 +1,13 @@
 mod mesh;
+mod source;
 pub use mesh::{DirectedEdge, NativeEdge, NativeFace, NativeMesh, Points};
+use source::{ScalarOrigin, SourceFormat, SourceRetention, TransformField};
 
 use crate::scene::{NodeId, Primitive, Scene, SceneError, Transform};
 use glam::Vec3;
-use std::{fmt, ops::Range};
+use std::fmt;
+#[cfg(test)]
+use std::ops::Range;
 use uuid::Uuid;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -130,17 +134,17 @@ pub enum Channel {
     ScaleZ,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct Scalar {
     value: f64,
-    source_lexeme: Option<String>,
+    origin: Option<ScalarOrigin>,
     replaced: bool,
 }
 
 impl PartialEq for Scalar {
     fn eq(&self, other: &Self) -> bool {
         self.value.to_bits() == other.value.to_bits()
-            && self.source_lexeme == other.source_lexeme
+            && self.origin == other.origin
             && self.replaced == other.replaced
     }
 }
@@ -149,15 +153,123 @@ impl Scalar {
     fn new(value: f64) -> Self {
         Self {
             value,
-            source_lexeme: None,
+            origin: None,
             replaced: false,
         }
     }
-    fn replace(&mut self, value: f64) {
-        if self.value.to_bits() != value.to_bits() || self.source_lexeme.is_some() {
-            self.value = value;
-            self.replaced = true;
+    fn replacement(
+        &self,
+        value: f64,
+        source: Option<&SourceRetention>,
+        units: &Units,
+        owner: NativeId,
+        field: TransformField,
+        component: usize,
+    ) -> Result<Self, NativeError> {
+        if matches!(self.origin, Some(ScalarOrigin::Binary { .. })) {
+            if value.to_bits() == self.value.to_bits() {
+                return Ok(self.clone());
+            }
+            let source = source.ok_or(NativeError::InvalidRetention)?;
+            let original = source.original(
+                self.origin.as_ref().ok_or(NativeError::InvalidRetention)?,
+                owner,
+                field,
+                component,
+            )?;
+            let word = field.storage().internal(value, units)?;
+            if word.to_bits()
+                == self
+                    .internal(Some(source), units, owner, field, component)?
+                    .to_bits()
+            {
+                return Ok(self.clone());
+            }
+            return Ok(Self {
+                value: if word.to_bits() == original.to_bits() {
+                    field.storage().declared(original, units)?
+                } else {
+                    value
+                },
+                origin: self.origin.clone(),
+                replaced: word.to_bits() != original.to_bits(),
+            });
         }
+        if self.origin.is_none()
+            && source.is_some_and(|source| source.format == SourceFormat::Binary)
+            && value.to_bits() != self.value.to_bits()
+        {
+            return Err(NativeError::UnsupportedEdit);
+        }
+        let mut next = self.clone();
+        if self.value.to_bits() != value.to_bits() || self.origin.is_some() {
+            next.value = value;
+            next.replaced = true;
+        }
+        Ok(next)
+    }
+    fn internal(
+        &self,
+        source: Option<&SourceRetention>,
+        units: &Units,
+        owner: NativeId,
+        field: TransformField,
+        component: usize,
+    ) -> Result<f64, NativeError> {
+        if let Some(origin @ ScalarOrigin::Binary { .. }) = &self.origin {
+            let source = source.ok_or(NativeError::InvalidRetention)?;
+            let original = source.original(origin, owner, field, component)?;
+            if !self.replaced {
+                return Ok(original);
+            }
+        }
+        field.storage().internal(self.value, units)
+    }
+    fn validate_origin(
+        &self,
+        source: Option<&SourceRetention>,
+        units: &Units,
+        owner: NativeId,
+        field: TransformField,
+        component: usize,
+    ) -> Result<(), NativeError> {
+        match (&self.origin, source) {
+            (None, Some(source)) if source.format == SourceFormat::Binary && self.replaced => {
+                Err(NativeError::InvalidRetention)
+            }
+            (None, _) => Ok(()),
+            #[cfg(test)]
+            (Some(ScalarOrigin::Ascii { literal }), Some(source))
+                if source.format == SourceFormat::Ascii
+                    && literal.start < literal.end
+                    && source.bytes.get(literal.clone()).is_some() =>
+            {
+                Ok(())
+            }
+            (Some(origin @ ScalarOrigin::Binary { .. }), Some(source)) => {
+                let original = source.original(origin, owner, field, component)?;
+                let consistent = if self.replaced {
+                    field.storage().internal(self.value, units)?.to_bits() != original.to_bits()
+                } else {
+                    self.value.to_bits() == field.storage().declared(original, units)?.to_bits()
+                };
+                if consistent {
+                    Ok(())
+                } else {
+                    Err(NativeError::InvalidRetention)
+                }
+            }
+            _ => Err(NativeError::InvalidRetention),
+        }
+    }
+}
+
+impl fmt::Debug for Scalar {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Scalar")
+            .field("origin", &self.origin)
+            .field("replaced", &self.replaced)
+            .finish()
     }
 }
 
@@ -201,7 +313,7 @@ impl GeometryViewAdmission {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct NativeTransformNode {
     id: NodeId,
     transform_id: NativeId,
@@ -216,6 +328,15 @@ pub struct NativeTransformNode {
 }
 
 impl NativeTransformNode {
+    fn field(&self, field: TransformField) -> &[Scalar] {
+        match field {
+            TransformField::Translation => &self.channels[..3],
+            TransformField::Rotation => &self.channels[3..6],
+            TransformField::Scale => &self.channels[6..],
+            TransformField::RotatePivot => &self.rotate_pivot,
+            TransformField::ScalePivot => &self.scale_pivot,
+        }
+    }
     pub fn id(&self) -> NodeId {
         self.id
     }
@@ -245,7 +366,16 @@ impl NativeTransformNode {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+impl fmt::Debug for NativeTransformNode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NativeTransformNode")
+            .field("id", &self.id)
+            .field("native_id", &self.transform_id)
+            .finish()
+    }
+}
+
+#[derive(Clone, PartialEq)]
 pub struct NativeMeshShape {
     id: NativeId,
     uuid: Option<Uuid>,
@@ -253,6 +383,16 @@ pub struct NativeMeshShape {
     mesh: NativeMesh,
     restrictions: Vec<String>,
     view: GeometryViewFacts,
+}
+
+impl fmt::Debug for NativeMeshShape {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NativeMeshShape")
+            .field("id", &self.id)
+            .field("edge_count", &self.mesh.edges().len())
+            .field("face_count", &self.mesh.faces().len())
+            .finish()
+    }
 }
 
 impl NativeMeshShape {
@@ -296,13 +436,7 @@ pub struct FaceTarget {
     pub face_index: usize,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct SourceRetention {
-    bytes: Vec<u8>,
-    records: Vec<Range<usize>>,
-}
-
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct NativeScene {
     nodes: Vec<NativeTransformNode>,
     shapes: Vec<NativeMeshShape>,
@@ -311,6 +445,26 @@ pub struct NativeScene {
     source: Option<SourceRetention>,
     next_id: u64,
     next_native_id: u64,
+}
+
+impl fmt::Debug for NativeScene {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NativeScene")
+            .field("transform_count", &self.nodes.len())
+            .field("shape_count", &self.shapes.len())
+            .field("dag_edge_count", &self.dag.len())
+            .field("source", &self.source)
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct InternalTransform {
+    pub translation_cm: [f64; 3],
+    pub rotation_radians: [f64; 3],
+    pub scale: [f64; 3],
+    pub rotate_pivot_cm: [f64; 3],
+    pub scale_pivot_cm: [f64; 3],
 }
 
 impl PartialEq for NativeScene {
@@ -373,6 +527,29 @@ impl NativeScene {
             .iter()
             .find(|n| n.id == id)
             .ok_or(NativeError::Legacy(SceneError::MissingNode(id)))
+    }
+    pub fn internal_transform(&self, id: NodeId) -> Result<InternalTransform, NativeError> {
+        let node = self.node(id)?;
+        let vector = |field| {
+            let mut values = [0.0; 3];
+            for (component, scalar) in node.field(field).iter().enumerate() {
+                values[component] = scalar.internal(
+                    self.source.as_ref(),
+                    &self.units,
+                    node.transform_id,
+                    field,
+                    component,
+                )?;
+            }
+            Ok::<_, NativeError>(values)
+        };
+        Ok(InternalTransform {
+            translation_cm: vector(TransformField::Translation)?,
+            rotation_radians: vector(TransformField::Rotation)?,
+            scale: vector(TransformField::Scale)?,
+            rotate_pivot_cm: vector(TransformField::RotatePivot)?,
+            scale_pivot_cm: vector(TransformField::ScalePivot)?,
+        })
     }
     pub fn shapes(&self) -> &[NativeMeshShape] {
         &self.shapes
@@ -682,9 +859,24 @@ impl NativeScene {
             return Err(NativeError::NonFinite);
         }
         let index = self.editable(id)?;
-        for (channel, value) in self.nodes[index].channels.iter_mut().zip(values) {
-            channel.replace(value);
+        let node = &self.nodes[index];
+        let mut channels = node.channels.clone();
+        for (slot, (channel, value)) in channels.iter_mut().zip(values).enumerate() {
+            let field = [
+                TransformField::Translation,
+                TransformField::Rotation,
+                TransformField::Scale,
+            ][slot / 3];
+            *channel = channel.replacement(
+                value,
+                self.source.as_ref(),
+                &self.units,
+                node.transform_id,
+                field,
+                slot % 3,
+            )?;
         }
+        self.nodes[index].channels = channels;
         Ok(())
     }
     pub fn set_channel(
@@ -697,8 +889,22 @@ impl NativeScene {
             return Err(NativeError::NonFinite);
         }
         let index = self.editable(id)?;
-        let target = &mut self.nodes[index].channels[channel as usize];
-        target.replace(value);
+        let node = &self.nodes[index];
+        let slot = channel as usize;
+        let field = [
+            TransformField::Translation,
+            TransformField::Rotation,
+            TransformField::Scale,
+        ][slot / 3];
+        let target = node.channels[slot].replacement(
+            value,
+            self.source.as_ref(),
+            &self.units,
+            node.transform_id,
+            field,
+            slot % 3,
+        )?;
+        self.nodes[index].channels[slot] = target;
         Ok(())
     }
     pub fn extrude_face(
@@ -789,12 +995,42 @@ impl NativeScene {
         }
         self.validate_dag(&native_ids)?;
         if let Some(source) = &self.source {
-            let mut end = 0;
-            for range in &source.records {
-                if range.start < end || range.end < range.start || range.end > source.bytes.len() {
-                    return Err(NativeError::InvalidRetention);
+            source.validate()?;
+            for (index, leaf) in source.leaves.iter().enumerate() {
+                let node = self
+                    .nodes
+                    .iter()
+                    .find(|node| node.transform_id == leaf.owner)
+                    .ok_or(NativeError::InvalidRetention)?;
+                for (component, scalar) in node.field(leaf.field).iter().enumerate() {
+                    if scalar.origin
+                        != Some(ScalarOrigin::Binary {
+                            leaf: index,
+                            component,
+                        })
+                    {
+                        return Err(NativeError::InvalidRetention);
+                    }
                 }
-                end = range.end;
+            }
+        }
+        for node in &self.nodes {
+            for field in [
+                TransformField::Translation,
+                TransformField::Rotation,
+                TransformField::Scale,
+                TransformField::RotatePivot,
+                TransformField::ScalePivot,
+            ] {
+                for (component, scalar) in node.field(field).iter().enumerate() {
+                    scalar.validate_origin(
+                        self.source.as_ref(),
+                        &self.units,
+                        node.transform_id,
+                        field,
+                        component,
+                    )?;
+                }
             }
         }
         Ok(())
