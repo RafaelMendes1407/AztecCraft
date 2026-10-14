@@ -7,6 +7,12 @@ use std::fmt;
 pub struct NodeId(u64);
 
 impl NodeId {
+    pub(crate) fn new(value: u64) -> Self {
+        Self(value)
+    }
+    pub(crate) fn value(self) -> u64 {
+        self.0
+    }
     pub fn to_decimal(self) -> String {
         self.0.to_string()
     }
@@ -132,6 +138,29 @@ impl Default for Scene {
 }
 
 impl Scene {
+    pub(crate) fn next_id(&self) -> u64 {
+        self.next_id
+    }
+
+    pub(crate) fn from_view(
+        nodes: Vec<(NodeId, String, Mesh, Transform)>,
+        next_id: u64,
+    ) -> Result<Self, SceneError> {
+        let scene = Self {
+            nodes: nodes
+                .into_iter()
+                .map(|(id, name, mesh, transform)| Node {
+                    id,
+                    name,
+                    mesh,
+                    transform,
+                })
+                .collect(),
+            next_id,
+        };
+        scene.validate()?;
+        Ok(scene)
+    }
     pub fn validate(&self) -> Result<(), SceneError> {
         let mut ids = std::collections::HashSet::new();
         if self.next_id == 0 {

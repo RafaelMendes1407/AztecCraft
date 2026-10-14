@@ -10,6 +10,14 @@ pub struct Mesh {
 }
 
 impl Mesh {
+    pub(crate) fn from_view(
+        vertices: Vec<Vec3>,
+        faces: Vec<[usize; 4]>,
+    ) -> Result<Self, SceneError> {
+        let mesh = Self { vertices, faces };
+        mesh.validate()?;
+        Ok(mesh)
+    }
     pub(crate) fn primitive(primitive: Primitive) -> Self {
         match primitive {
             Primitive::Cube => Self {
@@ -67,31 +75,11 @@ impl Mesh {
             return Err(SceneError::UnsupportedAllFacesExtrusion);
         }
         let points = face.map(|i| self.vertices[i].as_dvec3());
-        let mut normal = DVec3::ZERO;
-        for i in 0..4 {
-            let p = points[i];
-            let q = points[(i + 1) % 4];
-            normal += DVec3::new(
-                (p.y - q.y) * (p.z + q.z),
-                (p.z - q.z) * (p.x + q.x),
-                (p.x - q.x) * (p.y + q.y),
-            );
-        }
-        let length = normal.length();
-        if !length.is_finite() || length == 0.0 {
-            return Err(SceneError::UndefinedFaceNormal);
-        }
-        let displacement = normal / length * f64::from(distance);
+        let delta = quad_extrusion(face, points, self.vertices.len(), f64::from(distance))?;
         let mut mesh = self.clone();
-        let offset = mesh.vertices.len();
-        mesh.vertices
-            .extend(points.map(|p| (p + displacement).as_vec3()));
-        mesh.faces[face_index] = [offset, offset + 1, offset + 2, offset + 3];
-        for i in 0..4 {
-            let next = (i + 1) % 4;
-            mesh.faces
-                .push([face[i], face[next], offset + next, offset + i]);
-        }
+        mesh.vertices.extend(delta.added.map(|p| p.as_vec3()));
+        mesh.faces[face_index] = delta.cap;
+        mesh.faces.extend(delta.sides);
         mesh.validate()?;
         Ok(mesh)
     }
@@ -112,4 +100,51 @@ impl Mesh {
         }
         Ok(())
     }
+}
+
+pub(crate) struct QuadExtrusion {
+    pub added: [DVec3; 4],
+    pub cap: [usize; 4],
+    pub sides: [[usize; 4]; 4],
+}
+
+pub(crate) fn quad_extrusion(
+    face: [usize; 4],
+    points: [DVec3; 4],
+    offset: usize,
+    distance: f64,
+) -> Result<QuadExtrusion, SceneError> {
+    if !distance.is_finite() {
+        return Err(SceneError::InvalidExtrusionDistance);
+    }
+    let mut normal = DVec3::ZERO;
+    for i in 0..4 {
+        let p = points[i];
+        let q = points[(i + 1) % 4];
+        normal += DVec3::new(
+            (p.y - q.y) * (p.z + q.z),
+            (p.z - q.z) * (p.x + q.x),
+            (p.x - q.x) * (p.y + q.y),
+        );
+    }
+    let length = normal.length();
+    if !length.is_finite() || length == 0.0 {
+        return Err(SceneError::UndefinedFaceNormal);
+    }
+    let displacement = normal / length * distance;
+    let added = points.map(|p| p + displacement);
+    if added.iter().any(|p| !p.is_finite()) {
+        return Err(SceneError::InvalidMesh);
+    }
+    let cap = [
+        offset,
+        offset.checked_add(1).ok_or(SceneError::InvalidMesh)?,
+        offset.checked_add(2).ok_or(SceneError::InvalidMesh)?,
+        offset.checked_add(3).ok_or(SceneError::InvalidMesh)?,
+    ];
+    let sides = std::array::from_fn(|i| {
+        let next = (i + 1) % 4;
+        [face[i], face[next], cap[next], cap[i]]
+    });
+    Ok(QuadExtrusion { added, cap, sides })
 }
