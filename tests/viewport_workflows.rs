@@ -1,9 +1,7 @@
 use azteccraft::scene;
+use azteccraft::viewport::Camera;
 use glam::{Vec2, Vec3};
 use scene::{Primitive, Scene, Transform};
-#[path = "../src/viewport.rs"]
-mod viewport;
-use viewport::Camera;
 
 fn front_camera() -> Camera {
     Camera::new(Vec3::ZERO, 0.0, 0.0, 5.0, 90_f32.to_radians(), 0.1, 20.0).unwrap()

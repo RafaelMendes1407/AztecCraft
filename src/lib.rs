@@ -3,3 +3,4 @@
 pub mod document;
 pub mod history;
 pub mod scene;
+pub mod viewport;
