@@ -198,3 +198,49 @@ fn loaded_scene_starts_without_history_and_missing_nodes_return_errors() {
     assert!(history.redo());
     assert!(history.scene().nodes().is_empty());
 }
+
+#[test]
+fn zero_and_signed_extrusions_are_undoable_and_new_edits_replace_redo_without_reusing_ids() {
+    let mut history = History::default();
+    let cube = create(&mut history, "cube");
+    let initial = history.scene().clone();
+    assert_eq!(
+        history
+            .execute(Command::ExtrudeFace {
+                id: cube,
+                face_index: 0,
+                distance: 0.0
+            })
+            .unwrap(),
+        EditOutcome::Changed
+    );
+    let zero = history.scene().clone();
+    history
+        .execute(Command::ExtrudeFace {
+            id: cube,
+            face_index: 0,
+            distance: -0.25,
+        })
+        .unwrap();
+    let inward = history.scene().clone();
+    assert!(history.undo());
+    assert_eq!(history.scene(), &zero);
+    assert!(history.undo());
+    assert_eq!(history.scene(), &initial);
+    assert!(history.redo());
+    assert_eq!(history.scene(), &zero);
+    assert!(history.redo());
+    assert_eq!(history.scene(), &inward);
+    let discarded = create(&mut history, "discarded");
+    assert!(history.undo());
+    history
+        .execute(Command::ExtrudeFace {
+            id: cube,
+            face_index: 0,
+            distance: 0.5,
+        })
+        .unwrap();
+    assert!(!history.can_redo());
+    let replacement = create(&mut history, "replacement");
+    assert_ne!(replacement, discarded);
+}

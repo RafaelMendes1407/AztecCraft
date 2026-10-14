@@ -2,10 +2,24 @@ use crate::scene::{NodeId, Primitive, Scene, SceneError, Transform};
 
 #[derive(Clone, Debug)]
 pub enum Command {
-    Create { primitive: Primitive, name: String },
+    Create {
+        primitive: Primitive,
+        name: String,
+    },
     Remove(NodeId),
-    Rename { id: NodeId, name: String },
-    SetTransform { id: NodeId, transform: Transform },
+    Rename {
+        id: NodeId,
+        name: String,
+    },
+    SetTransform {
+        id: NodeId,
+        transform: Transform,
+    },
+    ExtrudeFace {
+        id: NodeId,
+        face_index: usize,
+        distance: f32,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -57,6 +71,14 @@ impl History {
             }
             Command::SetTransform { id, transform } => {
                 self.scene.set_transform(id, transform)?;
+                EditOutcome::Changed
+            }
+            Command::ExtrudeFace {
+                id,
+                face_index,
+                distance,
+            } => {
+                self.scene.extrude_face(id, face_index, distance)?;
                 EditOutcome::Changed
             }
         };

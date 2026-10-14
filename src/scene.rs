@@ -215,6 +215,28 @@ impl Scene {
         Ok(())
     }
 
+    /// Distance is signed object-space displacement along the oriented Newell face normal.
+    /// The selected cap keeps its index; all-face extrusion is currently unsupported.
+    pub fn extrude_face(
+        &mut self,
+        id: NodeId,
+        face_index: usize,
+        distance: f32,
+    ) -> Result<(), SceneError> {
+        let node = self.node(id)?;
+        let mesh = node.mesh.extruded_face(face_index, distance)?;
+        let matrix = node.transform.matrix();
+        if mesh
+            .vertices()
+            .iter()
+            .any(|v| !matrix.transform_point3(*v).is_finite())
+        {
+            return Err(SceneError::InvalidTransform);
+        }
+        self.node_mut(id)?.mesh = mesh;
+        Ok(())
+    }
+
     fn node_mut(&mut self, id: NodeId) -> Result<&mut Node, SceneError> {
         self.nodes
             .iter_mut()
@@ -238,6 +260,10 @@ pub enum SceneError {
     IdsExhausted,
     InvalidIds,
     InvalidMesh,
+    MissingFace(usize),
+    UnsupportedAllFacesExtrusion,
+    InvalidExtrusionDistance,
+    UndefinedFaceNormal,
 }
 
 impl fmt::Display for SceneError {
@@ -257,6 +283,12 @@ impl fmt::Display for SceneError {
             Self::InvalidMesh => f.write_str(
                 "mesh coordinates must be finite and each quad must have four unique valid indices",
             ),
+            Self::MissingFace(index) => write!(f, "mesh face {index} does not exist"),
+            Self::UnsupportedAllFacesExtrusion => {
+                f.write_str("extruding all faces of a mesh is not supported")
+            }
+            Self::InvalidExtrusionDistance => f.write_str("extrusion distance must be finite"),
+            Self::UndefinedFaceNormal => f.write_str("selected face has no finite nonzero normal"),
         }
     }
 }

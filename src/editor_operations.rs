@@ -38,6 +38,11 @@ pub enum Operation {
         id: NodeId,
         transform: Transform,
     },
+    ExtrudeFace {
+        id: NodeId,
+        face_index: usize,
+        distance: f32,
+    },
     Delete(NodeId),
     Undo,
     Redo,

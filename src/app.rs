@@ -96,6 +96,15 @@ impl Editor {
             Command::Remove(id) => Operation::Delete(id),
             Command::Rename { id, name } => Operation::Rename { id, name },
             Command::SetTransform { id, transform } => Operation::SetTransform { id, transform },
+            Command::ExtrudeFace {
+                id,
+                face_index,
+                distance,
+            } => Operation::ExtrudeFace {
+                id,
+                face_index,
+                distance,
+            },
         };
         self.native_operation(operation);
     }
@@ -233,6 +242,15 @@ impl Editor {
             }
             Operation::Rename { id, name } => Command::Rename { id, name },
             Operation::SetTransform { id, transform } => Command::SetTransform { id, transform },
+            Operation::ExtrudeFace {
+                id,
+                face_index,
+                distance,
+            } => Command::ExtrudeFace {
+                id,
+                face_index,
+                distance,
+            },
             Operation::Delete(id) => Command::Remove(id),
             Operation::Select(selected) => {
                 let changed = self.selected != selected;
@@ -986,6 +1004,86 @@ mod tests {
             ));
             assert_eq!(editor.history.scene(), &before);
         }
+    }
+
+    #[test]
+    fn typed_extrusion_uses_native_history_and_preserves_pending_edits_on_error() {
+        let mut editor = Editor::default();
+        editor.create(Primitive::Cube);
+        let id = editor.selected.unwrap();
+        editor.channels[0] = "2".into();
+        editor.execute(Command::ExtrudeFace {
+            id,
+            face_index: 0,
+            distance: 0.0,
+        });
+        assert!(!editor.error);
+        assert_eq!(
+            editor
+                .history
+                .scene()
+                .node(id)
+                .unwrap()
+                .mesh()
+                .vertices()
+                .len(),
+            12
+        );
+        assert_eq!(
+            editor
+                .history
+                .scene()
+                .node(id)
+                .unwrap()
+                .transform()
+                .translation
+                .x,
+            2.0
+        );
+        editor.history_step(false);
+        assert_eq!(
+            editor
+                .history
+                .scene()
+                .node(id)
+                .unwrap()
+                .mesh()
+                .vertices()
+                .len(),
+            8
+        );
+        let before = editor.history.scene().clone();
+        editor.channels[0] = "nan".into();
+        editor.execute(Command::ExtrudeFace {
+            id,
+            face_index: 0,
+            distance: 1.0,
+        });
+        assert!(editor.error);
+        assert_eq!(editor.channels[0], "nan");
+        assert_eq!(editor.history.scene(), &before);
+        assert!(editor.history.can_redo());
+        editor.sync_fields();
+        editor.execute(Command::ExtrudeFace {
+            id,
+            face_index: 99,
+            distance: 1.0,
+        });
+        assert!(editor.error);
+        assert_eq!(editor.history.scene(), &before);
+        assert!(editor.history.can_redo());
+        editor.history_step(true);
+        assert_eq!(
+            editor
+                .history
+                .scene()
+                .node(id)
+                .unwrap()
+                .mesh()
+                .vertices()
+                .len(),
+            12
+        );
     }
 
     fn key(key: Key) -> egui::Event {

@@ -32,6 +32,12 @@ Undo/redo stores unbounded scene snapshots in memory, so memory grows with scene
 
 The camera core is connected to the native viewport. Drawing sorts projected faces by average depth, and depth-tested rendering and reference navigation parity remain pending. These limits are described in [development instructions](.project-docs/development.md).
 
+The extrusion API supports one quad with signed object-space normal displacement,
+including zero-distance topology. All-face extrusion, including a one-quad plane,
+is explicitly unsupported until a pinned Maya fixture establishes default behavior.
+Region/world extrusion, divisions, offset/taper, UVs/normals, construction-history
+nodes and native face selection/extrusion controls remain pending.
+
 ## Existing Maya plug-in compatibility unverified
 
 **Severity:** high

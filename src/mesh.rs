@@ -1,5 +1,5 @@
 use crate::scene::{Primitive, SceneError};
-use glam::Vec3;
+use glam::{DVec3, Vec3};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -49,6 +49,51 @@ impl Mesh {
     }
     pub fn faces(&self) -> &[[usize; 4]] {
         &self.faces
+    }
+
+    pub(crate) fn extruded_face(
+        &self,
+        face_index: usize,
+        distance: f32,
+    ) -> Result<Self, SceneError> {
+        if !distance.is_finite() {
+            return Err(SceneError::InvalidExtrusionDistance);
+        }
+        let face = *self
+            .faces
+            .get(face_index)
+            .ok_or(SceneError::MissingFace(face_index))?;
+        if self.faces.len() == 1 {
+            return Err(SceneError::UnsupportedAllFacesExtrusion);
+        }
+        let points = face.map(|i| self.vertices[i].as_dvec3());
+        let mut normal = DVec3::ZERO;
+        for i in 0..4 {
+            let p = points[i];
+            let q = points[(i + 1) % 4];
+            normal += DVec3::new(
+                (p.y - q.y) * (p.z + q.z),
+                (p.z - q.z) * (p.x + q.x),
+                (p.x - q.x) * (p.y + q.y),
+            );
+        }
+        let length = normal.length();
+        if !length.is_finite() || length == 0.0 {
+            return Err(SceneError::UndefinedFaceNormal);
+        }
+        let displacement = normal / length * f64::from(distance);
+        let mut mesh = self.clone();
+        let offset = mesh.vertices.len();
+        mesh.vertices
+            .extend(points.map(|p| (p + displacement).as_vec3()));
+        mesh.faces[face_index] = [offset, offset + 1, offset + 2, offset + 3];
+        for i in 0..4 {
+            let next = (i + 1) % 4;
+            mesh.faces
+                .push([face[i], face[next], offset + next, offset + i]);
+        }
+        mesh.validate()?;
+        Ok(mesh)
     }
 
     pub(crate) fn validate(&self) -> Result<(), SceneError> {

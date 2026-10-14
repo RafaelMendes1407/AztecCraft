@@ -13,13 +13,14 @@ The current prototype has a native desktop window for cube/plane creation, selec
 | Scene data | Cube/plane creation, validated quad meshes, stable IDs, rename, remove and transform edits | [Scene workflow tests](tests/scene_workflows.rs) and [mesh validation tests](tests/mesh_workflows.rs) |
 | Transform math | Scale, fixed-axis XYZ Euler rotation in degrees, then translation, including zero/negative scales | [Coordinate conventions](.project-docs/development.md) and scene tests |
 | Invalid edits | Reject invalid names, non-finite transforms and transformed-coordinate overflow without changing the scene | Scene tests |
-| History | Undo/redo create, remove, rename and transform commands, with failed/no-op edits preserving history | [History workflow tests](tests/history_workflows.rs) |
+| History | Undo/redo create, remove, rename, transform and single-face extrusion commands, with failed/no-op edits preserving history | [History workflow tests](tests/history_workflows.rs) |
 | Native scene files | JSON v1 for quad meshes, validated load, 16 MiB limit and create-new saves that preserve occupied destinations | [Document workflow tests](tests/document_workflows.rs) |
 | Camera math | Orbit/pan/dolly, perspective projection, rays, nearest-geometry picking and framing | [Viewport workflow tests](tests/viewport_workflows.rs) |
 | Desktop shell and viewport | Create/select cube or plane, edit name/transform channels, undo/redo, delete and frame selected, with projected mesh drawing | [Native shell](src/app.rs) and [viewport UI](src/viewport_ui.rs) |
 | File actions in the window | New/Open/Save As, unsaved-change confirmation and error presentation | [File integration tests](src/file_ui.rs) and [scoped macOS native verification](.project-docs/native-verification.md); full panel navigation and other platforms remain pending |
 | OBJ export | Library API writes world-space polygon geometry to a new file | [OBJ workflow tests](tests/obj_workflows.rs), with GUI Export still disabled |
-| Modeling, UVs, animation and rigging | Full workflows pending | [Implementation plan](.project-docs/plan.md) |
+| Modeling | Core API extrudes one quad along its object-space normal, including signed/zero distances; native face UI and all-face extrusion pending | [Extrusion workflow tests](tests/extrusion_workflows.rs) |
+| UVs, animation and rigging | Full workflows pending | [Implementation plan](.project-docs/plan.md) |
 | Materials, simulation and rendering | Pending | Reference scenes and output comparisons required |
 | Maya formats, scripting and plug-ins | Pending | Existing scene/script/plug-in fixtures required |
 

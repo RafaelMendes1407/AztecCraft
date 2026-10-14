@@ -61,9 +61,20 @@ distinct indices per face. It preserves unused vertices, empty meshes, coinciden
 or zero-area geometry, nonplanarity, inconsistent winding and non-manifold states.
 Loading edited arrays is supported; native topology editing is still pending.
 
+`Scene::extrude_face` and `Command::ExtrudeFace` extrude one quad by signed
+object-space displacement along its oriented Newell normal, with one segment.
+The cap replaces the selected face at the same index and four side quads are
+appended. Zero or rounded-to-coincident displacement still creates undoable
+topology. A mesh with only one face, including the primitive plane, returns an
+explicit unsupported-all-faces error; its Maya default behavior needs a pinned
+fixture. Undefined normals, invalid indices/distances and coordinate overflow
+leave the scene/history unchanged. World/region extrusion, divisions, taper,
+offset, UVs/normals, construction-history nodes and native face controls remain
+pending. Tests establish this subset's geometry, not Maya parity.
+
 ## History
 
-`History` wraps scene edits as explicit create/remove/rename/set-transform commands
+`History` wraps scene edits as explicit create/remove/rename/set-transform/extrude-face commands
 and stores full scene snapshots for undo/redo. Failed edits and unchanged values
 don't create history entries or clear redo. A changed edit after undo clears the
 redo branch, while node ID reservations stay at their highest allocated value so

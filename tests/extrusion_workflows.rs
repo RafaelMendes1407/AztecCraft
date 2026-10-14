@@ -1,0 +1,220 @@
+use azteccraft::{
+    history::{Command, History},
+    scene::{NodeId, Primitive, Scene, SceneError, Transform},
+};
+use glam::Vec3;
+use serde_json::json;
+use std::collections::HashMap;
+
+fn cube() -> (Scene, NodeId) {
+    let mut scene = Scene::default();
+    let id = scene.create(Primitive::Cube, "cube").unwrap();
+    (scene, id)
+}
+
+fn scaled_cube(size: f32) -> (Scene, NodeId) {
+    let (scene, id) = cube();
+    let mut value = serde_json::to_value(&scene).unwrap();
+    value["nodes"][0]["mesh"]["vertices"] = json!(
+        scene
+            .node(id)
+            .unwrap()
+            .mesh()
+            .vertices()
+            .iter()
+            .map(|v| *v * size)
+            .collect::<Vec<_>>()
+    );
+    (serde_json::from_value(value).unwrap(), id)
+}
+
+#[test]
+fn cube_face_replaces_cap_and_adds_four_closed_consistently_wound_sides() {
+    let (mut scene, id) = cube();
+    let other = scene.create(Primitive::Plane, "other").unwrap();
+    let before = scene.clone();
+    scene.extrude_face(id, 0, 1.0).unwrap();
+    scene.validate().unwrap();
+    let mesh = scene.node(id).unwrap().mesh();
+    assert_eq!(mesh.vertices().len(), 12);
+    assert_eq!(mesh.faces().len(), 10);
+    assert_eq!(
+        &mesh.vertices()[..8],
+        before.node(id).unwrap().mesh().vertices()
+    );
+    assert_eq!(
+        &mesh.faces()[1..6],
+        &before.node(id).unwrap().mesh().faces()[1..]
+    );
+    assert_eq!(scene.node(other).unwrap(), before.node(other).unwrap());
+    assert_eq!(mesh.faces()[0], [8, 9, 10, 11]);
+    assert_eq!(
+        &mesh.vertices()[8..],
+        &[
+            Vec3::new(-0.5, -0.5, -1.5),
+            Vec3::new(-0.5, 0.5, -1.5),
+            Vec3::new(0.5, 0.5, -1.5),
+            Vec3::new(0.5, -0.5, -1.5)
+        ]
+    );
+    assert!(!mesh.faces().contains(&[0, 3, 2, 1]));
+    let mut edges = HashMap::new();
+    for face in mesh.faces() {
+        let [a, b, c, d] = face.map(|i| mesh.vertices()[i]);
+        assert!((b - a).cross(c - a).dot((a + b + c + d) / 4.0) > 0.0);
+        for i in 0..4 {
+            *edges.entry((face[i], face[(i + 1) % 4])).or_insert(0) += 1;
+        }
+    }
+    for ((a, b), count) in &edges {
+        assert_eq!(*count, 1);
+        assert_eq!(edges.get(&(*b, *a)), Some(&1));
+    }
+}
+
+#[test]
+fn repeated_inward_zero_and_rounded_displacement_keep_the_selected_cap_index() {
+    let (mut scene, id) = cube();
+    for (distance, z, vertex_count) in [
+        (1.0, -1.5, 12),
+        (0.25, -1.75, 16),
+        (-0.5, -1.25, 20),
+        (0.0, -1.25, 24),
+        (1e-10, -1.25, 28),
+    ] {
+        scene.extrude_face(id, 0, distance).unwrap();
+        let mesh = scene.node(id).unwrap().mesh();
+        assert_eq!(mesh.vertices().len(), vertex_count);
+        assert_eq!(mesh.faces().len(), 6 + (vertex_count - 8));
+        for index in mesh.faces()[0] {
+            assert_eq!(mesh.vertices()[index].z, z);
+        }
+        scene.validate().unwrap();
+    }
+}
+
+#[test]
+fn normals_and_displacement_are_computed_before_float32_overflow_or_underflow() {
+    for size in [1e-30_f32, 1e30_f32] {
+        let (mut scene, id) = scaled_cube(size);
+        scene.extrude_face(id, 0, size).unwrap();
+        for index in scene.node(id).unwrap().mesh().faces()[0] {
+            let z = scene.node(id).unwrap().mesh().vertices()[index].z;
+            assert!((z / size + 1.5).abs() < 0.00001);
+        }
+    }
+    let (scene, id) = cube();
+    let mut value = serde_json::to_value(scene).unwrap();
+    value["nodes"][0]["mesh"]["faces"][0] = json!([1, 2, 3, 0]);
+    let mut scene: Scene = serde_json::from_value(value).unwrap();
+    scene.extrude_face(id, 0, 1.0).unwrap();
+    for index in scene.node(id).unwrap().mesh().faces()[0] {
+        assert_eq!(scene.node(id).unwrap().mesh().vertices()[index].z, 0.5);
+    }
+}
+
+#[test]
+fn extrusion_uses_object_space_and_preserves_reflected_nonuniform_and_zero_transforms() {
+    for scale in [Vec3::new(-2.0, 3.0, 4.0), Vec3::ZERO] {
+        let (mut scene, id) = cube();
+        let transform = Transform {
+            translation: Vec3::new(10.0, 20.0, 30.0),
+            rotation_degrees: Vec3::new(0.0, 0.0, 90.0),
+            scale,
+        };
+        scene.set_transform(id, transform).unwrap();
+        scene.extrude_face(id, 0, 1.0).unwrap();
+        assert_eq!(scene.node(id).unwrap().transform(), transform);
+        let world = scene.node(id).unwrap().world_vertices()[8];
+        let expected = if scale == Vec3::ZERO {
+            transform.translation
+        } else {
+            Vec3::new(11.5, 21.0, 24.0)
+        };
+        assert!(world.distance(expected) < 0.00001);
+    }
+}
+
+#[test]
+fn failed_extrusions_preserve_scene_and_pending_redo() {
+    let (mut scene, id) = cube();
+    let plane = scene.create(Primitive::Plane, "plane").unwrap();
+    let removed = scene.create(Primitive::Cube, "removed").unwrap();
+    scene.remove(removed).unwrap();
+    let mut history = History::new(scene);
+    history
+        .execute(Command::Rename {
+            id,
+            name: "redo_name".into(),
+        })
+        .unwrap();
+    assert!(history.undo());
+    let before = history.scene().clone();
+    for (node, face_index, distance, expected) in [
+        (removed, 0, 1.0, SceneError::MissingNode(removed)),
+        (id, 99, 1.0, SceneError::MissingFace(99)),
+        (plane, 0, 1.0, SceneError::UnsupportedAllFacesExtrusion),
+        (plane, 0, 0.0, SceneError::UnsupportedAllFacesExtrusion),
+        (id, 0, f32::NAN, SceneError::InvalidExtrusionDistance),
+        (id, 0, f32::INFINITY, SceneError::InvalidExtrusionDistance),
+    ] {
+        assert_eq!(
+            history.execute(Command::ExtrudeFace {
+                id: node,
+                face_index,
+                distance
+            }),
+            Err(expected)
+        );
+        assert_eq!(history.scene(), &before);
+        assert!(!history.can_undo());
+        assert!(history.can_redo());
+    }
+    assert!(history.redo());
+    assert_eq!(history.scene().node(id).unwrap().name(), "redo_name");
+}
+
+#[test]
+fn undefined_normal_and_local_or_world_overflow_do_not_publish_candidates() {
+    let (scene, id) = cube();
+    let mut value = serde_json::to_value(scene).unwrap();
+    value["nodes"][0]["mesh"]["vertices"] = json!(vec![[0.0; 3]; 8]);
+    let collapsed: Scene = serde_json::from_value(value).unwrap();
+    let (large, _) = scaled_cube(2e38);
+    let (mut world_overflow, _) = cube();
+    world_overflow
+        .set_transform(
+            id,
+            Transform {
+                scale: Vec3::splat(f32::MAX),
+                ..Transform::default()
+            },
+        )
+        .unwrap();
+    for (scene, distance, error) in [
+        (collapsed, 0.0, SceneError::UndefinedFaceNormal),
+        (large, f32::MAX, SceneError::InvalidMesh),
+        (world_overflow, 1.0, SceneError::InvalidTransform),
+    ] {
+        let mut history = History::new(scene);
+        history
+            .execute(Command::Rename {
+                id,
+                name: "future".into(),
+            })
+            .unwrap();
+        history.undo();
+        let before = history.scene().clone();
+        assert_eq!(
+            history.execute(Command::ExtrudeFace {
+                id,
+                face_index: 0,
+                distance
+            }),
+            Err(error)
+        );
+        assert_eq!(history.scene(), &before);
+        assert!(history.can_redo());
+        assert!(history.redo());
+    }
+}
