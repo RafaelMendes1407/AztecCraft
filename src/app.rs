@@ -6,6 +6,9 @@ use azteccraft::{
 use eframe::egui::{self, Color32, Key, RichText};
 use glam::Vec3;
 
+#[path = "file_ui.rs"]
+mod files;
+
 pub struct Editor {
     history: History,
     selected: Option<NodeId>,
@@ -15,6 +18,7 @@ pub struct Editor {
     status: String,
     error: bool,
     aspect: f32,
+    files: files::FileState,
 }
 
 impl Default for Editor {
@@ -28,6 +32,7 @@ impl Default for Editor {
             status: "Ready | Create a cube or plane to start".into(),
             error: false,
             aspect: 1.0,
+            files: files::FileState::default(),
         }
     }
 }
@@ -160,7 +165,8 @@ impl Editor {
     }
 
     fn shortcuts(&mut self, ctx: &egui::Context) {
-        if ctx.egui_wants_keyboard_input() || egui::Popup::is_any_open(ctx) {
+        if ctx.egui_wants_keyboard_input() || egui::Popup::is_any_open(ctx) || self.files.is_modal()
+        {
             return;
         }
         let (undo, redo, delete, frame) = ctx.input(|i| {
@@ -258,8 +264,23 @@ impl Editor {
     fn menus(&mut self, ui: &mut egui::Ui) {
         egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("File", |ui| {
-                for label in ["New scene", "Open...", "Save...", "Export..."] {
-                    unsupported(ui, label);
+                if ui.button("New scene").clicked() {
+                    ui.close();
+                    self.request_new();
+                }
+                if ui.button("Open...").clicked() {
+                    ui.close();
+                    self.open_dialog();
+                }
+                if ui.button("Save As...").clicked() {
+                    ui.close();
+                    self.save_dialog();
+                }
+                unsupported(ui, "Export...");
+                ui.separator();
+                if ui.button("Close").clicked() {
+                    ui.close();
+                    self.request_close();
                 }
             });
             ui.menu_button("Edit", |ui| {
@@ -442,7 +463,10 @@ impl eframe::App for Editor {
 
 impl Editor {
     fn render(&mut self, ui: &mut egui::Ui) {
-        self.cancel_on_escape(ui.ctx());
+        self.handle_close(ui.ctx());
+        if !self.files.is_modal() {
+            self.cancel_on_escape(ui.ctx());
+        }
         self.shortcuts(ui.ctx());
         egui::Panel::top("menu_shelf").show(ui, |ui| self.menus(ui));
         egui::Panel::bottom("timeline_status").show(ui, |ui| {
@@ -506,6 +530,9 @@ impl Editor {
                 }
             }
         });
+        self.file_modal(ui.ctx());
+        ui.ctx()
+            .send_viewport_cmd(egui::ViewportCommand::Title(self.document_title()));
     }
 }
 

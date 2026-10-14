@@ -7,7 +7,7 @@ publish = false
 
 [features]
 default = ["desktop"]
-desktop = ["dep:eframe"]
+desktop = ["dep:eframe", "dep:rfd"]
 
 [[bin]]
 name = "azteccraft"
@@ -20,6 +20,7 @@ serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
 craft-atomic = { git = "https://github.com/storytold/craft-libs", rev = "457a078809690994b22debdffb703ff36d3129df" }
 eframe = { version = "=0.36.2", optional = true, default-features = false, features = ["default_fonts", "wgpu", "x11", "wayland", "accesskit"] }
+rfd = { version = "=0.17.2", optional = true }
 
 [dev-dependencies]
 tempfile = "=3.27.0"
