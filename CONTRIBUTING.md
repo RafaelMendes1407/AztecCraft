@@ -16,8 +16,8 @@ Unsupported controls must visibly say they're unsupported. Update documentation 
 
 Keep reference assets, private scenes, secrets and personal paths out of commits unless explicitly approved for distribution. Preserve existing user data and logs, and obtain per-item confirmation before destructive cleanup. Inspect licenses and preserve required attribution before adopting upstream code. This checkout hasn't selected a project distribution license.
 
-## Publication gate
+## Publication and acceptance
 
-Don't push, create a GitHub repository, open a PR or publish a release before the user's gate is defined and verified: 80–90% of **all Maya 2026 functionality**, including simulation, rendering, scripting and existing plug-in compatibility. The complete denominator, exact threshold, component boundaries and evidence remain unresolved.
+The user has authorized publishing this early prototype and merging it to `main`, superseding the original first-push restriction. The original 80–90% target across **all Maya 2026 functionality**, including simulation, rendering, scripting and existing plug-in compatibility, remains an unmet acceptance requirement. The complete denominator, exact threshold, component boundaries and evidence remain unresolved. Release/signing and other external actions still require authorization within the current request.
 
-[The initial workflow seed](.project-docs/inventory-seed.md) is a research starting point. It doesn't define completeness or authorize a percentage, and overall coverage remains unmeasured. Use fixed domain budgets, critical must-pass workflows and existing plug-in fixtures when the inventory is audited. The final identical-interface-and-behavior requirement remains separate from first-push eligibility.
+[The initial workflow seed](.project-docs/inventory-seed.md) is a research starting point. It doesn't define completeness or authorize a percentage, and overall coverage remains unmeasured. Use fixed domain budgets, critical must-pass workflows and existing plug-in fixtures when the inventory is audited. Publishing a prototype doesn't establish the final identical-interface-and-behavior requirement.

@@ -12,7 +12,7 @@ The exact Maya version/platform and reference installation have not been establi
 **Severity:** high
 **Area:** release gate
 
-The user requires 80–90% of all Maya 2026 functionality before the first push, including simulation, rendering, scripting, and plugin compatibility. The complete workflow inventory must still be enumerated and verified against a reference. Do not push and do not calculate a percentage from an arbitrary feature list.
+The original first-push restriction required 80–90% of all Maya 2026 functionality, including simulation, rendering, scripting, and plugin compatibility. The user's later explicit push/merge instruction authorizes early prototype publication, superseding that restriction. The full-functionality target remains unmet, and the complete inventory must still be enumerated and verified against a reference. Don't calculate a percentage from an arbitrary feature list.
 
 [The initial inventory seed](.project-docs/inventory-seed.md) provides source-backed candidate workflows, but its 100 entries aren't a complete denominator. Component versions, cloud services, collection components and third-party plug-in scope still need to be pinned. Overall coverage remains unmeasured.
 
@@ -21,16 +21,16 @@ The user requires 80–90% of all Maya 2026 functionality before the first push,
 **Severity:** high
 **Area:** desktop application
 
-The current checkout exposes a headless scene/history/document library and a tested camera core, with no executable target. Native desktop startup, interaction and packaging haven't been verified on macOS, Windows or Linux. The planned shell/viewport must pass the native journey described in [the reference dossier](.project-docs/reference.md) before desktop support is claimed.
+The native prototype has been built and launched locally, but the complete native journey is still unverified. UI event tests cover file integration with real files, while native file-dialog interaction remains unverified. Cross-platform native interaction and packaged launch checks are also pending. The shell/viewport must pass the journey described in [the reference dossier](.project-docs/reference.md) before broad desktop support is claimed.
 
 ## Core authoring limits
 
 **Severity:** medium
 **Area:** history, documents and viewport
 
-Undo/redo stores unbounded scene snapshots in memory, so memory grows with scene size and edit count. JSON v1 stores canonical cube/plane scene data and allocator reservations, with a 16 MiB limit and create-new/no-clobber writes. Undo/redo stacks and camera state aren't persisted, and overwrite-save, recovery and autosave are pending. Arbitrary topology and external formats aren't supported.
+Undo/redo stores unbounded scene snapshots in memory, so memory grows with scene size and edit count. JSON v1 stores canonical cube/plane scene data and allocator reservations, with a 16 MiB limit and create-new/no-clobber writes. Undo/redo stacks and camera state aren't persisted, and overwrite-save, recovery and autosave are pending. Arbitrary topology and most external formats aren't supported. The OBJ library API exports geometry only, with no import, UV, normal or material support, and GUI Export remains disabled.
 
-The camera core is tested as mathematical code, compiled directly by its workflow tests. UI integration, native navigation, drawing and depth-tested rendering remain pending. These limits are described in [development instructions](.project-docs/development.md).
+The camera core is connected to the native viewport. Drawing sorts projected faces by average depth, and depth-tested rendering and reference navigation parity remain pending. These limits are described in [development instructions](.project-docs/development.md).
 
 ## Existing Maya plug-in compatibility unverified
 

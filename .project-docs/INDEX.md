@@ -1,7 +1,7 @@
 # Project documentation
 
 - [Build specification](build-prompt.md): final product scope and parity requirements.
-- [Implementation plan](plan.md): atomic tasks, evidence, and publication gate.
+- [Implementation plan](plan.md): atomic tasks, evidence, unmet acceptance targets and updated prototype publication authority.
 - [Reference dossier](reference.md): reference baseline, researched sources, and reuse decisions.
 - [Parity inventory](parity.md): required functionality families, not a measured coverage percentage.
 - [Workflow inventory seed](inventory-seed.md): provisional candidate workflows, official sources, component boundaries and a measurement proposal.

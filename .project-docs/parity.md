@@ -9,9 +9,9 @@ denominator are still missing, so overall coverage remains unmeasured.
 
 | Family | Required workflows | Current status |
 | --- | --- | --- |
-| Application shell | menus, shelves, Outliner, Channel Box, editors, docking, workspaces | Not implemented |
+| Application shell | menus, shelves, Outliner, Channel Box, editors, docking, workspaces | Partial: native menus/shelf, Outliner, Channel Box and status/unsupported controls. Full editors, docking and workspaces pending |
 | Scene management | hierarchy, transforms, shapes, instancing, attributes, undo/redo, save/reopen | Partial: root cube/plane nodes, IDs, rename/transforms, snapshot undo/redo and validated JSON v1 create-new save/load. Hierarchy, instancing and generic attributes pending |
-| Viewport | camera navigation, views, picking, component selection, manipulators, snapping | Partial: tested mathematical perspective/orbit/pan/dolly/ray/picking/framing core. Native interaction, drawing, manipulators and component selection pending |
+| Viewport | camera navigation, views, picking, component selection, manipulators, snapping | Partial: perspective camera math connected to native projected drawing/navigation/selection. Depth-tested rendering, manipulators, snapping and component selection pending |
 | Polygon modeling | primitives, topology, extrusion, bevel, loops, weld, normals, subdivision, history | Partial: canonical cube/plane creation and transformed vertices. Component/topology editing and modeling history pending |
 | Curves and surfaces | curves, NURBS, editing, construction workflows | Not implemented |
 | UV editing | seams, projections, shells, unfold, packing, synchronized selection | Not implemented |
@@ -19,14 +19,15 @@ denominator are still missing, so overall coverage remains unmeasured.
 | Rigging | joints, constraints, IK, skinning, weight editing, blend shapes, deformers | Not implemented |
 | Materials and lighting | shaders, textures, networks, lights, color management | Not implemented |
 | Rendering | viewport rendering, render settings/layers, final rendering | Not implemented |
-| Interchange | native document, OBJ, glTF, FBX, USD, Alembic, Maya formats | Partial: AztecCraft-only JSON v1. Canonical cube/plane meshes, 16 MiB limit and no-clobber create-new save. Other formats pending |
+| Interchange | native document, OBJ, glTF, FBX, USD, Alembic, Maya formats | Partial: canonical cube/plane JSON v1, 16 MiB limit, create-new writes, New/Open/Save As UI and geometry-only OBJ API. GUI Export, OBJ import and other formats pending |
 | Scripting and extensions | commands, MEL, Python, plugins | Not implemented |
 | Dynamics and extended systems | particles, cloth, hair, simulation, caches, motion graphics | Not implemented |
-| Pipeline and robustness | references, recovery, large scenes, platform packaging | Not implemented |
+| Pipeline and robustness | references, recovery, large scenes, platform packaging | Partial: unsigned platform packaging and fixture checks; cross-platform native interaction, references, recovery and large-scene workflows pending |
 
-Publication requires 80–90% of the complete Maya 2026 workflow inventory to pass, without hiding missing essential workflows in a broad percentage. Exact parity remains a separate acceptance requirement.
+The original first-push restriction required 80–90% of the complete Maya 2026 workflow inventory to pass. The user's later explicit instruction to push/merge to `main` authorizes early prototype publication, superseding that restriction. The full-functionality target remains unmet, and missing essential workflows must stay visible rather than be hidden in a broad percentage. Exact parity remains a separate acceptance requirement.
 
-The headless suites cover scene edits, command history, document validation and
-camera mathematics. They don't verify native controls or Maya parity. History is
-unbounded and in-memory, documents don't persist history/camera state, and the
-camera core is not a renderer. See [development limits](development.md).
+Core suites cover scene edits, command history, document validation, OBJ export
+and camera mathematics, while UI tests cover editing/file-action events. They
+don't replace native file-dialog checks or Maya comparison. History is unbounded
+and in-memory, documents don't persist history/camera state, and projected
+drawing isn't a depth-tested mesh renderer. See [development limits](development.md).

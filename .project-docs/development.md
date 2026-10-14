@@ -1,31 +1,50 @@
 # Development
 
 Install Rust 1.99.0 with Cargo, rustfmt and Clippy. The repository pins the same
-toolchain for local rustup users and eventual CI. No runtime environment variables
-or services are required. CI configuration is prepared locally; publication is
-still prohibited until the parity gate passes.
+toolchain for local rustup users and CI. The user has authorized publishing the
+early prototype, superseding the original first-push restriction. Full Maya
+functionality coverage and exact parity remain unmeasured and unmet.
 
 | Command | Purpose |
 | --- | --- |
-| `make check` | Check formatting, lint, run tests and build |
+| `cargo run --locked` | Build and launch the default desktop target |
+| `make check` | Check formatting, lint, run tests and build including desktop |
 | `make fmt` | Format Rust source |
-| `make test` | Run headless workflow tests |
+| `make test` | Run core workflow and desktop UI event tests |
+| `cargo test --locked --no-default-features` | Run core suites without the desktop target or a window |
 | `cargo test --locked --test scene_workflows` | Run scene tests only |
 | `cargo test --locked --test history_workflows` | Run command history tests only |
 | `cargo test --locked --test document_workflows` | Run native scene file tests only |
 | `cargo test --locked --test viewport_workflows` | Run camera/projection/picking tests only |
+| `cargo test --locked --no-default-features --test obj_workflows` | Run OBJ export tests only |
 
 [Build and security notes](builds.md) describe the prepared three-platform CI,
-dependency audit, code line coverage and pre-commit configuration. The workflows
-haven't run on GitHub because the publication gate still prohibits a push. Code
-line coverage is separate from Maya workflow coverage and remains unsuitable for
-a functionality badge or parity claim.
+dependency audit, code line coverage and pre-commit configuration. Remote CI and
+native platform results need retained run evidence rather than inference from
+the configured matrix. Code line coverage is separate from Maya workflow
+coverage and remains unsuitable for a functionality badge or parity claim.
 
 Optional local hooks: install `pre-commit`, then run `pre-commit install` and
 `pre-commit run --all-files`. Rust checks use the pinned repository toolchain.
 The lightweight private-key hook is not a comprehensive secret or dependency audit.
 
-The current crate is a headless library. `Scene` owns root nodes with stable IDs,
+The crate provides a reusable scene library and a native binary behind the
+default `desktop` feature. eframe 0.36.2/egui use wgpu with X11/Wayland enabled,
+and rfd supplies file dialogs. Desktop launch needs a window system and compatible
+graphics backend. Linux needs the selected window/dialog backends' system
+packages, and each claimed platform needs clean build and native interaction
+checks. Core-only commands use `--no-default-features` and require no display or
+runtime services.
+
+The prototype provides menus/shelf, Outliner, Channel Box, projected mesh drawing,
+selection, name/numeric edits, undo/redo, delete and framing. Alt-left drag orbits,
+middle drag pans, right drag/wheel dollies, and F frames the selected object when
+a text field isn't consuming keys. Ctrl/Cmd-Z undoes and Ctrl/Cmd-Shift-Z redoes.
+New/Open/Save As use the document API, with Save As requiring a new destination.
+GUI Export and unfinished modeling/animation/material controls are disabled.
+Docking and full Maya interaction parity aren't implemented or verified.
+
+`Scene` owns root nodes with stable IDs,
 read-only mesh access and validated rename/transform mutations. Cube and plane
 primitives are unit quads in a right-handed Y-up coordinate system. Transforms
 apply scale, XYZ Euler rotation in degrees, then translation. XYZ rotates about
@@ -34,7 +53,7 @@ convention as documented in its
 [transformation API](https://help.autodesk.com/cloudhelp/2026/ENU/MAYA-API-REF/cpp_ref/class_m_transformation_matrix.html).
 With glam column vectors this uses `RZ * RY * RX`. Negative and zero
 scales are supported; a reflected transform also reverses geometric winding.
-Hierarchy editing and a desktop window remain subsequent tasks.
+Hierarchy editing remains a subsequent task.
 
 ## History
 
@@ -58,19 +77,31 @@ uses pinned `craft-atomic::write_new` for staged create-new writes. Existing fil
 directories and symlinks are occupied destinations and aren't overwritten. Saving
 to a new path is required, and overwrite-save, recovery and autosave are pending.
 The file stores scene data and allocator reservations, without undo/redo stacks
-or camera state. The UI still needs to keep the current document unchanged on a
-failed open and handle unsaved edits.
+or camera state. File integration validates an opened scene before replacement,
+keeps the scene/drafts on malformed open and prompts Save As/Discard/Cancel for
+unsaved changes before New/Open/close. Tests exercise real files and UI events,
+but native file-dialog interaction remains unverified.
+
+## OBJ export
+
+`obj::export_new` writes world-space vertices and quad faces, with per-object
+index offsets and winding reversed for reflected transforms. Object names use
+UTF-8 percent encoding to avoid whitespace/directive injection. Export is staged
+to a new destination through `craft-atomic` and preserves occupied paths. It
+exports geometry only, without UVs, normals or materials. OBJ import and the GUI
+Export action aren't implemented.
 
 ## Camera core
 
 `src/viewport.rs` implements orbit/pan/dolly, perspective projection, rays,
-triangle-based nearest-object picking and framing. The current viewport tests
-compile this source directly, and it isn't exported through `src/lib.rs` yet.
+triangle-based nearest-object picking and framing. It is exported by the library
+and used by the native viewport UI.
 Coordinates are right-handed/Y-up. Normalized device coordinates use X/Y in
-[-1, 1], Y up and depth in [0, 1], and pixel mapping belongs to the future UI.
+[-1, 1], Y up and depth in [0, 1], with pixel mapping in `src/viewport_ui.rs`.
 Tests exercise projection/ray agreement, transforms, clipping, framing, nearest
-hits and invalid inputs. Native interaction, drawing and depth-tested rendering
-remain pending, as does comparison with Maya's camera controls.
+hits and invalid inputs. Current drawing sorts projected faces by average depth
+instead of using a depth-tested mesh renderer. Occlusion/clipping fidelity and
+comparison with Maya's camera controls remain pending.
 
 `glam` supplies vector/quaternion math, and `serde`/`serde_json` implement the
 document layer. Direct versions, the `craft-atomic` revision and the resolved

@@ -1,10 +1,18 @@
 # Implementation plan
 
-Status: planning. No pushes authorized before the publication gate.
+Status: early native prototype implemented, with remaining workflow and verification work below. The user has authorized prototype publication and merge to `main`.
 
 ## Product and publication gate
 
-Final objective: a Maya-identical Rust desktop application. Work locally in incremental commits. The user confirmed that the first GitHub push requires verified 80–90% coverage of **all Maya 2026 functionality, including simulation, rendering, scripting, and plugin compatibility**. Expand and pin the complete workflow inventory before reporting any percentage. Do not redefine it as a small modeling subset.
+Final objective: a Maya-identical Rust desktop application. Work in incremental commits. Historically the user required verified 80–90% coverage of **all Maya 2026 functionality, including simulation, rendering, scripting, and plugin compatibility** before the first GitHub push. The subsequent explicit instruction to push/merge to `main` supersedes that first-push restriction and authorizes early prototype publication. The full-functionality target and exact parity remain unmet acceptance requirements. Expand and pin the complete workflow inventory before reporting any percentage, without redefining it as a small modeling subset.
+
+The integrated prototype contains scene edits, command history, validated JSON
+documents, geometry-only OBJ export API, native shell and projected viewport.
+New/Open/Save As are connected to the UI, while GUI Export remains disabled.
+Native file-dialog interaction, cross-platform packaging and Maya reference
+comparison still need verification. The numbered tasks below retain the original
+implementation sequence and proof obligations rather than imply completion of
+every subcase.
 
 ## Atomic local tasks
 
@@ -27,4 +35,4 @@ Keep the same non-author reviewer across the two plan passes and each two-pass d
 
 ## Isolation
 
-After bootstrap commit and plan review, create a feature worktree under `~/.claude/worktrees/azteccraft-initial` and retain it. Record ownership and reviewed hashes in the session plan. Do not remove existing state. Do not configure or push a GitHub remote before the publication gate passes.
+Retain isolated worktrees for active changes, record ownership and reviewed hashes in the session plan, and preserve existing state. The current user instruction authorizes the prototype's GitHub publication and merge to `main`. Keep unsupported functionality and unmet acceptance criteria explicit when publishing.
