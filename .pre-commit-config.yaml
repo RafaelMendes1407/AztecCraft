@@ -38,3 +38,27 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: packaging-lint
+        name: Packaging Ruff check
+        entry: python -m ruff check --config packaging/pyproject.toml packaging
+        language: system
+        files: ^packaging/
+        pass_filenames: false
+      - id: packaging-format
+        name: Packaging format check
+        entry: python -m ruff format --check --config packaging/pyproject.toml packaging
+        language: system
+        files: ^packaging/
+        pass_filenames: false
+      - id: packaging-types
+        name: Packaging strict type check
+        entry: python -m mypy --config-file packaging/pyproject.toml packaging/package.py packaging/tests
+        language: system
+        files: ^packaging/
+        pass_filenames: false
+      - id: packaging-test
+        name: Packaging tests
+        entry: python -m pytest -c packaging/pyproject.toml packaging/tests
+        language: system
+        files: ^packaging/
+        pass_filenames: false
