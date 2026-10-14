@@ -1,0 +1,15 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: detect-private-key
+  - repo: local
+    hooks:
+      - id: rust-check
+        name: Rust formatting, Clippy, tests and build
+        entry: make check
+        language: system
+        pass_filenames: false
+        always_run: true

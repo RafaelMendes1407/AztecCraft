@@ -7,3 +7,8 @@ The project is at the reference and implementation stage. It is not a Maya repla
 Development happens in small local commits. **Do not push or create a GitHub repository until 80–90% of all Maya 2026 functionality is verified, including simulation, rendering, scripting, and plugin compatibility.** The intended owner is `cristim`. Expand and pin the full workflow inventory before reporting any coverage percentage. A modeling prototype does not pass this gate.
 
 See [the build specification](.project-docs/build-prompt.md), [the implementation plan](.project-docs/plan.md), and [known limitations](known-issues.md).
+
+The first headless slice creates cube/plane meshes and edits node names and
+transforms with stable IDs. Install Rust 1.99.0, then run `make check`.
+See [development instructions](.project-docs/development.md). A desktop window,
+history and scene files are not implemented in this slice.

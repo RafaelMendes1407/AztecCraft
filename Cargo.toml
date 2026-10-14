@@ -1,0 +1,18 @@
+[package]
+name = "azteccraft"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[dependencies]
+glam = { version = "=0.34.1", features = ["serde"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+
+[profile.dev]
+debug = 0
+incremental = false
+
+[profile.test]
+debug = 0
+incremental = false
