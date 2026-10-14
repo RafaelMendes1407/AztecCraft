@@ -1,10 +1,5 @@
+use super::test_fixtures::{cube, grouped_shape, shared_shape};
 use super::*;
-
-fn cube() -> (NativeScene, NodeId) {
-    let mut scene = NativeScene::default();
-    let id = scene.create(Primitive::Cube, "pCube1").unwrap();
-    (scene, id)
-}
 
 fn retain(scene: &mut NativeScene, bytes: &[u8], records: Vec<Range<usize>>) {
     scene.source = Some(SourceRetention {
@@ -215,38 +210,6 @@ fn retained_ranges_and_exhausted_allocators_are_checked() {
     );
     assert_eq!(scene, before);
     assert_eq!(scene.next_native_id, before.next_native_id);
-}
-
-fn shared_shape() -> (NativeScene, NodeId, NodeId, NativeId) {
-    let (mut scene, first) = cube();
-    let second = scene.create(Primitive::Plane, "instance").unwrap();
-    let original = scene.shapes[0].id;
-    let discarded = scene.shapes.pop().unwrap().id;
-    scene.dag.retain(|edge| edge.child != discarded);
-    scene.dag.push(DagEdge {
-        parent: Some(scene.node(second).unwrap().transform_id),
-        child: original,
-    });
-    scene.validate().unwrap();
-    (scene, first, second, original)
-}
-
-fn grouped_shape() -> (NativeScene, NodeId, NodeId, NativeId) {
-    let (mut scene, root) = cube();
-    let child = scene.create(Primitive::Cube, "child").unwrap();
-    let discarded = scene.shapes.remove(0).id;
-    let root_native = scene.node(root).unwrap().transform_id;
-    let child_native = scene.node(child).unwrap().transform_id;
-    scene.dag.retain(|edge| {
-        edge.child != discarded && !(edge.child == child_native && edge.parent.is_none())
-    });
-    scene.dag.push(DagEdge {
-        parent: Some(root_native),
-        child: child_native,
-    });
-    scene.validate().unwrap();
-    let shape = scene.shapes[0].id;
-    (scene, root, child, shape)
 }
 
 #[test]
@@ -550,4 +513,160 @@ fn each_pivot_independently_refuses_the_restricted_view_and_validates_finite_bit
             assert_eq!(scene.validate(), Err(NativeError::NonFinite));
         }
     }
+}
+
+fn shape_path(scene: &NativeScene, transform: NodeId, shape: NativeId) -> Vec<NativeId> {
+    vec![scene.node(transform).unwrap().transform_id(), shape]
+}
+
+#[test]
+fn native_path_order_is_numeric_and_admission_preserves_alternate_instances() {
+    assert!(NativeId::from_decimal("2").unwrap() < NativeId::from_decimal("10").unwrap());
+    let (scene, first, second, shape) = shared_shape();
+    let before = scene.clone();
+    for transform in [first, second] {
+        let path = shape_path(&scene, transform, shape);
+        let admission = scene.geometry_view_admission(&path).unwrap();
+        assert!(admission.visible());
+        assert!(!admission.appearance_incomplete());
+        let target = FaceTarget {
+            transform,
+            shape,
+            path,
+            face_index: 0,
+        };
+        assert_eq!(scene.resolve_face_target(&target).unwrap().id(), shape);
+    }
+    assert_eq!(scene, before);
+}
+
+#[test]
+fn admission_checks_all_path_facts_even_when_hidden_and_ignores_other_instances() {
+    use super::test_fixtures::{hidden_group, hidden_shape, unproved_group};
+    let (mut scene, root, child, shape) = hidden_group();
+    let path = vec![
+        scene.node(root).unwrap().transform_id(),
+        scene.node(child).unwrap().transform_id(),
+        shape,
+    ];
+    assert!(!scene.geometry_view_admission(&path).unwrap().visible());
+    scene.shapes[0].view.local_visibility = None;
+    assert_eq!(
+        scene.geometry_view_admission(&path),
+        Err(NativeError::UnsupportedView("unproved local visibility"))
+    );
+    let (scene, id) = hidden_shape();
+    assert!(
+        !scene
+            .geometry_view_admission(&shape_path(&scene, id, scene.shapes[0].id))
+            .unwrap()
+            .visible()
+    );
+    let (scene, root, child, shape) = unproved_group();
+    let before = scene.clone();
+    let path = vec![
+        scene.node(root).unwrap().transform_id(),
+        scene.node(child).unwrap().transform_id(),
+        shape,
+    ];
+    assert_eq!(
+        scene.geometry_view_admission(&path),
+        Err(NativeError::UnsupportedView("unproved geometry evaluation"))
+    );
+    assert_eq!(scene, before);
+    let (mut scene, first, second, shape) = shared_shape();
+    scene.nodes[1].view.geometry = None;
+    assert!(
+        scene
+            .geometry_view_admission(&shape_path(&scene, first, shape))
+            .unwrap()
+            .visible()
+    );
+    assert!(
+        scene
+            .geometry_view_admission(&shape_path(&scene, second, shape))
+            .is_err()
+    );
+}
+
+#[test]
+fn unknown_visibility_and_geometry_refuse_without_using_edit_permission_or_source() {
+    let (mut scene, id) = cube();
+    let path = shape_path(&scene, id, scene.shapes[0].id);
+    for shape in [false, true] {
+        let mut unknown = scene.clone();
+        let facts = if shape {
+            &mut unknown.shapes[0].view
+        } else {
+            &mut unknown.nodes[0].view
+        };
+        facts.local_visibility = None;
+        let before = unknown.clone();
+        assert_eq!(
+            unknown.geometry_view_admission(&path),
+            Err(NativeError::UnsupportedView("unproved local visibility"))
+        );
+        assert_eq!(unknown, before);
+        let facts = if shape {
+            &mut unknown.shapes[0].view
+        } else {
+            &mut unknown.nodes[0].view
+        };
+        facts.local_visibility = Some(true);
+        facts.geometry = None;
+        assert_eq!(
+            unknown.geometry_view_admission(&path),
+            Err(NativeError::UnsupportedView("unproved geometry evaluation"))
+        );
+    }
+    retain(
+        &mut scene,
+        b"appearance metadata",
+        std::iter::once(0..19).collect(),
+    );
+    scene.shapes[0]
+        .restrictions
+        .push("unproved UV update".into());
+    let admission = scene.geometry_view_admission(&path).unwrap();
+    assert!(admission.visible());
+    assert!(admission.appearance_incomplete());
+    scene.nodes[0]
+        .unsupported_transform
+        .push("unproved shear".into());
+    assert_eq!(
+        scene.geometry_view_admission(&path),
+        Err(NativeError::UnsupportedView("unproved transform effects"))
+    );
+}
+
+#[test]
+fn admission_and_face_resolution_share_exact_path_validation() {
+    let (scene, root, child, shape) = grouped_shape();
+    for path in [
+        vec![],
+        vec![shape],
+        vec![scene.node(child).unwrap().transform_id(), shape],
+        vec![scene.node(root).unwrap().transform_id(), shape],
+    ] {
+        assert_eq!(
+            scene.geometry_view_admission(&path),
+            Err(NativeError::InvalidInstancePath)
+        );
+        assert_eq!(
+            scene.resolve_face_target(&FaceTarget {
+                transform: child,
+                shape,
+                path,
+                face_index: 0
+            }),
+            Err(NativeError::InvalidInstancePath)
+        );
+    }
+    let (scene, id) = super::test_fixtures::pivoted_shape();
+    assert!(
+        scene
+            .geometry_view_admission(&shape_path(&scene, id, scene.shapes[0].id))
+            .unwrap()
+            .visible()
+    );
 }

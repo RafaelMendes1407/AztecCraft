@@ -6,7 +6,7 @@ use glam::Vec3;
 use std::{fmt, ops::Range};
 use uuid::Uuid;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NativeId(u64);
 
 impl NativeId {
@@ -162,6 +162,46 @@ impl Scalar {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+struct StaticGeometry;
+
+#[derive(Clone, Debug, PartialEq)]
+struct GeometryViewFacts {
+    geometry: Option<StaticGeometry>,
+    local_visibility: Option<bool>,
+}
+
+impl GeometryViewFacts {
+    fn authored() -> Self {
+        Self {
+            geometry: Some(StaticGeometry),
+            local_visibility: Some(true),
+        }
+    }
+    fn visible(&self) -> Result<bool, NativeError> {
+        self.geometry
+            .as_ref()
+            .ok_or(NativeError::UnsupportedView("unproved geometry evaluation"))?;
+        self.local_visibility
+            .ok_or(NativeError::UnsupportedView("unproved local visibility"))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GeometryViewAdmission {
+    visible: bool,
+    appearance_incomplete: bool,
+}
+
+impl GeometryViewAdmission {
+    pub fn visible(&self) -> bool {
+        self.visible
+    }
+    pub fn appearance_incomplete(&self) -> bool {
+        self.appearance_incomplete
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct NativeTransformNode {
     id: NodeId,
     transform_id: NativeId,
@@ -172,6 +212,7 @@ pub struct NativeTransformNode {
     scale_pivot: [Scalar; 3],
     restrictions: Vec<String>,
     unsupported_transform: Vec<String>,
+    view: GeometryViewFacts,
 }
 
 impl NativeTransformNode {
@@ -211,6 +252,7 @@ pub struct NativeMeshShape {
     name: String,
     mesh: NativeMesh,
     restrictions: Vec<String>,
+    view: GeometryViewFacts,
 }
 
 impl NativeMeshShape {
@@ -349,20 +391,28 @@ impl NativeScene {
         target: &FaceTarget,
     ) -> Result<&NativeMeshShape, NativeError> {
         let node = self.node(target.transform)?;
-        let shape = self.shape(target.shape)?;
-        if target.path.len() < 2
-            || target.path.last() != Some(&target.shape)
-            || target.path[target.path.len() - 2] != node.transform_id
+        self.shape(target.shape)?;
+        let shape = self.instance_shape(&target.path)?;
+        if shape.id != target.shape || target.path[target.path.len() - 2] != node.transform_id {
+            return Err(NativeError::InvalidInstancePath);
+        }
+        if target.face_index >= shape.mesh.faces().len() {
+            return Err(SceneError::MissingFace(target.face_index).into());
+        }
+        Ok(shape)
+    }
+    fn instance_shape(&self, path: &[NativeId]) -> Result<&NativeMeshShape, NativeError> {
+        self.validate()?;
+        if path.len() < 2
             || !self.dag.contains(&DagEdge {
                 parent: None,
-                child: target.path[0],
+                child: path[0],
             })
-            || target
-                .path
+            || path
                 .iter()
                 .enumerate()
-                .any(|(i, id)| target.path[..i].contains(id))
-            || target.path.windows(2).any(|pair| {
+                .any(|(i, id)| path[..i].contains(id))
+            || path.windows(2).any(|pair| {
                 !self.dag.contains(&DagEdge {
                     parent: Some(pair[0]),
                     child: pair[1],
@@ -371,10 +421,32 @@ impl NativeScene {
         {
             return Err(NativeError::InvalidInstancePath);
         }
-        if target.face_index >= shape.mesh.faces().len() {
-            return Err(SceneError::MissingFace(target.face_index).into());
+        self.shapes
+            .iter()
+            .find(|shape| Some(&shape.id) == path.last())
+            .ok_or(NativeError::InvalidInstancePath)
+    }
+    pub fn geometry_view_admission(
+        &self,
+        path: &[NativeId],
+    ) -> Result<GeometryViewAdmission, NativeError> {
+        let shape = self.instance_shape(path)?;
+        let mut visible = shape.view.visible()?;
+        for id in &path[..path.len() - 1] {
+            let node = self
+                .nodes
+                .iter()
+                .find(|node| node.transform_id == *id)
+                .ok_or(NativeError::InvalidInstancePath)?;
+            if !node.unsupported_transform.is_empty() {
+                return Err(NativeError::UnsupportedView("unproved transform effects"));
+            }
+            visible &= node.view.visible()?;
         }
-        Ok(shape)
+        Ok(GeometryViewAdmission {
+            visible,
+            appearance_incomplete: self.source.is_some(),
+        })
     }
     pub fn restore_authoring(&mut self, mut snapshot: Self) {
         snapshot.next_id = snapshot.next_id.max(self.next_id);
@@ -423,6 +495,7 @@ impl NativeScene {
             scale_pivot: [0.0; 3].map(Scalar::new),
             restrictions: Vec::new(),
             unsupported_transform: Vec::new(),
+            view: GeometryViewFacts::authored(),
         });
         self.shapes.push(NativeMeshShape {
             id: shape_id,
@@ -430,6 +503,7 @@ impl NativeScene {
             name: format!("{name}Shape"),
             mesh,
             restrictions: Vec::new(),
+            view: GeometryViewFacts::authored(),
         });
         self.dag.extend([
             DagEdge {
@@ -838,3 +912,6 @@ impl std::error::Error for NativeError {}
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+pub(crate) mod test_fixtures;
