@@ -161,3 +161,19 @@ private_fixture_manifest_partitions_all_bytes -- --ignored --exact`. It checks
 bounded file reads, byte sizes, chunk counts and complete partitions. Fixture
 SHA256 verification is a separate recorded precheck, not performed by that test.
 Private assets and manifests are not distributed or silently counted as tested.
+
+A private test-only semantic stage parses CREA, DBL3/DBLE, SLCT, CWFL, RELA and
+MESH records into immutable ranges over that same source. It checks counted
+blocks, the observed corner grammar, UV references, trailers and enclosing
+creation or selection ownership. Its metadata allocations have a checked
+32 MiB application limit. Endpoint flags, identity bytes and normal words stay
+unaltered; their unresolved meanings are not assigned authoring properties.
+The stage does not construct a canonical scene or enable Open or display.
+
+The ignored unit test
+`maya_binary::semantic::tests::private_wire_fixture_spans_and_mesh_trace_match_audit`
+requires both `AZTECCRAFT_MB_FIXTURE_MANIFEST` and `AZTECCRAFT_MB_WIRE_RANGES`.
+Run it explicitly with `cargo test --lib --no-default-features --locked
+maya_binary::semantic::tests::private_wire_fixture_spans_and_mesh_trace_match_audit
+-- --ignored --exact` after a separate SHA256 precheck. It compares source spans
+with an independent external trace and checks mesh loops in the fixtures.
