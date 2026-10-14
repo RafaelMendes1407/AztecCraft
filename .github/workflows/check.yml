@@ -62,6 +62,14 @@ jobs:
         run: cargo +1.99.0 clippy --workspace --all-targets --locked -- -D warnings
       - name: Test
         run: cargo +1.99.0 test --workspace --locked
+      - name: MCP production Clippy
+        run: cargo +1.99.0 clippy --workspace --all-targets --locked --features mcp -- -D warnings
+      - name: MCP client-test Clippy
+        run: cargo +1.99.0 clippy --workspace --all-targets --locked --features mcp-test-client -- -D warnings
+      - name: MCP official client and editor tests
+        run: cargo +1.99.0 test --workspace --locked --features mcp-test-client
+      - name: MCP production build
+        run: cargo +1.99.0 build --workspace --locked --features mcp
       - name: Install LLVM tools
         if: runner.os == 'Linux'
         run: rustup component add llvm-tools-preview --toolchain 1.99.0
