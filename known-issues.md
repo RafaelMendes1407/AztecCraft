@@ -58,14 +58,14 @@ With pinned egui 0.36.2, a previously unfocused name field drops a Text event de
 
 The MCP regression compares native and bridge-connected Editors with identical events and proves equal drafts, focus, scene and history, plus BusyEditing rejection of queued remote changes. It proves no additional input loss from MCP; it does not fix the native first-click defect. Native input handling and Maya reference comparison remain outstanding.
 
-## Native MCP background verification pending
+## Native MCP idle responsiveness remains unverified
 
 **Severity:** medium
 **Area:** native protocol lifecycle
 
 Native testing of the initial nine-tool server reproduced repeated reply deadlines while the window was backgrounded, including a deterministic minimized-window inspection failure. Desktop interaction resumed dispatch. Pinned eframe uses `App::logic` without `App::ui` for hidden windows; the original bridge drained only in UI rendering.
 
-The revised hidden logic path and retained-input guard pass actual trait-callback tests, including the previously failing hidden inspection/create regression. Native minimize/occlude, request, restore and close verification of the revised production artifact remains pending. This entry must be removed only after that native correction is verified; synthetic tests alone do not establish OS behavior.
+The revised hidden logic path and retained-input guard pass actual trait-callback tests, and [scoped macOS native verification](.project-docs/mcp-native-verification.md) confirmed minimized requests at source `36dffdf`. In the combined icon/MCP build `541c72c`, an idle request reached its UI reply deadline. A main-thread sample taken during investigation included Metal drawable acquisition, without establishing overlap with the timed-out request or a five-second acquisition wait; the next request recovered in the same process and scene token. The underlying cause remains unproven. These results do not establish unconditional idle/background responsiveness or other-platform native behavior.
 
 ## macOS application quit guard unverified
 
