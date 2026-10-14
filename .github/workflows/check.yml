@@ -1,13 +1,58 @@
 name: Rust checks
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: rust-checks-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
 jobs:
   check:
-    runs-on: ubuntu-latest
+    name: Check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          persist-credentials: false
       - name: Install pinned Rust
         run: rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt
-      - name: Check
-        run: make check
+      - name: Format
+        run: cargo +1.99.0 fmt --all -- --check
+      - name: Clippy
+        run: cargo +1.99.0 clippy --workspace --all-targets --locked -- -D warnings
+      - name: Test
+        run: cargo +1.99.0 test --workspace --locked
+      - name: Install coverage tools
+        if: runner.os == 'Linux'
+        run: |
+          rustup component add llvm-tools-preview --toolchain 1.99.0
+          cargo +1.99.0 install cargo-llvm-cov --version 0.9.1 --locked
+      - name: Headless library line coverage (80% minimum)
+        if: runner.os == 'Linux'
+        run: cargo +1.99.0 llvm-cov --workspace --all-targets --locked --ignore-filename-regex '(^|/)tests/' --fail-under-lines 80
+      - name: Release build
+        run: cargo +1.99.0 build --workspace --release --locked
+  audit:
+    name: Dependency security
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.99.0 --profile minimal
+      - name: Install pinned cargo-audit
+        run: cargo +1.99.0 install cargo-audit --version 0.22.0 --locked
+      - name: Audit locked dependencies
+        run: cargo +1.99.0 audit --deny warnings

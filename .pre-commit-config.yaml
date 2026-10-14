@@ -1,15 +1,40 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
       - id: detect-private-key
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: 2ca41cc1372d1e939a6a879f18cdc19fc1cac1ce # v8.30.0
+    hooks:
+      - id: gitleaks
   - repo: local
     hooks:
-      - id: rust-check
-        name: Rust formatting, Clippy, tests and build
-        entry: make check
+      - id: rustfmt
+        name: Rust format check
+        entry: cargo fmt --all -- --check
+        language: system
+        types: [rust]
+        pass_filenames: false
+        always_run: true
+      - id: rust-clippy
+        name: Rust Clippy
+        entry: cargo clippy --workspace --all-targets --locked -- -D warnings
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: rust-test
+        name: Rust tests
+        entry: cargo test --workspace --locked
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: rust-build
+        name: Rust build
+        entry: cargo build --workspace --locked
         language: system
         pass_filenames: false
         always_run: true
