@@ -21,7 +21,7 @@ The original first-push restriction required 80–90% of all Maya 2026 functiona
 **Severity:** high
 **Area:** desktop application
 
-The native prototype has been built and launched locally, but the complete native journey is still unverified. UI event tests cover file integration with real files, while native file-dialog interaction remains unverified. Cross-platform native interaction and packaged launch checks are also pending. The shell/viewport must pass the journey described in [the reference dossier](.project-docs/reference.md) before broad desktop support is claimed.
+The [macOS packaged-debug verification record](.project-docs/native-verification.md) now covers cube creation, numeric editing, Save As/Open, unsaved-change cancellation/discard, no-clobber protection and malformed-open state preservation at source commit `6c96345`. Native file choices were supplied through held panels using OCU `choose_file`; full interactive panel navigation remains pending. Windows/Linux native interaction and packaged launch checks, GUI OBJ export and Maya comparison also remain pending. Subsequent builds need their own verification before these results are generalized.
 
 ## Core authoring limits
 
