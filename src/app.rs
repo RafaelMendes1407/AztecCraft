@@ -1,4 +1,4 @@
-#[cfg(test)]
+#[cfg(any(test, feature = "mcp"))]
 use crate::editor_operations::{CameraInspection, NodeInspection, RemoteRequest, SceneInspection};
 use crate::editor_operations::{Operation, OperationError, OperationReply};
 use azteccraft::{
@@ -14,6 +14,8 @@ use uuid::Uuid;
 mod files;
 
 pub struct Editor {
+    #[cfg(feature = "mcp")]
+    mcp: Option<crate::mcp::UiBridge>,
     scene_token: Uuid,
     history: History,
     selected: Option<NodeId>,
@@ -29,6 +31,8 @@ pub struct Editor {
 impl Default for Editor {
     fn default() -> Self {
         Self {
+            #[cfg(feature = "mcp")]
+            mcp: None,
             scene_token: Uuid::new_v4(),
             history: History::default(),
             selected: None,
@@ -44,6 +48,11 @@ impl Default for Editor {
 }
 
 impl Editor {
+    #[cfg(feature = "mcp")]
+    pub(crate) fn start_mcp(&mut self, context: &egui::Context) -> std::io::Result<()> {
+        self.mcp = Some(crate::mcp::UiBridge::start(context.clone())?);
+        Ok(())
+    }
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let mut style = egui::Style {
             visuals: egui::Visuals::dark(),
@@ -153,7 +162,7 @@ impl Editor {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "mcp"))]
     pub(crate) fn remote_operation(
         &mut self,
         request: RemoteRequest,
@@ -166,7 +175,7 @@ impl Editor {
         });
         if matches!(request.operation, Operation::Inspect) {
             return Ok(OperationReply::Scene {
-                inspection: self.inspect(focused),
+                inspection: self.inspect(focused)?,
             });
         }
         if request.expected_scene_token != Some(self.scene_token) {
@@ -178,9 +187,10 @@ impl Editor {
         self.apply_operation(request.operation)
     }
 
-    #[cfg(test)]
-    fn inspect(&self, text_focused: bool) -> SceneInspection {
-        SceneInspection {
+    #[cfg(any(test, feature = "mcp"))]
+    fn inspect(&self, text_focused: bool) -> Result<SceneInspection, OperationError> {
+        crate::editor_operations::check_inspection_size(self.history.scene())?;
+        Ok(SceneInspection {
             scene_token: self.scene_token.to_string(),
             nodes: self
                 .history
@@ -206,7 +216,7 @@ impl Editor {
                 eye: self.camera.eye().to_array(),
                 distance: self.camera.distance(),
             },
-        }
+        })
     }
 
     fn apply_operation(&mut self, operation: Operation) -> Result<OperationReply, OperationError> {
@@ -292,10 +302,10 @@ impl Editor {
                     OperationReply::Changed
                 });
             }
-            #[cfg(test)]
+            #[cfg(any(test, feature = "mcp"))]
             Operation::Inspect => {
                 return Ok(OperationReply::Scene {
-                    inspection: self.inspect(false),
+                    inspection: self.inspect(false)?,
                 });
             }
         };
@@ -726,6 +736,17 @@ impl Editor {
         self.file_modal(ui.ctx());
         ui.ctx()
             .send_viewport_cmd(egui::ViewportCommand::Title(self.document_title()));
+        #[cfg(feature = "mcp")]
+        if let Some(mut bridge) = self.mcp.take() {
+            if bridge.take_close_request() {
+                self.request_close();
+                ui.ctx().request_repaint();
+            }
+            if !self.files.close_approved() {
+                bridge.dispatch(self, ui.ctx());
+                self.mcp = Some(bridge);
+            }
+        }
     }
 }
 
@@ -1240,3 +1261,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(all(test, feature = "mcp"))]
+#[path = "mcp_editor_tests.rs"]
+mod mcp_editor_tests;

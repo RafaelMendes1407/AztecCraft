@@ -18,6 +18,10 @@ enum FileAction {
 }
 
 impl FileState {
+    #[cfg(feature = "mcp")]
+    pub(super) fn close_approved(&self) -> bool {
+        self.close_approved
+    }
     pub(super) fn is_modal(&self) -> bool {
         self.pending.is_some()
     }

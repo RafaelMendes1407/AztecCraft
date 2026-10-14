@@ -1,4 +1,4 @@
-#[cfg(test)]
+#[cfg(any(test, feature = "mcp"))]
 use azteccraft::scene::Mesh;
 use azteccraft::{
     scene::{NodeId, Primitive, SceneError, Transform},
@@ -6,10 +6,15 @@ use azteccraft::{
 };
 use serde::Serialize;
 use std::fmt;
-#[cfg(test)]
+#[cfg(any(test, feature = "mcp"))]
 use uuid::Uuid;
 
-#[cfg(test)]
+#[cfg(feature = "mcp")]
+pub const MAX_NAME_BYTES: usize = 4096;
+#[cfg(any(test, feature = "mcp"))]
+pub const MAX_RESULT_BYTES: usize = 512 * 1024;
+
+#[cfg(any(test, feature = "mcp"))]
 pub const TOOL_NAMES: [&str; 9] = [
     "inspect_scene",
     "create_primitive",
@@ -23,7 +28,7 @@ pub const TOOL_NAMES: [&str; 9] = [
 ];
 
 pub enum Operation {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "mcp"))]
     Inspect,
     Create {
         primitive: Primitive,
@@ -52,7 +57,7 @@ pub enum Operation {
 #[derive(Debug, Serialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum OperationReply {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "mcp"))]
     Scene {
         inspection: SceneInspection,
     },
@@ -64,7 +69,7 @@ pub enum OperationReply {
 }
 
 #[derive(Debug, Serialize)]
-#[cfg(test)]
+#[cfg(any(test, feature = "mcp"))]
 pub struct SceneInspection {
     pub scene_token: String,
     pub nodes: Vec<NodeInspection>,
@@ -79,7 +84,7 @@ pub struct SceneInspection {
 }
 
 #[derive(Debug, Serialize)]
-#[cfg(test)]
+#[cfg(any(test, feature = "mcp"))]
 pub struct NodeInspection {
     pub id: String,
     pub name: String,
@@ -88,7 +93,7 @@ pub struct NodeInspection {
 }
 
 #[derive(Debug, Serialize)]
-#[cfg(test)]
+#[cfg(any(test, feature = "mcp"))]
 pub struct CameraInspection {
     pub target: [f32; 3],
     pub eye: [f32; 3],
@@ -97,10 +102,12 @@ pub struct CameraInspection {
 
 #[derive(Debug)]
 pub enum OperationError {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "mcp"))]
     BusyEditing,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "mcp"))]
     StaleScene,
+    #[cfg(any(test, feature = "mcp"))]
+    TooLarge,
     NoSelection,
     InvalidInput(String),
     Scene(SceneError),
@@ -110,12 +117,14 @@ pub enum OperationError {
 impl fmt::Display for OperationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            #[cfg(test)]
+            #[cfg(any(test, feature = "mcp"))]
             Self::BusyEditing => {
                 f.write_str("Finish the native text edit or dialog before remote mutation")
             }
-            #[cfg(test)]
+            #[cfg(any(test, feature = "mcp"))]
             Self::StaleScene => f.write_str("Scene token is stale; inspect the current document"),
+            #[cfg(any(test, feature = "mcp"))]
+            Self::TooLarge => f.write_str("Scene inspection exceeds the prototype response limit"),
             Self::NoSelection => f.write_str("Select an object before framing"),
             Self::InvalidInput(message) => f.write_str(message),
             Self::Scene(error) => error.fmt(f),
@@ -126,8 +135,30 @@ impl fmt::Display for OperationError {
 
 impl std::error::Error for OperationError {}
 
-#[cfg(test)]
+#[cfg(any(test, feature = "mcp"))]
 pub struct RemoteRequest {
     pub expected_scene_token: Option<Uuid>,
     pub operation: Operation,
+}
+
+#[cfg(any(test, feature = "mcp"))]
+pub fn check_inspection_size(scene: &azteccraft::scene::Scene) -> Result<(), OperationError> {
+    let limit = MAX_RESULT_BYTES / 2;
+    let mut estimated_bytes = 0_usize;
+    for node in scene.nodes() {
+        estimated_bytes = estimated_bytes
+            .saturating_add(1024)
+            .saturating_add(node.name().len())
+            .saturating_add(node.mesh().vertices().len().saturating_mul(12))
+            .saturating_add(
+                node.mesh()
+                    .faces()
+                    .len()
+                    .saturating_mul(4 * size_of::<usize>()),
+            );
+        if estimated_bytes > limit {
+            return Err(OperationError::TooLarge);
+        }
+    }
+    Ok(())
 }
