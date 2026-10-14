@@ -21,7 +21,16 @@ The user requires 80–90% of all Maya 2026 functionality before the first push,
 **Severity:** high
 **Area:** desktop application
 
-The current checkout exposes a headless scene library and has no executable target. Native desktop startup, interaction and packaging haven't been verified on macOS, Windows or Linux. The planned shell/viewport must pass the native journey described in [the reference dossier](.project-docs/reference.md) before desktop support is claimed.
+The current checkout exposes a headless scene/history/document library and a tested camera core, with no executable target. Native desktop startup, interaction and packaging haven't been verified on macOS, Windows or Linux. The planned shell/viewport must pass the native journey described in [the reference dossier](.project-docs/reference.md) before desktop support is claimed.
+
+## Core authoring limits
+
+**Severity:** medium
+**Area:** history, documents and viewport
+
+Undo/redo stores unbounded scene snapshots in memory, so memory grows with scene size and edit count. JSON v1 stores canonical cube/plane scene data and allocator reservations, with a 16 MiB limit and create-new/no-clobber writes. Undo/redo stacks and camera state aren't persisted, and overwrite-save, recovery and autosave are pending. Arbitrary topology and external formats aren't supported.
+
+The camera core is tested as mathematical code, compiled directly by its workflow tests. UI integration, native navigation, drawing and depth-tested rendering remain pending. These limits are described in [development instructions](.project-docs/development.md).
 
 ## Existing Maya plug-in compatibility unverified
 

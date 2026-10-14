@@ -27,9 +27,9 @@ Inspected upstream manifests on 2026-10-14:
 - https://github.com/storytold/photocraft/blob/main/Cargo.toml: modular Rust workspace, eframe/egui 0.36, headless document/operations layers, pinned craft-ui revision `5c874d51eeb3de70e735c8ce87a59a7dedd47675`.
 - https://docs.rs/eframe/0.36.2/eframe/: current native application API.
 
-Additional source inspection: `crates/atomic/src/lib.rs` provides `atomic_write` and create-new `write_new` with same-directory staging, content flush, cleanup and permission handling. `crates/ui/src/lib.rs` exports layout, preferences, render, theme and widgets. Evaluate a pinned craft-atomic dependency for persistence rather than copying its save engine; inspect the chosen revision and its license before adoption. Only the UI module exports were inspected, not suitability of each widget.
+Additional source inspection: `crates/atomic/src/lib.rs` provides `atomic_write` and create-new `write_new` with same-directory staging, content flush, cleanup and permission handling. The document layer now adopts `craft-atomic` at revision `457a078809690994b22debdffb703ff36d3129df` as a dependency for create-new writes. `crates/ui/src/lib.rs` exports layout, preferences, render, theme and widgets. Only the UI module exports were inspected, not suitability of each widget.
 
-No upstream implementation code has been copied into the current scene-library slice. Document/editor functionality is planned, while the headless scene library already exists. Evaluate eframe/egui provisionally for a native fidelity spike, with scene data independent of UI and rendering. Manifests alone don't establish reuse suitability. Upstream licenses don't select AztecCraft's distribution license.
+Upstream atomic-save code is consumed as a pinned dependency. The scene/history/document core and camera source exist, while a native editor is still planned. Evaluate eframe/egui provisionally for a native fidelity spike, with scene data independent of UI and rendering. Manifests alone don't establish reuse suitability. Upstream licenses don't select AztecCraft's distribution license.
 
 ## Fidelity gate
 

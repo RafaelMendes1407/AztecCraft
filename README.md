@@ -2,7 +2,7 @@
 
 AztecCraft is a Rust desktop 3D authoring project with the objective of reproducing Autodesk Maya 2026's interface and behavior, including modeling, animation, rigging, simulation, rendering, scripting and existing plug-in compatibility.
 
-The current checkout contains a headless scene library. It creates cube and plane meshes, keeps stable node IDs, validates rename/transform edits and calculates transformed vertices. There isn't a desktop application to launch yet, and overall Maya coverage is unmeasured.
+The current checkout contains a headless scene library with undo/redo and validated JSON scene files, plus a tested camera/projection/picking core awaiting desktop integration. There isn't a desktop application to launch yet, and overall Maya coverage is unmeasured.
 
 [Current capabilities](#current-capabilities) · [Build and test](#build-and-test) · [Roadmap](#roadmap-and-publication) · [Project documentation](.project-docs/INDEX.md)
 
@@ -13,8 +13,11 @@ The current checkout contains a headless scene library. It creates cube and plan
 | Scene data | Cube/plane topology, stable IDs, rename, remove and transform edits | [Six scene workflow tests](tests/scene_workflows.rs) |
 | Transform math | Scale, fixed-axis XYZ Euler rotation in degrees, then translation, including zero/negative scales | [Coordinate conventions](.project-docs/development.md) and scene tests |
 | Invalid edits | Reject invalid names, non-finite transforms and transformed-coordinate overflow without changing the scene | Scene tests |
+| History | Undo/redo create, remove, rename and transform commands, with failed/no-op edits preserving history | [History workflow tests](tests/history_workflows.rs) |
+| Native scene files | JSON v1 for canonical cube/plane meshes, validated load, 16 MiB limit and create-new saves that preserve occupied destinations | [Document workflow tests](tests/document_workflows.rs) |
+| Camera math | Orbit/pan/dolly, perspective projection, rays, nearest-geometry picking and framing | [Viewport workflow tests](tests/viewport_workflows.rs), with native interaction still pending |
 | Desktop shell and viewport | Planned | Native startup, navigation, picking and panel checks required |
-| History, scene files and export | Planned | Undo/redo, validated persistence and OBJ export are the next local slices |
+| OBJ export and Maya formats | Pending | The JSON document format doesn't implement OBJ or Maya compatibility |
 | Modeling, UVs, animation and rigging | Full workflows pending | [Implementation plan](.project-docs/plan.md) |
 | Materials, simulation and rendering | Pending | Reference scenes and output comparisons required |
 | Maya formats, scripting and plug-ins | Pending | Existing scene/script/plug-in fixtures required |
@@ -40,7 +43,9 @@ There are no runtime services or environment variables for this slice. `cargo ru
 
 ## Architecture and platforms
 
-[src/scene.rs](src/scene.rs) owns scene state and validation, and [src/lib.rs](src/lib.rs) exposes the library. `glam` supplies vector/quaternion math, and `serde` is present for the planned document layer. The scene model remains independent of the future UI and viewport so editing and file handling can be tested without a window.
+[src/scene.rs](src/scene.rs) owns validated scene state, [src/history.rs](src/history.rs) applies commands using scene snapshots, and [src/document.rs](src/document.rs) loads and saves the native JSON format through pinned `craft-atomic` create-new writes. [src/viewport.rs](src/viewport.rs) contains the camera math and is compiled directly by its tests while UI integration is pending. The scene model remains independent of the future window so editing and file handling can be tested headlessly.
+
+History is in-memory and unbounded, and isn't stored in scene files. Loading currently accepts only the canonical cube/plane topology, and saving requires a new destination. The camera core doesn't provide a depth-tested renderer or establish Maya navigation parity. See [the detailed limits](.project-docs/development.md).
 
 There are no verified desktop platform builds or packages yet. macOS, Windows and Linux desktop support must each be established through native build and interaction checks. The provisional UI approach is eframe/egui, with docking, focus, marking menus and Maya-style editing still to be evaluated against the reference.
 
@@ -48,8 +53,8 @@ There are no verified desktop platform builds or packages yet. macOS, Windows an
 
 Development proceeds through small, independently reviewed local commits:
 
-1. Extend the scene library with undo/redo, validated save/open and OBJ export.
-2. Connect a native shell and viewport to those operations, and verify the create/edit/undo/save/reopen/export journey on the desktop.
+1. Add OBJ export to the implemented scene/history/document core.
+2. Connect a native shell and viewport to the tested operations, and verify the create/edit/undo/save/reopen/export journey on the desktop.
 3. Build reviewed modeling, UV, animation and rigging slices, followed by materials, simulation, rendering, interchange, scripting and extensions.
 4. Compare the complete audited workflow inventory with the pinned Maya build, including existing plug-ins and all major domains.
 
