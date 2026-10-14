@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 mod app;
+mod editor_operations;
 mod viewport_ui;
 
 fn main() -> eframe::Result {

@@ -5,6 +5,16 @@ use std::fmt;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NodeId(u64);
 
+impl NodeId {
+    pub fn to_decimal(self) -> String {
+        self.0.to_string()
+    }
+
+    pub fn from_decimal(value: &str) -> Result<Self, std::num::ParseIntError> {
+        value.parse::<u64>().map(Self)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Primitive {
     Cube,

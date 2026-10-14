@@ -1,3 +1,6 @@
+#[cfg(test)]
+use crate::editor_operations::{CameraInspection, NodeInspection, RemoteRequest, SceneInspection};
+use crate::editor_operations::{Operation, OperationError, OperationReply};
 use azteccraft::{
     history::{Command, EditOutcome, History},
     scene::{NodeId, Primitive, Transform},
@@ -5,11 +8,13 @@ use azteccraft::{
 };
 use eframe::egui::{self, Color32, Key, RichText};
 use glam::Vec3;
+use uuid::Uuid;
 
 #[path = "file_ui.rs"]
 mod files;
 
 pub struct Editor {
+    scene_token: Uuid,
     history: History,
     selected: Option<NodeId>,
     camera: Camera,
@@ -24,6 +29,7 @@ pub struct Editor {
 impl Default for Editor {
     fn default() -> Self {
         Self {
+            scene_token: Uuid::new_v4(),
             history: History::default(),
             selected: None,
             camera: Camera::default(),
@@ -78,30 +84,58 @@ impl Editor {
     }
 
     fn select(&mut self, selected: Option<NodeId>) {
-        if !self.commit_pending() {
-            return;
-        }
-        self.selected = selected;
-        self.sync_fields();
+        self.native_operation(Operation::Select(selected));
     }
 
     fn execute(&mut self, command: Command) {
-        if !self.commit_pending() {
-            return;
-        }
-        match self.history.execute(command) {
-            Ok(outcome) => {
-                if let EditOutcome::Created(id) = outcome {
-                    self.selected = Some(id);
+        let operation = match command {
+            Command::Create { primitive, name } => Operation::Create {
+                primitive,
+                name: Some(name),
+            },
+            Command::Remove(id) => Operation::Delete(id),
+            Command::Rename { id, name } => Operation::Rename { id, name },
+            Command::SetTransform { id, transform } => Operation::SetTransform { id, transform },
+        };
+        self.native_operation(operation);
+    }
+
+    fn create(&mut self, primitive: Primitive) {
+        self.native_operation(Operation::Create {
+            primitive,
+            name: None,
+        });
+    }
+
+    fn history_step(&mut self, redo: bool) {
+        self.native_operation(if redo {
+            Operation::Redo
+        } else {
+            Operation::Undo
+        });
+    }
+
+    fn frame_selected(&mut self) {
+        self.native_operation(Operation::FrameSelected);
+    }
+
+    fn native_operation(&mut self, operation: Operation) {
+        let status = match operation {
+            Operation::Select(_) | Operation::FrameSelected => None,
+            Operation::Undo => Some("Undo"),
+            Operation::Redo => Some("Redo"),
+            _ => Some("Scene edited"),
+        };
+        match self.apply_operation(operation) {
+            Ok(reply) => {
+                if let Some(status) = status {
+                    self.status = match reply {
+                        OperationReply::Unchanged => "No change",
+                        _ => status,
+                    }
+                    .into();
+                    self.error = false;
                 }
-                self.sync_fields();
-                self.status = if outcome == EditOutcome::Unchanged {
-                    "No change"
-                } else {
-                    "Scene edited"
-                }
-                .into();
-                self.error = false;
             }
             Err(error) => {
                 self.status = error.to_string();
@@ -110,58 +144,182 @@ impl Editor {
         }
     }
 
-    fn create(&mut self, primitive: Primitive) {
-        if !self.commit_pending() {
-            return;
-        }
-        let base = match primitive {
-            Primitive::Cube => "pCube",
-            Primitive::Plane => "pPlane",
-        };
-        let mut suffix = 1;
-        while self
-            .history
-            .scene()
-            .nodes()
-            .iter()
-            .any(|n| n.name() == format!("{base}{suffix}"))
-        {
-            suffix += 1;
-        }
-        self.execute(Command::Create {
-            primitive,
-            name: format!("{base}{suffix}"),
+    #[cfg(test)]
+    pub(crate) fn remote_operation(
+        &mut self,
+        request: RemoteRequest,
+        ctx: &egui::Context,
+    ) -> Result<OperationReply, OperationError> {
+        let focused = ctx.memory(|memory| {
+            memory.focused().is_some_and(|id| {
+                id == name_edit_id() || (0..9).any(|index| id == channel_edit_id(index))
+            })
         });
+        if matches!(request.operation, Operation::Inspect) {
+            return Ok(OperationReply::Scene {
+                inspection: self.inspect(focused),
+            });
+        }
+        if request.expected_scene_token != Some(self.scene_token) {
+            return Err(OperationError::StaleScene);
+        }
+        if self.files.is_modal() || focused || self.has_draft() {
+            return Err(OperationError::BusyEditing);
+        }
+        self.apply_operation(request.operation)
     }
 
-    fn history_step(&mut self, redo: bool) {
-        if !self.commit_pending() {
-            return;
+    #[cfg(test)]
+    fn inspect(&self, text_focused: bool) -> SceneInspection {
+        SceneInspection {
+            scene_token: self.scene_token.to_string(),
+            nodes: self
+                .history
+                .scene()
+                .nodes()
+                .iter()
+                .map(|node| NodeInspection {
+                    id: node.id().to_decimal(),
+                    name: node.name().into(),
+                    transform: node.transform(),
+                    mesh: node.mesh().clone(),
+                })
+                .collect(),
+            selected_node: self.selected.map(NodeId::to_decimal),
+            can_undo: self.history.can_undo(),
+            can_redo: self.history.can_redo(),
+            dirty: self.is_dirty(),
+            has_draft: self.has_draft(),
+            text_focused,
+            modal: self.files.is_modal(),
+            camera: CameraInspection {
+                target: self.camera.target().to_array(),
+                eye: self.camera.eye().to_array(),
+                distance: self.camera.distance(),
+            },
         }
-        let changed = if redo {
-            self.history.redo()
-        } else {
-            self.history.undo()
+    }
+
+    fn apply_operation(&mut self, operation: Operation) -> Result<OperationReply, OperationError> {
+        if let Operation::Select(Some(id)) = &operation {
+            self.history
+                .scene()
+                .node(*id)
+                .map_err(OperationError::Scene)?;
+        }
+        if !self.commit_pending() {
+            return Err(OperationError::InvalidInput(self.status.clone()));
+        }
+        let command = match operation {
+            Operation::Create { primitive, name } => {
+                let name = name.unwrap_or_else(|| {
+                    let base = match primitive {
+                        Primitive::Cube => "pCube",
+                        Primitive::Plane => "pPlane",
+                    };
+                    let mut suffix = 1;
+                    while self
+                        .history
+                        .scene()
+                        .nodes()
+                        .iter()
+                        .any(|n| n.name() == format!("{base}{suffix}"))
+                    {
+                        suffix += 1;
+                    }
+                    format!("{base}{suffix}")
+                });
+                Command::Create { primitive, name }
+            }
+            Operation::Rename { id, name } => Command::Rename { id, name },
+            Operation::SetTransform { id, transform } => Command::SetTransform { id, transform },
+            Operation::Delete(id) => Command::Remove(id),
+            Operation::Select(selected) => {
+                let changed = self.selected != selected;
+                self.selected = selected;
+                self.sync_fields();
+                return Ok(if changed {
+                    OperationReply::Changed
+                } else {
+                    OperationReply::Unchanged
+                });
+            }
+            Operation::Undo | Operation::Redo => {
+                let changed = if matches!(operation, Operation::Redo) {
+                    self.history.redo()
+                } else {
+                    self.history.undo()
+                };
+                self.sync_fields();
+                return Ok(if changed {
+                    OperationReply::Changed
+                } else {
+                    OperationReply::Unchanged
+                });
+            }
+            Operation::FrameSelected => {
+                let id = self.selected.ok_or(OperationError::NoSelection)?;
+                let node = self
+                    .history
+                    .scene()
+                    .node(id)
+                    .map_err(OperationError::Scene)?;
+                let before = self.camera.clone();
+                self.camera
+                    .frame(node, self.aspect)
+                    .map_err(OperationError::Camera)?;
+                return Ok(if self.camera == before {
+                    OperationReply::Unchanged
+                } else {
+                    OperationReply::Changed
+                });
+            }
+            #[cfg(test)]
+            Operation::Inspect => {
+                return Ok(OperationReply::Scene {
+                    inspection: self.inspect(false),
+                });
+            }
         };
-        if changed {
-            self.sync_fields();
-            self.status = if redo { "Redo" } else { "Undo" }.into();
-            self.error = false;
+        let outcome = self
+            .history
+            .execute(command)
+            .map_err(OperationError::Scene)?;
+        if let EditOutcome::Created(id) = outcome {
+            self.selected = Some(id);
         }
+        self.sync_fields();
+        Ok(match outcome {
+            EditOutcome::Created(id) => OperationReply::Created {
+                node_id: id.to_decimal(),
+            },
+            EditOutcome::Changed => OperationReply::Changed,
+            EditOutcome::Unchanged => OperationReply::Unchanged,
+        })
     }
 
-    fn frame_selected(&mut self) {
-        if !self.commit_pending() {
-            return;
-        }
-        if let Some(node) = self
-            .selected
+    fn has_draft(&self) -> bool {
+        self.selected
             .and_then(|id| self.history.scene().node(id).ok())
-            && let Err(error) = self.camera.frame(node, self.aspect)
-        {
-            self.status = error.to_string();
-            self.error = true;
-        }
+            .is_some_and(|node| {
+                let t = node.transform();
+                let values = [
+                    t.translation.x,
+                    t.translation.y,
+                    t.translation.z,
+                    t.rotation_degrees.x,
+                    t.rotation_degrees.y,
+                    t.rotation_degrees.z,
+                    t.scale.x,
+                    t.scale.y,
+                    t.scale.z,
+                ];
+                node.name() != self.name
+                    || values
+                        .iter()
+                        .zip(&self.channels)
+                        .any(|(value, draft)| draft.parse::<f32>().ok() != Some(*value))
+            })
     }
 
     fn shortcuts(&mut self, ctx: &egui::Context) {
@@ -408,8 +566,7 @@ impl Editor {
             return;
         };
         ui.label("Object name");
-        let response =
-            ui.add(egui::TextEdit::singleline(&mut self.name).id(egui::Id::new("node_name")));
+        let response = ui.add(egui::TextEdit::singleline(&mut self.name).id(name_edit_id()));
         let mut apply = response.lost_focus();
         ui.separator();
         egui::Grid::new("transform_channels")
@@ -434,7 +591,7 @@ impl Editor {
                     ui.label(*label);
                     let response = ui.add(
                         egui::TextEdit::singleline(value)
-                            .id(egui::Id::new(("channel", index)))
+                            .id(channel_edit_id(index))
                             .desired_width(100.0),
                     );
                     apply |= response.lost_focus();
@@ -541,9 +698,277 @@ fn unsupported(ui: &mut egui::Ui, label: &str) {
         .on_disabled_hover_text("Not implemented in this build");
 }
 
+fn name_edit_id() -> egui::Id {
+    egui::Id::new("node_name")
+}
+
+fn channel_edit_id(index: usize) -> egui::Id {
+    egui::Id::new(("channel", index))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn remote(editor: &mut Editor, operation: Operation) -> Result<OperationReply, OperationError> {
+        editor.remote_operation(
+            RemoteRequest {
+                expected_scene_token: Some(editor.scene_token),
+                operation,
+            },
+            &egui::Context::default(),
+        )
+    }
+
+    #[test]
+    fn remote_operations_share_native_scene_selection_history_and_camera() {
+        let mut editor = Editor::default();
+        assert_eq!(crate::editor_operations::TOOL_NAMES.len(), 9);
+        let OperationReply::Created { node_id } = remote(
+            &mut editor,
+            Operation::Create {
+                primitive: Primitive::Cube,
+                name: Some("remote_cube".into()),
+            },
+        )
+        .unwrap() else {
+            panic!("expected created object")
+        };
+        let id = NodeId::from_decimal(&node_id).unwrap();
+        assert_eq!(editor.selected, Some(id));
+        remote(
+            &mut editor,
+            Operation::Rename {
+                id,
+                name: "edited".into(),
+            },
+        )
+        .unwrap();
+        let transform = Transform {
+            translation: Vec3::new(4.0, 2.0, 1.0),
+            ..Default::default()
+        };
+        assert!(matches!(
+            remote(&mut editor, Operation::SetTransform { id, transform }).unwrap(),
+            OperationReply::Changed
+        ));
+        assert!(matches!(
+            remote(&mut editor, Operation::SetTransform { id, transform }).unwrap(),
+            OperationReply::Unchanged
+        ));
+        remote(&mut editor, Operation::FrameSelected).unwrap();
+        assert!(editor.camera.target().distance(transform.translation) < 0.01);
+        remote(&mut editor, Operation::Select(None)).unwrap();
+        assert_eq!(editor.selected, None);
+        remote(&mut editor, Operation::Select(Some(id))).unwrap();
+        assert_eq!(editor.name, "edited");
+        editor.history_step(false);
+        assert_eq!(
+            editor.history.scene().node(id).unwrap().transform(),
+            Transform::default()
+        );
+        remote(&mut editor, Operation::Redo).unwrap();
+        assert_eq!(
+            editor.history.scene().node(id).unwrap().transform(),
+            transform
+        );
+        editor.channels[0] = "6".into();
+        editor.create(Primitive::Plane);
+        assert_eq!(
+            editor
+                .history
+                .scene()
+                .node(id)
+                .unwrap()
+                .transform()
+                .translation
+                .x,
+            6.0
+        );
+        let OperationReply::Scene { inspection } = remote(&mut editor, Operation::Inspect).unwrap()
+        else {
+            panic!("expected inspection")
+        };
+        assert_eq!(inspection.nodes.len(), 2);
+        assert_eq!(inspection.nodes[0].id, node_id);
+        assert_eq!(inspection.nodes[0].transform.translation.x, 6.0);
+        assert!(inspection.dirty && inspection.can_undo);
+        assert!(!inspection.has_draft);
+        remote(&mut editor, Operation::Delete(id)).unwrap();
+        remote(&mut editor, Operation::Undo).unwrap();
+        assert_eq!(editor.history.scene().node(id).unwrap().name(), "edited");
+    }
+
+    #[test]
+    fn remote_busy_and_stale_denials_preserve_human_state() {
+        let mut editor = Editor::default();
+        editor.create(Primitive::Cube);
+        let id = editor.selected.unwrap();
+        let before = editor.history.scene().clone();
+        let camera = editor.camera.eye();
+        for draft in ["2", "nan"] {
+            editor.channels[0] = draft.into();
+            assert!(matches!(
+                remote(&mut editor, Operation::Delete(id)),
+                Err(OperationError::BusyEditing)
+            ));
+            assert_eq!(editor.history.scene(), &before);
+            assert_eq!(editor.channels[0], draft);
+            assert_eq!(editor.selected, Some(id));
+            assert_eq!(editor.camera.eye(), camera);
+            assert!(editor.history.can_undo());
+            assert!(!editor.history.can_redo());
+        }
+        let old = Uuid::new_v4();
+        assert!(matches!(
+            editor.remote_operation(
+                RemoteRequest {
+                    expected_scene_token: Some(old),
+                    operation: Operation::Undo,
+                },
+                &egui::Context::default()
+            ),
+            Err(OperationError::StaleScene)
+        ));
+        assert_eq!(editor.channels[0], "nan");
+        editor.sync_fields();
+        let ctx = egui::Context::default();
+        ctx.memory_mut(|memory| memory.request_focus(egui::Id::new("node_name")));
+        assert!(matches!(
+            editor.remote_operation(
+                RemoteRequest {
+                    expected_scene_token: Some(editor.scene_token),
+                    operation: Operation::Delete(id),
+                },
+                &ctx
+            ),
+            Err(OperationError::BusyEditing)
+        ));
+        editor.request_new();
+        assert!(matches!(
+            remote(&mut editor, Operation::Undo),
+            Err(OperationError::BusyEditing)
+        ));
+        let OperationReply::Scene { inspection } = remote(&mut editor, Operation::Inspect).unwrap()
+        else {
+            panic!("expected inspection")
+        };
+        assert!(inspection.modal);
+        assert_eq!(editor.history.scene(), &before);
+    }
+
+    #[test]
+    fn remote_errors_and_noop_do_not_change_selection_or_history() {
+        let mut editor = Editor::default();
+        assert!(matches!(
+            remote(&mut editor, Operation::Undo).unwrap(),
+            OperationReply::Unchanged
+        ));
+        assert!(matches!(
+            remote(&mut editor, Operation::FrameSelected),
+            Err(OperationError::NoSelection)
+        ));
+        editor.create(Primitive::Cube);
+        let id = editor.selected.unwrap();
+        let before = editor.history.scene().clone();
+        let missing = NodeId::from_decimal("999").unwrap();
+        assert!(matches!(
+            remote(&mut editor, Operation::Select(Some(missing))),
+            Err(OperationError::Scene(_))
+        ));
+        assert!(matches!(
+            remote(
+                &mut editor,
+                Operation::Rename {
+                    id,
+                    name: "".into()
+                }
+            ),
+            Err(OperationError::Scene(_))
+        ));
+        let transform = Transform {
+            scale: Vec3::splat(f32::INFINITY),
+            ..Default::default()
+        };
+        assert!(matches!(
+            remote(&mut editor, Operation::SetTransform { id, transform }),
+            Err(OperationError::Scene(_))
+        ));
+        assert_eq!(editor.history.scene(), &before);
+        assert_eq!(editor.selected, Some(id));
+        editor.history_step(false);
+        assert!(editor.history.scene().nodes().is_empty());
+    }
+
+    #[test]
+    fn remote_guard_distinguishes_rendered_buttons_from_name_and_channel_text_focus() {
+        let mut editor = Editor::default();
+        editor.create(Primitive::Cube);
+        let id = editor.selected.unwrap();
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            editor.render(ui);
+            ui.button("Focusable native control").request_focus();
+        });
+        output.textures_delta.clear();
+        assert!(ctx.memory(|memory| memory.focused().is_some()));
+        let OperationReply::Scene { inspection } = editor
+            .remote_operation(
+                RemoteRequest {
+                    expected_scene_token: None,
+                    operation: Operation::Inspect,
+                },
+                &ctx,
+            )
+            .unwrap()
+        else {
+            panic!("expected inspection")
+        };
+        assert!(!inspection.text_focused);
+        editor
+            .remote_operation(
+                RemoteRequest {
+                    expected_scene_token: Some(editor.scene_token),
+                    operation: Operation::Rename {
+                        id,
+                        name: "permitted".into(),
+                    },
+                },
+                &ctx,
+            )
+            .unwrap();
+        assert_eq!(editor.history.scene().node(id).unwrap().name(), "permitted");
+        let before = editor.history.scene().clone();
+        for text_id in [name_edit_id(), channel_edit_id(0)] {
+            ctx.memory_mut(|memory| memory.request_focus(text_id));
+            frame(&mut editor, &ctx, vec![]);
+            assert_eq!(ctx.memory(|memory| memory.focused()), Some(text_id));
+            let OperationReply::Scene { inspection } = editor
+                .remote_operation(
+                    RemoteRequest {
+                        expected_scene_token: None,
+                        operation: Operation::Inspect,
+                    },
+                    &ctx,
+                )
+                .unwrap()
+            else {
+                panic!("expected inspection")
+            };
+            assert!(inspection.text_focused);
+            assert!(matches!(
+                editor.remote_operation(
+                    RemoteRequest {
+                        expected_scene_token: Some(editor.scene_token),
+                        operation: Operation::Undo,
+                    },
+                    &ctx
+                ),
+                Err(OperationError::BusyEditing)
+            ));
+            assert_eq!(editor.history.scene(), &before);
+        }
+    }
 
     fn key(key: Key) -> egui::Event {
         egui::Event::Key {

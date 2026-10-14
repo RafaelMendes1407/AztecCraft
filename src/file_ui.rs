@@ -38,30 +38,8 @@ impl Editor {
         )
     }
 
-    fn is_dirty(&self) -> bool {
-        self.history.scene() != &self.files.saved
-            || self
-                .selected
-                .and_then(|id| self.history.scene().node(id).ok())
-                .is_some_and(|node| {
-                    let t = node.transform();
-                    let values = [
-                        t.translation.x,
-                        t.translation.y,
-                        t.translation.z,
-                        t.rotation_degrees.x,
-                        t.rotation_degrees.y,
-                        t.rotation_degrees.z,
-                        t.scale.x,
-                        t.scale.y,
-                        t.scale.z,
-                    ];
-                    node.name() != self.name
-                        || values
-                            .iter()
-                            .zip(&self.channels)
-                            .any(|(value, draft)| draft.parse::<f32>().ok() != Some(*value))
-                })
+    pub(super) fn is_dirty(&self) -> bool {
+        self.history.scene() != &self.files.saved || self.has_draft()
     }
 
     fn request_file_action(&mut self, action: FileAction) {
@@ -157,6 +135,7 @@ impl Editor {
     }
 
     fn replace_scene(&mut self, scene: Scene, path: Option<PathBuf>) {
+        self.scene_token = uuid::Uuid::new_v4();
         self.files.saved = scene.clone();
         self.files.path = path;
         self.history = History::new(scene);
@@ -290,6 +269,57 @@ mod tests {
         );
         assert!(!editor.history.can_undo());
         assert!(!editor.is_dirty());
+    }
+
+    #[test]
+    fn native_new_open_and_new_window_invalidate_remote_scene_tokens() {
+        use crate::editor_operations::{Operation, OperationError, RemoteRequest};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("large-id.aztec");
+        let mut editor = Editor::default();
+        let first_token = editor.scene_token;
+        assert_ne!(Editor::default().scene_token, first_token);
+        editor.create(Primitive::Cube);
+        assert!(editor.save_path(&path));
+        let mut data: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let large_id = 9_007_199_254_740_993_u64;
+        data["scene"]["nodes"][0]["id"] = large_id.into();
+        data["scene"]["next_id"] = (large_id + 1).into();
+        std::fs::write(&path, serde_json::to_vec(&data).unwrap()).unwrap();
+        editor.open_path(&path);
+        assert!(!editor.files.is_modal());
+        assert_ne!(editor.scene_token, first_token);
+        let id = editor.history.scene().nodes()[0].id();
+        assert_eq!(id.to_decimal(), "9007199254740993");
+        assert_eq!(
+            azteccraft::scene::NodeId::from_decimal(&id.to_decimal()).unwrap(),
+            id
+        );
+        assert!(matches!(
+            editor.remote_operation(
+                RemoteRequest {
+                    expected_scene_token: Some(first_token),
+                    operation: Operation::Delete(id),
+                },
+                &egui::Context::default()
+            ),
+            Err(OperationError::StaleScene)
+        ));
+        let opened_token = editor.scene_token;
+        editor.request_new();
+        assert_ne!(editor.scene_token, opened_token);
+        assert!(editor.history.scene().nodes().is_empty());
+        assert!(matches!(
+            editor.remote_operation(
+                RemoteRequest {
+                    expected_scene_token: Some(opened_token),
+                    operation: Operation::Undo,
+                },
+                &egui::Context::default()
+            ),
+            Err(OperationError::StaleScene)
+        ));
     }
 
     #[test]
