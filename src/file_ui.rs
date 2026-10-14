@@ -160,7 +160,9 @@ impl Editor {
     pub(super) fn handle_close(&mut self, ctx: &egui::Context) {
         if ctx.input(|i| i.viewport().close_requested()) && !self.files.close_approved {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            self.request_close();
+            if !self.native_input_pending {
+                self.request_close();
+            }
         }
         if self.files.close_approved {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);

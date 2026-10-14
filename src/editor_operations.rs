@@ -78,6 +78,7 @@ pub struct SceneInspection {
     pub can_redo: bool,
     pub dirty: bool,
     pub has_draft: bool,
+    pub native_input_pending: bool,
     pub text_focused: bool,
     pub modal: bool,
     pub camera: CameraInspection,
@@ -118,9 +119,9 @@ impl fmt::Display for OperationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             #[cfg(any(test, feature = "mcp"))]
-            Self::BusyEditing => {
-                f.write_str("Finish the native text edit or dialog before remote mutation")
-            }
+            Self::BusyEditing => f.write_str(
+                "Process native input and finish the text edit or dialog before remote mutation",
+            ),
             #[cfg(any(test, feature = "mcp"))]
             Self::StaleScene => f.write_str("Scene token is stale; inspect the current document"),
             #[cfg(any(test, feature = "mcp"))]

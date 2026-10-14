@@ -57,3 +57,19 @@ The Maya scripting/API surface and existing plug-ins aren't implemented or teste
 With pinned egui 0.36.2, a previously unfocused name field drops a Text event delivered in the same frame as the initial pointer click. Its TextEdit builder processes text only when the field already has focus (builder.rs:572), before pointer handling requests focus (builder.rs:815). The same real Editor event sequence reproduces this without MCP. Text delivered in the following frame is inserted.
 
 The MCP regression compares native and bridge-connected Editors with identical events and proves equal drafts, focus, scene and history, plus BusyEditing rejection of queued remote changes. It proves no additional input loss from MCP; it does not fix the native first-click defect. Native input handling and Maya reference comparison remain outstanding.
+
+## Native MCP background verification pending
+
+**Severity:** medium
+**Area:** native protocol lifecycle
+
+Native testing of the initial nine-tool server reproduced repeated reply deadlines while the window was backgrounded, including a deterministic minimized-window inspection failure. Desktop interaction resumed dispatch. Pinned eframe uses `App::logic` without `App::ui` for hidden windows; the original bridge drained only in UI rendering.
+
+The revised hidden logic path and retained-input guard pass actual trait-callback tests, including the previously failing hidden inspection/create regression. Native minimize/occlude, request, restore and close verification of the revised production artifact remains pending. This entry must be removed only after that native correction is verified; synthetic tests alone do not establish OS behavior.
+
+## macOS application quit guard unverified
+
+**Severity:** medium
+**Area:** native document lifecycle
+
+Pinned winit 0.30.13 gives the default Quit menu item the `terminate:` action and Command-Q equivalent (macOS menu.rs:66–73). Its application termination callback calls window-exit notification and internal exit (app_state.rs:65–71,166–172), while window Close separately queues CloseRequested (window_delegate.rs:144–148). Native testing of Command-Q with a synthetic dirty scene remains pending; no data loss has been demonstrated. The hidden-dispatch change guards viewport Close and does not establish interception of application termination.

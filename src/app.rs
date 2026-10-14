@@ -22,6 +22,7 @@ pub struct Editor {
     camera: Camera,
     name: String,
     channels: [String; 9],
+    native_input_pending: bool,
     status: String,
     error: bool,
     aspect: f32,
@@ -39,6 +40,7 @@ impl Default for Editor {
             camera: Camera::default(),
             name: String::new(),
             channels: Default::default(),
+            native_input_pending: false,
             status: "Ready | Create a cube or plane to start".into(),
             error: false,
             aspect: 1.0,
@@ -181,7 +183,7 @@ impl Editor {
         if request.expected_scene_token != Some(self.scene_token) {
             return Err(OperationError::StaleScene);
         }
-        if self.files.is_modal() || focused || self.has_draft() {
+        if self.files.is_modal() || focused || self.has_draft() || self.native_input_pending {
             return Err(OperationError::BusyEditing);
         }
         self.apply_operation(request.operation)
@@ -209,6 +211,7 @@ impl Editor {
             can_redo: self.history.can_redo(),
             dirty: self.is_dirty(),
             has_draft: self.has_draft(),
+            native_input_pending: self.native_input_pending,
             text_focused,
             modal: self.files.is_modal(),
             camera: CameraInspection {
@@ -653,6 +656,41 @@ impl Editor {
 }
 
 impl eframe::App for Editor {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, input: &mut egui::RawInput) {
+        let pointer_held = ctx.input(|input| input.pointer.any_down())
+            || input
+                .events
+                .iter()
+                .any(|event| matches!(event, egui::Event::PointerButton { pressed: true, .. }));
+        self.native_input_pending |= input.events.iter().any(|event| match event {
+            egui::Event::PointerMoved(_) | egui::Event::MouseMoved(_) => pointer_held,
+            egui::Event::Key { pressed, .. } => *pressed,
+            egui::Event::Copy
+            | egui::Event::Screenshot { .. }
+            | egui::Event::ModifiersChanged(_)
+            | egui::Event::WindowFocused(_)
+            | egui::Event::PointerGone => false,
+            egui::Event::Cut
+            | egui::Event::Paste(_)
+            | egui::Event::Text(_)
+            | egui::Event::PointerButton { .. }
+            | egui::Event::Zoom(_)
+            | egui::Event::Rotate(_)
+            | egui::Event::Ime(_)
+            | egui::Event::Touch { .. }
+            | egui::Event::MouseWheel { .. }
+            | egui::Event::AccessKitActionRequest(_) => true,
+        });
+    }
+
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if ctx.input(|input| input.viewport().visible()) == Some(false) {
+            self.handle_close(ctx);
+            #[cfg(feature = "mcp")]
+            self.process_mcp(ctx);
+        }
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.render(ui);
     }
@@ -736,14 +774,20 @@ impl Editor {
         self.file_modal(ui.ctx());
         ui.ctx()
             .send_viewport_cmd(egui::ViewportCommand::Title(self.document_title()));
+        self.native_input_pending = false;
         #[cfg(feature = "mcp")]
+        self.process_mcp(ui.ctx());
+    }
+
+    #[cfg(feature = "mcp")]
+    fn process_mcp(&mut self, ctx: &egui::Context) {
         if let Some(mut bridge) = self.mcp.take() {
-            if bridge.take_close_request() {
+            if !self.native_input_pending && bridge.take_close_request() {
                 self.request_close();
-                ui.ctx().request_repaint();
+                ctx.request_repaint();
             }
             if !self.files.close_approved() {
-                bridge.dispatch(self, ui.ctx());
+                bridge.dispatch(self, ctx);
                 self.mcp = Some(bridge);
             }
         }
@@ -766,6 +810,38 @@ fn channel_edit_id(index: usize) -> egui::Id {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_hidden_close_checks_pending_input_without_mcp() {
+        for pending in [false, true] {
+            let context = egui::Context::default();
+            let mut editor = Editor::default();
+            let mut input = egui::RawInput::default();
+            if pending {
+                input.events.push(egui::Event::Text("pending".into()));
+            }
+            let viewport = input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap();
+            viewport.minimized = Some(true);
+            viewport.events.push(egui::ViewportEvent::Close);
+            eframe::App::raw_input_hook(&mut editor, &context, &mut input);
+            let mut native_frame = eframe::Frame::_new_kittest();
+            let output = context.run_logic(&input, |ctx| {
+                eframe::App::logic(&mut editor, ctx, &mut native_frame)
+            });
+            let commands = &output.viewport_commands[&egui::ViewportId::ROOT];
+            assert!(
+                commands
+                    .iter()
+                    .any(|command| matches!(command, egui::ViewportCommand::CancelClose))
+            );
+            assert_eq!(
+                commands
+                    .iter()
+                    .any(|command| matches!(command, egui::ViewportCommand::Close)),
+                !pending
+            );
+        }
+    }
 
     fn remote(editor: &mut Editor, operation: Operation) -> Result<OperationReply, OperationError> {
         editor.remote_operation(
