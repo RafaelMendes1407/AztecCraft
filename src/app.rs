@@ -497,31 +497,43 @@ impl Editor {
         ui.horizontal(|ui| {
             ui.label(RichText::new("Modeling").strong());
             ui.separator();
-            if ui.button("Cube").clicked() {
+            if crate::tool_icons::button(ui, "Cube", crate::tool_icons::Icon::Cube, true).clicked()
+            {
                 self.create(Primitive::Cube);
             }
-            if ui.button("Plane").clicked() {
+            if crate::tool_icons::button(ui, "Plane", crate::tool_icons::Icon::Plane, true)
+                .clicked()
+            {
                 self.create(Primitive::Plane);
             }
             ui.separator();
-            if ui
-                .add_enabled(self.history.can_undo(), egui::Button::new("Undo"))
-                .clicked()
+            if crate::tool_icons::button(
+                ui,
+                "Undo",
+                crate::tool_icons::Icon::Undo,
+                self.history.can_undo(),
+            )
+            .clicked()
             {
                 self.history_step(false);
             }
-            if ui
-                .add_enabled(self.history.can_redo(), egui::Button::new("Redo"))
-                .clicked()
+            if crate::tool_icons::button(
+                ui,
+                "Redo",
+                crate::tool_icons::Icon::Redo,
+                self.history.can_redo(),
+            )
+            .clicked()
             {
                 self.history_step(true);
             }
-            if ui
-                .add_enabled(
-                    self.selected.is_some(),
-                    egui::Button::new("Frame selected  F"),
-                )
-                .clicked()
+            if crate::tool_icons::button(
+                ui,
+                "Frame selected  F",
+                crate::tool_icons::Icon::Frame,
+                self.selected.is_some(),
+            )
+            .clicked()
             {
                 self.frame_selected();
             }
@@ -645,15 +657,21 @@ impl Editor {
             );
         });
         egui::Panel::left("toolbox")
-            .default_size(76.0)
+            .exact_size(crate::tool_icons::toolbox_width(ui))
             .resizable(false)
             .show(ui, |ui| {
                 ui.label("Tools");
                 ui.separator();
-                ui.label("Select");
-                for label in ["Move", "Rotate", "Scale", "Snap"] {
-                    unsupported(ui, label);
+                crate::tool_icons::select_indicator(ui);
+                for (label, icon) in [
+                    ("Move", crate::tool_icons::Icon::Move),
+                    ("Rotate", crate::tool_icons::Icon::Rotate),
+                    ("Scale", crate::tool_icons::Icon::Scale),
+                ] {
+                    crate::tool_icons::button(ui, label, icon, false)
+                        .on_disabled_hover_text("Not implemented in this build");
                 }
+                unsupported(ui, "Snap");
             });
         egui::Panel::left("outliner")
             .default_size(200.0)

@@ -17,13 +17,16 @@ The current prototype has a native desktop window for cube/plane creation, selec
 | Native scene files | JSON v1 for quad meshes, validated load, 16 MiB limit and create-new saves that preserve occupied destinations | [Document workflow tests](tests/document_workflows.rs) |
 | Camera math | Orbit/pan/dolly, perspective projection, rays, nearest-geometry picking and framing | [Viewport workflow tests](tests/viewport_workflows.rs) |
 | Desktop shell and viewport | Create/select cube or plane, edit name/transform channels, undo/redo, delete and frame selected, with projected mesh drawing | [Native shell](src/app.rs) and [viewport UI](src/viewport_ui.rs) |
-| File actions in the window | New/Open/Save As, unsaved-change confirmation and error presentation | [File integration and event tests](src/file_ui.rs), with native dialog interaction still unverified |
+| File actions in the window | New/Open/Save As, unsaved-change confirmation and error presentation | [File integration tests](src/file_ui.rs) and [scoped macOS native verification](.project-docs/native-verification.md); full panel navigation and other platforms remain pending |
 | OBJ export | Library API writes world-space polygon geometry to a new file | [OBJ workflow tests](tests/obj_workflows.rs), with GUI Export still disabled |
 | Modeling, UVs, animation and rigging | Full workflows pending | [Implementation plan](.project-docs/plan.md) |
 | Materials, simulation and rendering | Pending | Reference scenes and output comparisons required |
 | Maya formats, scripting and plug-ins | Pending | Existing scene/script/plug-in fixtures required |
 
 Core workflow tests and UI event regression tests cover implemented behavior. The exact Maya reference installation hasn't been pinned, so they don't establish visual or functional parity. Unsupported modeling, animation, material and other controls are disabled in the prototype.
+
+The native shelf and toolbox use colorful vector tool symbols with readable labels.
+Unsupported transform tools remain disabled, and Select remains a mode indicator.
 
 ## Build and test
 
@@ -65,7 +68,7 @@ Development proceeds through small, independently reviewed local commits:
 
 The [100-workflow research seed](.project-docs/inventory-seed.md) is provisional and doesn't supply the denominator. Its measurement proposal uses fixed domain budgets, zero credit for untested/partial workflows and mandatory compatibility evidence, so adding trivial rows can't inflate coverage. Exact final parity is a separate acceptance requirement.
 
-Native verification must cover startup, creation/selection, numeric edits, undo/redo, navigation, file operations, error handling and visibly unsupported controls. Native file-dialog interaction remains unverified and GUI Export is disabled, so the complete journey is pending. Reference screenshots/outputs are needed before any fidelity claim. See [known limitations](known-issues.md).
+Native verification must cover startup, creation/selection, numeric edits, undo/redo, navigation, file operations, error handling and visibly unsupported controls. [The macOS verification record](.project-docs/native-verification.md) covers scene editing and file integration using OCU-supplied native panel choices. Full interactive panel navigation, other platforms and the disabled GUI Export journey remain pending. Reference screenshots/outputs are needed before any fidelity claim. See [known limitations](known-issues.md).
 
 ## References and development
 

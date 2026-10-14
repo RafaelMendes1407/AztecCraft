@@ -2,6 +2,7 @@
 
 mod app;
 mod editor_operations;
+mod tool_icons;
 mod viewport_ui;
 
 fn main() -> eframe::Result {
