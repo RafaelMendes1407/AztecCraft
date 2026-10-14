@@ -97,6 +97,32 @@ pub struct NativeMesh {
     unsupported_channels: Vec<String>,
 }
 impl NativeMesh {
+    #[cfg(test)]
+    pub(super) fn triangle_double_fixture() -> Self {
+        Self {
+            points: Points::Double3(vec![
+                [16777216.25, 0.0, 0.0],
+                [16777217.25, 0.0, 0.0],
+                [16777216.25, 1.0, 0.0],
+            ]),
+            edges: [[0, 1], [1, 2], [2, 0]]
+                .map(|endpoints| NativeEdge {
+                    endpoints,
+                    smooth: false,
+                })
+                .into(),
+            faces: vec![NativeFace {
+                outer: (0..3)
+                    .map(|edge| DirectedEdge {
+                        edge,
+                        reversed: false,
+                    })
+                    .collect(),
+                holes: Vec::new(),
+            }],
+            unsupported_channels: Vec::new(),
+        }
+    }
     pub fn points(&self) -> &Points {
         &self.points
     }
