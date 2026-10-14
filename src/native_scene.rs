@@ -402,8 +402,11 @@ impl NativeScene {
         Ok(shape)
     }
     fn instance_shape(&self, path: &[NativeId]) -> Result<&NativeMeshShape, NativeError> {
-        self.validate()?;
+        // Construction and mutation validate the opaque scene; per-instance queries must stay bounded.
         if path.len() < 2
+            || path[..path.len() - 1]
+                .iter()
+                .any(|id| !self.nodes.iter().any(|node| node.transform_id == *id))
             || !self.dag.contains(&DagEdge {
                 parent: None,
                 child: path[0],
@@ -748,6 +751,8 @@ impl NativeScene {
             .map_err(|_| NativeError::UnsupportedView("f32 world coordinates"))
     }
     pub fn validate(&self) -> Result<(), NativeError> {
+        #[cfg(test)]
+        FULL_VALIDATIONS.with(|count| count.set(count.get() + 1));
         let mut ids = std::collections::HashSet::new();
         let mut native_ids = std::collections::HashSet::new();
         if self.next_id == 0 || self.next_native_id == 0 {
@@ -915,3 +920,8 @@ mod tests;
 
 #[cfg(test)]
 pub(crate) mod test_fixtures;
+
+#[cfg(test)]
+std::thread_local! {
+    static FULL_VALIDATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}

@@ -670,3 +670,74 @@ fn admission_and_face_resolution_share_exact_path_validation() {
             .visible()
     );
 }
+
+#[test]
+fn instance_queries_do_not_repeat_whole_scene_validation() {
+    let (scene, root, child, shape) = grouped_shape();
+    let root_native = scene.node(root).unwrap().transform_id();
+    let child_native = scene.node(child).unwrap().transform_id();
+    let target = FaceTarget {
+        transform: child,
+        shape,
+        path: vec![root_native, child_native, shape],
+        face_index: 0,
+    };
+    let before = FULL_VALIDATIONS.with(|count| count.get());
+    assert!(
+        scene
+            .geometry_view_admission(&target.path)
+            .unwrap()
+            .visible()
+    );
+    scene.resolve_face_target(&target).unwrap();
+    for path in [
+        vec![],
+        vec![shape],
+        vec![root_native, shape],
+        vec![root_native, child_native],
+        vec![root_native, child_native, child_native, shape],
+    ] {
+        assert_eq!(
+            scene.geometry_view_admission(&path),
+            Err(NativeError::InvalidInstancePath)
+        );
+        assert_eq!(
+            scene.resolve_face_target(&FaceTarget {
+                path,
+                ..target.clone()
+            }),
+            Err(NativeError::InvalidInstancePath)
+        );
+    }
+    assert_eq!(FULL_VALIDATIONS.with(|count| count.get()), before);
+}
+
+#[test]
+fn path_roles_are_checked_without_revalidating_unrelated_scene_data() {
+    let (mut scene, first) = cube();
+    let second = scene.create(Primitive::Cube, "second").unwrap();
+    let first_native = scene.node(first).unwrap().transform_id();
+    let second_native = scene.node(second).unwrap().transform_id();
+    let first_shape = scene.shapes[0].id;
+    let second_shape = scene.shapes[1].id;
+    scene.dag.push(DagEdge {
+        parent: Some(first_shape),
+        child: second_native,
+    });
+    let target = FaceTarget {
+        transform: second,
+        shape: second_shape,
+        path: vec![first_native, first_shape, second_native, second_shape],
+        face_index: 0,
+    };
+    let before = FULL_VALIDATIONS.with(|count| count.get());
+    assert_eq!(
+        scene.resolve_face_target(&target),
+        Err(NativeError::InvalidInstancePath)
+    );
+    assert_eq!(
+        scene.geometry_view_admission(&target.path),
+        Err(NativeError::InvalidInstancePath)
+    );
+    assert_eq!(FULL_VALIDATIONS.with(|count| count.get()), before);
+}
