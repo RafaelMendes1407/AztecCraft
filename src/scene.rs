@@ -12,6 +12,7 @@ pub enum Primitive {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Mesh {
     vertices: Vec<Vec3>,
     faces: Vec<[usize; 4]>,
@@ -61,6 +62,7 @@ impl Mesh {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Transform {
     pub translation: Vec3,
     pub rotation_degrees: Vec3,
@@ -101,6 +103,7 @@ impl Transform {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Node {
     id: NodeId,
     name: String,
@@ -132,9 +135,30 @@ impl Node {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "SceneData")]
 pub struct Scene {
     nodes: Vec<Node>,
     next_id: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SceneData {
+    nodes: Vec<Node>,
+    next_id: u64,
+}
+
+impl TryFrom<SceneData> for Scene {
+    type Error = SceneError;
+
+    fn try_from(data: SceneData) -> Result<Self, Self::Error> {
+        let scene = Self {
+            nodes: data.nodes,
+            next_id: data.next_id,
+        };
+        scene.validate()?;
+        Ok(scene)
+    }
 }
 
 impl Default for Scene {
@@ -147,6 +171,38 @@ impl Default for Scene {
 }
 
 impl Scene {
+    pub fn validate(&self) -> Result<(), SceneError> {
+        let mut ids = std::collections::HashSet::new();
+        if self.next_id == 0 {
+            return Err(SceneError::InvalidIds);
+        }
+        for node in &self.nodes {
+            if node.id.0 == 0 || node.id.0 >= self.next_id || !ids.insert(node.id) {
+                return Err(SceneError::InvalidIds);
+            }
+            validate_name(&node.name)?;
+            node.transform.validate()?;
+            if node.mesh.vertices.iter().any(|v| !v.is_finite())
+                || node.world_vertices().iter().any(|v| !v.is_finite())
+            {
+                return Err(SceneError::InvalidTransform);
+            }
+            for face in &node.mesh.faces {
+                if face.iter().any(|i| *i >= node.mesh.vertices.len())
+                    || face.iter().collect::<std::collections::HashSet<_>>().len() != 4
+                {
+                    return Err(SceneError::InvalidMesh);
+                }
+            }
+            if node.mesh != Mesh::primitive(Primitive::Cube)
+                && node.mesh != Mesh::primitive(Primitive::Plane)
+            {
+                return Err(SceneError::InvalidMesh);
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn restore_authoring(&mut self, mut snapshot: Self) {
         // Undone creates remain reserved so stale editor selections cannot target a new node.
         snapshot.next_id = snapshot.next_id.max(self.next_id);
@@ -232,6 +288,8 @@ pub enum SceneError {
     InvalidName,
     InvalidTransform,
     IdsExhausted,
+    InvalidIds,
+    InvalidMesh,
 }
 
 impl fmt::Display for SceneError {
@@ -245,6 +303,12 @@ impl fmt::Display for SceneError {
                 f.write_str("transform and transformed vertices must be finite")
             }
             Self::IdsExhausted => f.write_str("scene node IDs exhausted"),
+            Self::InvalidIds => {
+                f.write_str("scene node IDs must be unique, nonzero and below the allocator")
+            }
+            Self::InvalidMesh => {
+                f.write_str("scene mesh must be a supported cube or plane with valid quad indices")
+            }
         }
     }
 }
