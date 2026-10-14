@@ -10,11 +10,11 @@ The current prototype has a native desktop window for cube/plane creation, selec
 
 | Area | This checkout | Evidence or next step |
 | --- | --- | --- |
-| Scene data | Cube/plane topology, stable IDs, rename, remove and transform edits | [Six scene workflow tests](tests/scene_workflows.rs) |
+| Scene data | Cube/plane creation, validated quad meshes, stable IDs, rename, remove and transform edits | [Scene workflow tests](tests/scene_workflows.rs) and [mesh validation tests](tests/mesh_workflows.rs) |
 | Transform math | Scale, fixed-axis XYZ Euler rotation in degrees, then translation, including zero/negative scales | [Coordinate conventions](.project-docs/development.md) and scene tests |
 | Invalid edits | Reject invalid names, non-finite transforms and transformed-coordinate overflow without changing the scene | Scene tests |
 | History | Undo/redo create, remove, rename and transform commands, with failed/no-op edits preserving history | [History workflow tests](tests/history_workflows.rs) |
-| Native scene files | JSON v1 for canonical cube/plane meshes, validated load, 16 MiB limit and create-new saves that preserve occupied destinations | [Document workflow tests](tests/document_workflows.rs) |
+| Native scene files | JSON v1 for quad meshes, validated load, 16 MiB limit and create-new saves that preserve occupied destinations | [Document workflow tests](tests/document_workflows.rs) |
 | Camera math | Orbit/pan/dolly, perspective projection, rays, nearest-geometry picking and framing | [Viewport workflow tests](tests/viewport_workflows.rs) |
 | Desktop shell and viewport | Create/select cube or plane, edit name/transform channels, undo/redo, delete and frame selected, with projected mesh drawing | [Native shell](src/app.rs) and [viewport UI](src/viewport_ui.rs) |
 | File actions in the window | New/Open/Save As, unsaved-change confirmation and error presentation | [File integration and event tests](src/file_ui.rs), with native dialog interaction still unverified |
@@ -48,7 +48,7 @@ The `desktop` feature is enabled by default and uses eframe/egui with wgpu. The 
 
 [src/scene.rs](src/scene.rs) owns validated scene state, [src/history.rs](src/history.rs) applies commands using scene snapshots, and [src/document.rs](src/document.rs) loads and saves native JSON through pinned `craft-atomic` create-new writes. [src/viewport.rs](src/viewport.rs) supplies camera math to [the desktop shell](src/app.rs) and [viewport UI](src/viewport_ui.rs). The scene model remains independent of the window so editing and file handling can be tested headlessly.
 
-History is in-memory and unbounded, and isn't stored in scene files. Loading currently accepts only the canonical cube/plane topology, and saving requires a new destination. The camera core doesn't provide a depth-tested renderer or establish Maya navigation parity. See [the detailed limits](.project-docs/development.md).
+History is in-memory and unbounded, and isn't stored in scene files. Loading accepts finite quad geometry with valid distinct indices, preserving empty, unused, degenerate and non-manifold authoring data. Native topology editing is pending, and saving requires a new destination. The camera core doesn't provide a depth-tested renderer or establish Maya navigation parity. See [the detailed limits](.project-docs/development.md).
 
 Cross-platform desktop support and packaged launch behavior still need native evidence for macOS, Windows and Linux. The [CI matrix](.project-docs/builds.md) defines checks for those platforms, and a configured job doesn't establish a passing build. The eframe/egui UI remains provisional, with docking, focus, marking menus and Maya-style editing still to be compared against the reference.
 

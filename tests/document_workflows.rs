@@ -151,10 +151,10 @@ fn invalid_decoded_ids_names_transforms_and_meshes_never_become_scenes() {
         ("/scene/nodes/0/transform/translation/0", json!(null)),
         ("/scene/nodes/0/transform/scale/0", json!(1e100)),
         ("/scene/nodes/0/mesh/vertices/0/0", json!(null)),
-        ("/scene/nodes/0/mesh/vertices/0/0", json!(42)),
         ("/scene/nodes/0/mesh/faces/0/0", json!(999)),
         ("/scene/nodes/0/mesh/faces/0/0", json!(3)),
-        ("/scene/nodes/0/mesh/faces", json!([])),
+        ("/scene/nodes/0/mesh/faces/0", json!([0, 1, 2])),
+        ("/scene/nodes/0/mesh/faces/0", json!([0, 1, 2, 3, 4])),
     ] {
         let mut bad = baseline.clone();
         *bad.pointer_mut(pointer).unwrap() = replacement;
@@ -167,9 +167,6 @@ fn invalid_decoded_ids_names_transforms_and_meshes_never_become_scenes() {
         .unwrap()
         .push(node);
     candidates.push(duplicate);
-    let mut reversed = baseline.clone();
-    reversed["scene"]["nodes"][0]["mesh"]["faces"][0] = json!([0, 1, 2, 3]);
-    candidates.push(reversed);
     let mut overflow = baseline.clone();
     let extreme = [f32::MAX; 3];
     overflow["scene"]["nodes"][0]["transform"]["scale"] = json!(extreme);
@@ -212,4 +209,26 @@ fn dangling_symlink_is_an_occupied_destination() {
     assert!(save_new(&destination, &fixture()).is_err());
     assert!(!target.exists());
     assert_eq!(fs::read_link(&destination).unwrap(), target);
+}
+
+#[test]
+fn edited_and_empty_quad_meshes_round_trip_without_geometry_cleanup() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("edited.aztec");
+    for (index, mesh) in [
+        json!({"vertices": [[0,0,0],[3,0,0],[3,2,1],[0,2,0],[99,99,99]], "faces": [[3,2,1,0],[3,2,1,0],[3,2,1,0]]}),
+        json!({"vertices": [[0,0,0],[0,0,0],[0,0,0],[0,0,0]], "faces": [[0,1,2,3]]}),
+        json!({"vertices": [[42,0,0]], "faces": []}),
+        json!({"vertices": [], "faces": []}),
+    ].into_iter().enumerate() {
+        let mut document = value(&fixture());
+        document["scene"]["nodes"][0]["mesh"] = mesh;
+        let expected: azteccraft::scene::Mesh = serde_json::from_value(document["scene"]["nodes"][0]["mesh"].clone()).unwrap();
+        fs::write(&input, document.to_string()).unwrap();
+        let loaded = load(&input).unwrap();
+        let output = dir.path().join(format!("round-trip-{index}.aztec"));
+        save_new(&output, &loaded).unwrap();
+        assert_eq!(load(&output).unwrap(), loaded);
+        assert_eq!(loaded.nodes()[0].mesh(), &expected);
+    }
 }

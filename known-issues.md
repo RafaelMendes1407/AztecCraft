@@ -28,7 +28,7 @@ The native prototype has been built and launched locally, but the complete nativ
 **Severity:** medium
 **Area:** history, documents and viewport
 
-Undo/redo stores unbounded scene snapshots in memory, so memory grows with scene size and edit count. JSON v1 stores canonical cube/plane scene data and allocator reservations, with a 16 MiB limit and create-new/no-clobber writes. Undo/redo stacks and camera state aren't persisted, and overwrite-save, recovery and autosave are pending. Arbitrary topology and most external formats aren't supported. The OBJ library API exports geometry only, with no import, UV, normal or material support, and GUI Export remains disabled.
+Undo/redo stores unbounded scene snapshots in memory, so memory grows with scene size and edit count. JSON v1 stores structurally valid quad geometry and allocator reservations, with a 16 MiB limit and create-new/no-clobber writes. Undo/redo stacks and camera state aren't persisted, and overwrite-save, recovery and autosave are pending. Native topology editing, non-quad faces and most external formats aren't supported. Degenerate, nonplanar, inconsistent-winding and non-manifold geometry is preserved as authoring data; validation doesn't repair geometry or guarantee rendering fidelity. The OBJ library API exports geometry only, with no import, UV, normal or material support, and GUI Export remains disabled.
 
 The camera core is connected to the native viewport. Drawing sorts projected faces by average depth, and depth-tested rendering and reference navigation parity remain pending. These limits are described in [development instructions](.project-docs/development.md).
 

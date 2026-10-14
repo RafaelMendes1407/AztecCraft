@@ -1,3 +1,4 @@
+pub use crate::mesh::Mesh;
 use glam::{EulerRot, Mat4, Quat, Vec3};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -19,56 +20,6 @@ impl NodeId {
 pub enum Primitive {
     Cube,
     Plane,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Mesh {
-    vertices: Vec<Vec3>,
-    faces: Vec<[usize; 4]>,
-}
-
-impl Mesh {
-    fn primitive(primitive: Primitive) -> Self {
-        match primitive {
-            Primitive::Cube => Self {
-                vertices: vec![
-                    Vec3::new(-0.5, -0.5, -0.5),
-                    Vec3::new(0.5, -0.5, -0.5),
-                    Vec3::new(0.5, 0.5, -0.5),
-                    Vec3::new(-0.5, 0.5, -0.5),
-                    Vec3::new(-0.5, -0.5, 0.5),
-                    Vec3::new(0.5, -0.5, 0.5),
-                    Vec3::new(0.5, 0.5, 0.5),
-                    Vec3::new(-0.5, 0.5, 0.5),
-                ],
-                faces: vec![
-                    [0, 3, 2, 1],
-                    [4, 5, 6, 7],
-                    [0, 4, 7, 3],
-                    [1, 2, 6, 5],
-                    [0, 1, 5, 4],
-                    [3, 7, 6, 2],
-                ],
-            },
-            Primitive::Plane => Self {
-                vertices: vec![
-                    Vec3::new(-0.5, 0.0, -0.5),
-                    Vec3::new(-0.5, 0.0, 0.5),
-                    Vec3::new(0.5, 0.0, 0.5),
-                    Vec3::new(0.5, 0.0, -0.5),
-                ],
-                faces: vec![[0, 1, 2, 3]],
-            },
-        }
-    }
-
-    pub fn vertices(&self) -> &[Vec3] {
-        &self.vertices
-    }
-    pub fn faces(&self) -> &[[usize; 4]] {
-        &self.faces
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -137,7 +88,7 @@ impl Node {
     pub fn world_vertices(&self) -> Vec<Vec3> {
         let matrix = self.transform.matrix();
         self.mesh
-            .vertices
+            .vertices()
             .iter()
             .map(|v| matrix.transform_point3(*v))
             .collect()
@@ -192,22 +143,9 @@ impl Scene {
             }
             validate_name(&node.name)?;
             node.transform.validate()?;
-            if node.mesh.vertices.iter().any(|v| !v.is_finite())
-                || node.world_vertices().iter().any(|v| !v.is_finite())
-            {
+            node.mesh.validate()?;
+            if node.world_vertices().iter().any(|v| !v.is_finite()) {
                 return Err(SceneError::InvalidTransform);
-            }
-            for face in &node.mesh.faces {
-                if face.iter().any(|i| *i >= node.mesh.vertices.len())
-                    || face.iter().collect::<std::collections::HashSet<_>>().len() != 4
-                {
-                    return Err(SceneError::InvalidMesh);
-                }
-            }
-            if node.mesh != Mesh::primitive(Primitive::Cube)
-                && node.mesh != Mesh::primitive(Primitive::Plane)
-            {
-                return Err(SceneError::InvalidMesh);
             }
         }
         Ok(())
@@ -267,7 +205,7 @@ impl Scene {
         let node = self.node(id)?;
         if node
             .mesh
-            .vertices
+            .vertices()
             .iter()
             .any(|v| !transform.matrix().transform_point3(*v).is_finite())
         {
@@ -316,9 +254,9 @@ impl fmt::Display for SceneError {
             Self::InvalidIds => {
                 f.write_str("scene node IDs must be unique, nonzero and below the allocator")
             }
-            Self::InvalidMesh => {
-                f.write_str("scene mesh must be a supported cube or plane with valid quad indices")
-            }
+            Self::InvalidMesh => f.write_str(
+                "mesh coordinates must be finite and each quad must have four unique valid indices",
+            ),
         }
     }
 }

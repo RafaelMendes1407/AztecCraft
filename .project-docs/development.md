@@ -55,6 +55,12 @@ With glam column vectors this uses `RZ * RY * RX`. Negative and zero
 scales are supported; a reflected transform also reverses geometric winding.
 Hierarchy editing remains a subsequent task.
 
+`mesh::Mesh` stores quad vertex/index arrays and remains available as `scene::Mesh`.
+Scene validation requires finite local/world coordinates, index bounds and four
+distinct indices per face. It preserves unused vertices, empty meshes, coincident
+or zero-area geometry, nonplanarity, inconsistent winding and non-manifold states.
+Loading edited arrays is supported; native topology editing is still pending.
+
 ## History
 
 `History` wraps scene edits as explicit create/remove/rename/set-transform commands
@@ -67,7 +73,7 @@ count, and no history limit or history persistence exists yet.
 ## Native documents
 
 `document::load` decodes a versioned JSON envelope and validates the scene before
-returning it. JSON v1 accepts canonical cube/plane meshes, stable IDs, names and
+returning it. JSON v1 accepts structurally valid quad meshes, stable IDs, names and
 transforms. Unknown fields/versions, malformed data, invalid geometry and invalid
 allocator state are rejected. This is AztecCraft's native format, with no Maya,
 OBJ, FBX, USD or Alembic compatibility claim.

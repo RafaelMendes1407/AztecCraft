@@ -13,7 +13,7 @@ fn near(actual: Vec3, expected: Vec3) {
 fn cube_is_closed_and_faces_point_outward() {
     let mut scene = Scene::default();
     let id = scene.create(Primitive::Cube, "cube").unwrap();
-    let mesh = scene.node(id).unwrap().mesh();
+    let mesh: &azteccraft::scene::Mesh = scene.node(id).unwrap().mesh();
     assert_eq!(mesh.vertices().len(), 8);
     assert_eq!(mesh.faces().len(), 6);
     let mut edges = HashMap::new();

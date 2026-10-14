@@ -19,7 +19,7 @@ denominator are still missing, so overall coverage remains unmeasured.
 | Rigging | joints, constraints, IK, skinning, weight editing, blend shapes, deformers | Not implemented |
 | Materials and lighting | shaders, textures, networks, lights, color management | Not implemented |
 | Rendering | viewport rendering, render settings/layers, final rendering | Not implemented |
-| Interchange | native document, OBJ, glTF, FBX, USD, Alembic, Maya formats | Partial: canonical cube/plane JSON v1, 16 MiB limit, create-new writes, New/Open/Save As UI and geometry-only OBJ API. GUI Export, OBJ import and other formats pending |
+| Interchange | native document, OBJ, glTF, FBX, USD, Alembic, Maya formats | Partial: structurally validated quad meshes in JSON v1, 16 MiB limit, create-new writes, New/Open/Save As UI and geometry-only OBJ API. GUI Export, OBJ import and other formats pending |
 | Scripting and extensions | commands, MEL, Python, plugins | Not implemented |
 | Dynamics and extended systems | particles, cloth, hair, simulation, caches, motion graphics | Not implemented |
 | Pipeline and robustness | references, recovery, large scenes, platform packaging | Partial: unsigned platform packaging and fixture checks; cross-platform native interaction, references, recovery and large-scene workflows pending |
