@@ -4,6 +4,20 @@ use azteccraft::{
 };
 use glam::Vec3;
 
+fn shape(
+    scene: &NativeScene,
+    transform: azteccraft::scene::NodeId,
+) -> &azteccraft::native_scene::NativeMeshShape {
+    let native_id = scene.node(transform).unwrap().transform_id();
+    let shape_id = scene
+        .dag_edges()
+        .iter()
+        .find(|edge| edge.parent() == Some(native_id))
+        .unwrap()
+        .child();
+    scene.shape(shape_id).unwrap()
+}
+
 #[test]
 fn legacy_promotion_preserves_authoring_and_generates_distinct_migration_identities() {
     let mut legacy = Scene::default();
@@ -21,11 +35,12 @@ fn legacy_promotion_preserves_authoring_and_generates_distinct_migration_identit
     let native = NativeScene::from_legacy(legacy.clone()).unwrap();
     assert_eq!(native.supported_view().unwrap(), legacy);
     let node = native.node(id).unwrap();
-    assert_ne!(node.transform_id(), node.shape_id());
-    assert_ne!(node.transform_uuid(), node.shape_uuid());
+    let mesh_shape = shape(&native, id);
+    assert_ne!(node.transform_id(), mesh_shape.id());
+    assert_ne!(node.transform_uuid(), mesh_shape.uuid());
     assert!(!node.transform_uuid().unwrap().is_nil());
-    assert_eq!(node.shape_name(), "legacy nameShape");
-    assert!(matches!(node.mesh().points(), Points::Float3(_)));
+    assert_eq!(mesh_shape.name(), "legacy nameShape");
+    assert!(matches!(mesh_shape.mesh().points(), Points::Float3(_)));
     assert_eq!(
         native.clone().node(id).unwrap().transform_uuid(),
         node.transform_uuid()
@@ -114,10 +129,7 @@ fn arbitrary_duplicate_legacy_names_survive_channel_edits_and_snapshot_restore()
     );
     assert_eq!(native, before);
     native.rename(id, "pCube1").unwrap();
-    assert_eq!(
-        native.node(id).unwrap().shape_name(),
-        "name with spacesShape"
-    );
+    assert_eq!(shape(&native, id).name(), "name with spacesShape");
     let changed = native.clone();
     assert_eq!(
         native.create(Primitive::Plane, "pCube1"),
@@ -132,13 +144,14 @@ fn native_extrusion_matches_legacy_delta_without_rebuilding_existing_edges() {
         let mut legacy = Scene::default();
         let id = legacy.create(Primitive::Cube, "pCube1").unwrap();
         let mut native = NativeScene::from_legacy(legacy.clone()).unwrap();
-        let edges = native.node(id).unwrap().mesh().edges().to_vec();
-        let faces = native.node(id).unwrap().mesh().faces().to_vec();
-        let points = native.node(id).unwrap().mesh().points().clone();
-        native.extrude_face(id, 1, distance).unwrap();
+        let shape_id = shape(&native, id).id();
+        let edges = native.shape(shape_id).unwrap().mesh().edges().to_vec();
+        let faces = native.shape(shape_id).unwrap().mesh().faces().to_vec();
+        let points = native.shape(shape_id).unwrap().mesh().points().clone();
+        native.extrude_face(shape_id, 1, distance).unwrap();
         legacy.extrude_face(id, 1, distance as f32).unwrap();
         assert_eq!(native.supported_view().unwrap(), legacy);
-        let mesh = native.node(id).unwrap().mesh();
+        let mesh = native.shape(shape_id).unwrap().mesh();
         assert_eq!(&mesh.edges()[..edges.len()], edges.as_slice());
         for (index, face) in faces.iter().enumerate() {
             if index != 1 {
@@ -161,17 +174,18 @@ fn failures_preserve_contents_and_allocator_before_next_real_create() {
         Err(NativeError::InvalidName)
     );
     let id = native.create(Primitive::Plane, "pPlane1").unwrap();
+    let shape_id = shape(&native, id).id();
     assert_eq!(id.to_decimal(), "1");
     let before = native.clone();
     assert_eq!(
-        native.extrude_face(id, 0, 1.0),
+        native.extrude_face(shape_id, 0, 1.0),
         Err(NativeError::Legacy(
             SceneError::UnsupportedAllFacesExtrusion
         ))
     );
     assert_eq!(native, before);
     assert_eq!(
-        native.extrude_face(id, 0, f64::NAN),
+        native.extrude_face(shape_id, 0, f64::NAN),
         Err(NativeError::Legacy(SceneError::InvalidExtrusionDistance))
     );
     assert_eq!(native, before);

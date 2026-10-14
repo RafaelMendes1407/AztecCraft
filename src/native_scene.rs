@@ -9,6 +9,15 @@ use uuid::Uuid;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct NativeId(u64);
 
+impl NativeId {
+    pub fn to_decimal(self) -> String {
+        self.0.to_string()
+    }
+    pub fn from_decimal(value: &str) -> Result<Self, std::num::ParseIntError> {
+        value.parse::<u64>().map(Self)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LinearUnit {
     Centimeter,
@@ -44,15 +53,20 @@ impl Default for Units {
 }
 
 impl Units {
-    fn factors(&self) -> Result<(f64, f64), NativeError> {
-        let linear = match self.linear {
+    fn linear_factor(&self) -> Result<f64, NativeError> {
+        Ok(match self.linear {
             LinearUnit::Centimeter => 1.0,
             LinearUnit::Millimeter => 0.1,
             LinearUnit::Meter => 100.0,
             LinearUnit::Inch => 2.54,
             LinearUnit::Foot => 30.48,
-            LinearUnit::Unsupported(_) => return Err(NativeError::UnsupportedView("linear unit")),
-        };
+            LinearUnit::Unsupported(_) => return Err(NativeError::UnsupportedLinearUnit),
+        })
+    }
+    pub(crate) fn factors(&self) -> Result<(f64, f64), NativeError> {
+        let linear = self
+            .linear_factor()
+            .map_err(|_| NativeError::UnsupportedView("linear unit"))?;
         let angular = match self.angular {
             AngularUnit::Degree => 1.0,
             AngularUnit::Radian => 180.0 / std::f64::consts::PI,
@@ -132,6 +146,13 @@ impl PartialEq for Scalar {
 }
 
 impl Scalar {
+    fn new(value: f64) -> Self {
+        Self {
+            value,
+            source_lexeme: None,
+            replaced: false,
+        }
+    }
     fn replace(&mut self, value: f64) {
         if self.value.to_bits() != value.to_bits() || self.source_lexeme.is_some() {
             self.value = value;
@@ -141,54 +162,96 @@ impl Scalar {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct NativeNode {
+pub struct NativeTransformNode {
     id: NodeId,
     transform_id: NativeId,
-    shape_id: NativeId,
     transform_uuid: Option<Uuid>,
-    shape_uuid: Option<Uuid>,
     name: String,
-    shape_name: String,
     channels: [Scalar; 9],
-    mesh: NativeMesh,
+    rotate_pivot: [Scalar; 3],
+    scale_pivot: [Scalar; 3],
     restrictions: Vec<String>,
     unsupported_transform: Vec<String>,
 }
 
-impl NativeNode {
+impl NativeTransformNode {
     pub fn id(&self) -> NodeId {
         self.id
     }
     pub fn transform_id(&self) -> NativeId {
         self.transform_id
     }
-    pub fn shape_id(&self) -> NativeId {
-        self.shape_id
-    }
     pub fn transform_uuid(&self) -> Option<Uuid> {
         self.transform_uuid
-    }
-    pub fn shape_uuid(&self) -> Option<Uuid> {
-        self.shape_uuid
     }
     pub fn name(&self) -> &str {
         &self.name
     }
-    pub fn shape_name(&self) -> &str {
-        &self.shape_name
+    pub fn rotate_pivot(&self) -> [f64; 3] {
+        self.rotate_pivot.each_ref().map(|v| v.value)
     }
-    pub fn mesh(&self) -> &NativeMesh {
-        &self.mesh
+    pub fn scale_pivot(&self) -> [f64; 3] {
+        self.scale_pivot.each_ref().map(|v| v.value)
+    }
+    pub fn unsupported_transform_effects(&self) -> &[String] {
+        &self.unsupported_transform
+    }
+    pub fn edit_restrictions(&self) -> &[String] {
+        &self.restrictions
     }
     pub fn transform(&self) -> NativeTransform {
         NativeTransform::from_values(self.channels.each_ref().map(|v| v.value))
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct NativeMeshShape {
+    id: NativeId,
+    uuid: Option<Uuid>,
+    name: String,
+    mesh: NativeMesh,
+    restrictions: Vec<String>,
+}
+
+impl NativeMeshShape {
+    pub fn id(&self) -> NativeId {
+        self.id
+    }
+    pub fn uuid(&self) -> Option<Uuid> {
+        self.uuid
+    }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn mesh(&self) -> &NativeMesh {
+        &self.mesh
+    }
+    pub fn edit_restrictions(&self) -> &[String] {
+        &self.restrictions
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct DagEdge {
+pub struct DagEdge {
     parent: Option<NativeId>,
     child: NativeId,
+}
+
+impl DagEdge {
+    pub fn parent(&self) -> Option<NativeId> {
+        self.parent
+    }
+    pub fn child(&self) -> NativeId {
+        self.child
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FaceTarget {
+    pub transform: NodeId,
+    pub shape: NativeId,
+    pub path: Vec<NativeId>,
+    pub face_index: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -199,7 +262,8 @@ struct SourceRetention {
 
 #[derive(Clone, Debug)]
 pub struct NativeScene {
-    nodes: Vec<NativeNode>,
+    nodes: Vec<NativeTransformNode>,
+    shapes: Vec<NativeMeshShape>,
     dag: Vec<DagEdge>,
     units: Units,
     source: Option<SourceRetention>,
@@ -210,6 +274,7 @@ pub struct NativeScene {
 impl PartialEq for NativeScene {
     fn eq(&self, other: &Self) -> bool {
         self.nodes == other.nodes
+            && self.shapes == other.shapes
             && self.dag == other.dag
             && self.units == other.units
             && self.source == other.source
@@ -220,6 +285,7 @@ impl Default for NativeScene {
     fn default() -> Self {
         Self {
             nodes: Vec::new(),
+            shapes: Vec::new(),
             dag: Vec::new(),
             units: Units::default(),
             source: None,
@@ -254,17 +320,61 @@ impl NativeScene {
         Ok(native)
     }
 
-    pub fn nodes(&self) -> &[NativeNode] {
+    pub fn nodes(&self) -> &[NativeTransformNode] {
         &self.nodes
     }
     pub fn units(&self) -> &Units {
         &self.units
     }
-    pub fn node(&self, id: NodeId) -> Result<&NativeNode, NativeError> {
+    pub fn node(&self, id: NodeId) -> Result<&NativeTransformNode, NativeError> {
         self.nodes
             .iter()
             .find(|n| n.id == id)
             .ok_or(NativeError::Legacy(SceneError::MissingNode(id)))
+    }
+    pub fn shapes(&self) -> &[NativeMeshShape] {
+        &self.shapes
+    }
+    pub fn shape(&self, id: NativeId) -> Result<&NativeMeshShape, NativeError> {
+        self.shapes
+            .iter()
+            .find(|shape| shape.id == id)
+            .ok_or(NativeError::MissingShape(id))
+    }
+    pub fn dag_edges(&self) -> &[DagEdge] {
+        &self.dag
+    }
+    pub fn resolve_face_target(
+        &self,
+        target: &FaceTarget,
+    ) -> Result<&NativeMeshShape, NativeError> {
+        let node = self.node(target.transform)?;
+        let shape = self.shape(target.shape)?;
+        if target.path.len() < 2
+            || target.path.last() != Some(&target.shape)
+            || target.path[target.path.len() - 2] != node.transform_id
+            || !self.dag.contains(&DagEdge {
+                parent: None,
+                child: target.path[0],
+            })
+            || target
+                .path
+                .iter()
+                .enumerate()
+                .any(|(i, id)| target.path[..i].contains(id))
+            || target.path.windows(2).any(|pair| {
+                !self.dag.contains(&DagEdge {
+                    parent: Some(pair[0]),
+                    child: pair[1],
+                })
+            })
+        {
+            return Err(NativeError::InvalidInstancePath);
+        }
+        if target.face_index >= shape.mesh.faces().len() {
+            return Err(SceneError::MissingFace(target.face_index).into());
+        }
+        Ok(shape)
     }
     pub fn restore_authoring(&mut self, mut snapshot: Self) {
         snapshot.next_id = snapshot.next_id.max(self.next_id);
@@ -273,6 +383,7 @@ impl NativeScene {
     }
 
     pub fn create(&mut self, primitive: Primitive, name: &str) -> Result<NodeId, NativeError> {
+        self.structural_edit()?;
         self.validate_new_name(None, name)?;
         let next = self
             .next_id
@@ -302,22 +413,23 @@ impl NativeScene {
             .ok_or(SceneError::IdsExhausted)?;
         let transform_id = NativeId(self.next_native_id);
         let shape_id = NativeId(self.next_native_id + 1);
-        self.nodes.push(NativeNode {
+        self.nodes.push(NativeTransformNode {
             id,
             transform_id,
-            shape_id,
             transform_uuid: Some(Uuid::new_v4()),
-            shape_uuid: Some(Uuid::new_v4()),
             name: name.into(),
-            shape_name: format!("{name}Shape"),
-            channels: transform.values().map(|value| Scalar {
-                value,
-                source_lexeme: None,
-                replaced: false,
-            }),
-            mesh,
+            channels: transform.values().map(Scalar::new),
+            rotate_pivot: [0.0; 3].map(Scalar::new),
+            scale_pivot: [0.0; 3].map(Scalar::new),
             restrictions: Vec::new(),
             unsupported_transform: Vec::new(),
+        });
+        self.shapes.push(NativeMeshShape {
+            id: shape_id,
+            uuid: Some(Uuid::new_v4()),
+            name: format!("{name}Shape"),
+            mesh,
+            restrictions: Vec::new(),
         });
         self.dag.extend([
             DagEdge {
@@ -334,43 +446,88 @@ impl NativeScene {
     }
 
     fn editable(&self, id: NodeId) -> Result<usize, NativeError> {
+        self.validate()?;
         let index = self
             .nodes
             .iter()
             .position(|n| n.id == id)
             .ok_or(SceneError::MissingNode(id))?;
-        let node = &self.nodes[index];
-        if !node.restrictions.is_empty()
-            || !node.unsupported_transform.is_empty()
-            || !self.supported_dag(node)
-        {
-            return Err(NativeError::UnsupportedEdit);
-        }
+        self.check_effects(self.nodes[index].transform_id)?;
         Ok(index)
     }
-    fn supported_dag(&self, node: &NativeNode) -> bool {
+    fn structural_edit(&self) -> Result<(), NativeError> {
+        self.validate()?;
+        if self.source.is_some() {
+            return Err(NativeError::UnsupportedEdit);
+        }
+        Ok(())
+    }
+    fn check_effects(&self, target: NativeId) -> Result<(), NativeError> {
+        let mut descendants = vec![target];
+        let mut ancestors = vec![target];
+        let mut index = 0;
+        while index < descendants.len() {
+            let current = descendants[index];
+            for edge in self.dag.iter().filter(|edge| edge.parent == Some(current)) {
+                if !descendants.contains(&edge.child) {
+                    descendants.push(edge.child);
+                }
+            }
+            index += 1;
+        }
+        index = 0;
+        while index < ancestors.len() {
+            let current = ancestors[index];
+            for edge in self.dag.iter().filter(|edge| edge.child == current) {
+                if let Some(parent) = edge.parent
+                    && !ancestors.contains(&parent)
+                {
+                    ancestors.push(parent);
+                }
+            }
+            index += 1;
+        }
+        for id in descendants.iter().chain(&ancestors) {
+            if self.nodes.iter().any(|node| {
+                node.transform_id == *id
+                    && (!node.restrictions.is_empty() || !node.unsupported_transform.is_empty())
+            }) || self
+                .shapes
+                .iter()
+                .any(|shape| shape.id == *id && !shape.restrictions.is_empty())
+            {
+                return Err(NativeError::UnsupportedEdit);
+            }
+        }
+        Ok(())
+    }
+    fn supported_shape(&self, node: &NativeTransformNode) -> Result<&NativeMeshShape, NativeError> {
+        let incoming: Vec<_> = self
+            .dag
+            .iter()
+            .filter(|edge| edge.child == node.transform_id)
+            .collect();
         let children: Vec<_> = self
             .dag
             .iter()
-            .filter(|e| e.parent == Some(node.transform_id) || e.parent == Some(node.shape_id))
+            .filter(|edge| edge.parent == Some(node.transform_id))
             .collect();
-        let links: Vec<_> = self
+        if incoming.len() != 1 || incoming[0].parent.is_some() || children.len() != 1 {
+            return Err(NativeError::UnsupportedView("DAG hierarchy or instances"));
+        }
+        let shape = self
+            .shape(children[0].child)
+            .map_err(|_| NativeError::UnsupportedView("transform-only group"))?;
+        if self
             .dag
             .iter()
-            .filter(|e| e.child == node.transform_id || e.child == node.shape_id)
-            .collect();
-        children.len() == 1
-            && children[0].parent == Some(node.transform_id)
-            && children[0].child == node.shape_id
-            && links.len() == 2
-            && links.contains(&&DagEdge {
-                parent: None,
-                child: node.transform_id,
-            })
-            && links.contains(&&DagEdge {
-                parent: Some(node.transform_id),
-                child: node.shape_id,
-            })
+            .filter(|edge| edge.child == shape.id)
+            .count()
+            != 1
+        {
+            return Err(NativeError::UnsupportedView("shared mesh instances"));
+        }
+        Ok(shape)
     }
     fn validate_new_name(&self, id: Option<NodeId>, name: &str) -> Result<(), NativeError> {
         let mut chars = name.bytes();
@@ -391,16 +548,51 @@ impl NativeScene {
         Ok(())
     }
     pub fn rename(&mut self, id: NodeId, name: &str) -> Result<(), NativeError> {
+        self.structural_edit()?;
         let index = self.editable(id)?;
         self.validate_new_name(Some(id), name)?;
         self.nodes[index].name = name.into();
         Ok(())
     }
     pub fn remove(&mut self, id: NodeId) -> Result<(), NativeError> {
+        self.structural_edit()?;
         let index = self.editable(id)?;
+        let transform = self.nodes[index].transform_id;
+        let incoming: Vec<_> = self
+            .dag
+            .iter()
+            .filter(|edge| edge.child == transform)
+            .collect();
+        if incoming.len() != 1
+            || incoming[0].parent.is_some()
+            || self.dag.iter().any(|edge| {
+                edge.parent == Some(transform)
+                    && self
+                        .nodes
+                        .iter()
+                        .any(|node| node.transform_id == edge.child)
+            })
+        {
+            return Err(NativeError::UnsupportedEdit);
+        }
+        let exclusive: Vec<_> = self
+            .dag
+            .iter()
+            .filter(|edge| edge.parent == Some(transform))
+            .filter(|edge| {
+                self.dag
+                    .iter()
+                    .filter(|link| link.child == edge.child)
+                    .count()
+                    == 1
+            })
+            .map(|edge| edge.child)
+            .collect();
         let node = self.nodes.remove(index);
-        self.dag
-            .retain(|e| e.child != node.transform_id && e.child != node.shape_id);
+        self.shapes.retain(|shape| !exclusive.contains(&shape.id));
+        self.dag.retain(|edge| {
+            edge.child != node.transform_id && edge.parent != Some(node.transform_id)
+        });
         Ok(())
     }
     pub fn set_transform(
@@ -434,13 +626,20 @@ impl NativeScene {
     }
     pub fn extrude_face(
         &mut self,
-        id: NodeId,
+        id: NativeId,
         face: usize,
         distance: f64,
     ) -> Result<(), NativeError> {
-        let index = self.editable(id)?;
-        let mesh = self.nodes[index].mesh.extruded_face(face, distance)?;
-        self.nodes[index].mesh = mesh;
+        self.structural_edit()?;
+        let index = self
+            .shapes
+            .iter()
+            .position(|shape| shape.id == id)
+            .ok_or(NativeError::MissingShape(id))?;
+        self.check_effects(id)?;
+        let distance = distance * self.units.linear_factor()?;
+        let mesh = self.shapes[index].mesh.extruded_face(face, distance)?;
+        self.shapes[index].mesh = mesh;
         Ok(())
     }
     pub fn supported_view(&self) -> Result<Scene, NativeError> {
@@ -448,12 +647,20 @@ impl NativeScene {
         let mut nodes = Vec::with_capacity(self.nodes.len());
         for node in &self.nodes {
             if !node.unsupported_transform.is_empty()
-                || !self.supported_dag(node)
                 || !node.restrictions.is_empty()
+                || node
+                    .rotate_pivot()
+                    .into_iter()
+                    .chain(node.scale_pivot())
+                    .any(|value| value != 0.0)
             {
                 return Err(NativeError::UnsupportedView(
                     "DAG, transform or dependencies",
                 ));
+            }
+            let shape = self.supported_shape(node)?;
+            if !shape.restrictions.is_empty() {
+                return Err(NativeError::UnsupportedView("shape dependencies"));
             }
             let t = node.transform();
             let transform = Transform {
@@ -461,12 +668,7 @@ impl NativeScene {
                 rotation_degrees: convert(t.rotation, angular)?,
                 scale: convert(t.scale, 1.0)?,
             };
-            nodes.push((
-                node.id,
-                node.name.clone(),
-                node.mesh.view(linear)?,
-                transform,
-            ));
+            nodes.push((node.id, node.name.clone(), shape.mesh.view(1.0)?, transform));
         }
         Scene::from_view(nodes, self.next_id)
             .map_err(|_| NativeError::UnsupportedView("f32 world coordinates"))
@@ -482,21 +684,31 @@ impl NativeScene {
             if id == 0 || id >= self.next_id || !ids.insert(node.id) {
                 return Err(NativeError::InvalidIdentity);
             }
-            for id in [node.transform_id, node.shape_id] {
-                if id.0 == 0 || id.0 >= self.next_native_id || !native_ids.insert(id) {
-                    return Err(NativeError::InvalidIdentity);
-                }
+            let native_id = node.transform_id;
+            if native_id.0 == 0
+                || native_id.0 >= self.next_native_id
+                || !native_ids.insert(native_id)
+            {
+                return Err(NativeError::InvalidIdentity);
             }
-            if node.channels.iter().any(|v| !v.value.is_finite()) {
+            if node
+                .channels
+                .iter()
+                .chain(&node.rotate_pivot)
+                .chain(&node.scale_pivot)
+                .any(|v| !v.value.is_finite())
+            {
                 return Err(NativeError::NonFinite);
             }
-            node.mesh.validate()?;
         }
-        if self.dag.iter().any(|e| {
-            !native_ids.contains(&e.child) || e.parent.is_some_and(|p| !native_ids.contains(&p))
-        }) {
-            return Err(NativeError::InvalidIdentity);
+        for shape in &self.shapes {
+            if shape.id.0 == 0 || shape.id.0 >= self.next_native_id || !native_ids.insert(shape.id)
+            {
+                return Err(NativeError::InvalidIdentity);
+            }
+            shape.mesh.validate()?;
         }
+        self.validate_dag(&native_ids)?;
         if let Some(source) = &self.source {
             let mut end = 0;
             for range in &source.records {
@@ -505,6 +717,60 @@ impl NativeScene {
                 }
                 end = range.end;
             }
+        }
+        Ok(())
+    }
+    fn validate_dag(
+        &self,
+        identities: &std::collections::HashSet<NativeId>,
+    ) -> Result<(), NativeError> {
+        let transforms: std::collections::HashSet<_> =
+            self.nodes.iter().map(|node| node.transform_id).collect();
+        let mut edges = std::collections::HashSet::new();
+        let mut incoming: std::collections::HashMap<_, usize> =
+            identities.iter().map(|id| (*id, 0)).collect();
+        for edge in &self.dag {
+            if !identities.contains(&edge.child)
+                || !edges.insert((edge.parent, edge.child))
+                || edge
+                    .parent
+                    .is_some_and(|parent| !transforms.contains(&parent))
+                || (edge.parent.is_none() && !transforms.contains(&edge.child))
+            {
+                return Err(NativeError::InvalidIdentity);
+            }
+            if edge.parent.is_some() {
+                *incoming
+                    .get_mut(&edge.child)
+                    .ok_or(NativeError::InvalidIdentity)? += 1;
+            }
+        }
+        if identities
+            .iter()
+            .any(|id| !self.dag.iter().any(|edge| edge.child == *id))
+        {
+            return Err(NativeError::InvalidIdentity);
+        }
+        let mut pending: std::collections::VecDeque<_> = incoming
+            .iter()
+            .filter(|(_, count)| **count == 0)
+            .map(|(id, _)| *id)
+            .collect();
+        let mut visited = 0;
+        while let Some(parent) = pending.pop_front() {
+            visited += 1;
+            for edge in self.dag.iter().filter(|edge| edge.parent == Some(parent)) {
+                let count = incoming
+                    .get_mut(&edge.child)
+                    .ok_or(NativeError::InvalidIdentity)?;
+                *count -= 1;
+                if *count == 0 {
+                    pending.push_back(edge.child);
+                }
+            }
+        }
+        if visited != identities.len() {
+            return Err(NativeError::InvalidIdentity);
         }
         Ok(())
     }
@@ -525,6 +791,9 @@ pub enum NativeError {
     InvalidIdentity,
     InvalidRetention,
     InvalidTopology,
+    MissingShape(NativeId),
+    InvalidInstancePath,
+    UnsupportedLinearUnit,
     InvalidName,
     NameCollision,
     UnsupportedEdit,
@@ -543,6 +812,15 @@ impl fmt::Display for NativeError {
             Self::InvalidIdentity => f.write_str("invalid native identities or DAG references"),
             Self::InvalidRetention => f.write_str("invalid retained source ranges"),
             Self::InvalidTopology => f.write_str("invalid native polygon connectivity"),
+            Self::MissingShape(id) => {
+                write!(f, "native mesh shape {} does not exist", id.to_decimal())
+            }
+            Self::InvalidInstancePath => {
+                f.write_str("face target does not match a valid full instance path")
+            }
+            Self::UnsupportedLinearUnit => {
+                f.write_str("declared linear unit conversion is unsupported")
+            }
             Self::InvalidName => {
                 f.write_str("new names require the supported ASCII identifier subset")
             }
