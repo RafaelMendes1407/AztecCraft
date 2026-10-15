@@ -1,5 +1,5 @@
 use super::*;
-mod wire_fixture {
+pub(super) mod wire_fixture {
     include!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/support/maya_binary.rs"

@@ -1,5 +1,7 @@
 mod admission;
 mod binding;
+mod encode;
+pub use encode::encode;
 #[cfg(test)]
 mod tests;
 
@@ -99,7 +101,20 @@ impl From<semantic::BinaryError> for BinaryError {
 }
 
 pub fn decode(source: Arc<[u8]>) -> Result<NativeScene, BinaryError> {
+    decode_with_retained_bytes(source, 0)
+}
+
+fn decode_with_retained_bytes(
+    source: Arc<[u8]>,
+    retained_bytes: usize,
+) -> Result<NativeScene, BinaryError> {
+    admission::Budget::new(
+        source
+            .len()
+            .checked_add(retained_bytes)
+            .ok_or_else(resource)?,
+    )?;
     let container = container::inspect(source)?;
     let facts = semantic::decode_records(&container)?;
-    binding::construct(&container, &facts)
+    binding::construct(&container, &facts, retained_bytes)
 }

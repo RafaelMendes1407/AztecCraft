@@ -154,12 +154,14 @@ pub(super) fn preflight_candidate(
 pub(super) fn construct(
     container: &Container,
     facts: &WireFacts<'_>,
+    retained_bytes: usize,
 ) -> Result<NativeScene, BinaryError> {
     let initial = container
         .source()
         .len()
         .checked_add(container.metadata_bytes().ok_or_else(resource)?)
         .and_then(|n| n.checked_add(facts.metadata_bytes().ok()?))
+        .and_then(|n| n.checked_add(retained_bytes))
         .ok_or_else(resource)?;
     let mut budget = Budget::new(initial)?;
     let count = facts

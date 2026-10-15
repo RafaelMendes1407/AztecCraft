@@ -1,0 +1,309 @@
+use super::super::tests::wire_fixture::{self, creation, group, scene, triple};
+use super::*;
+use crate::{
+    native_scene::{Channel, NativeTransform},
+    view_scene::ViewScene,
+};
+
+fn fixture() -> (Arc<[u8]>, NativeScene) {
+    let bytes: Arc<[u8]> = wire_fixture::specimen().into();
+    let scene = super::super::decode(bytes.clone()).unwrap();
+    (bytes, scene)
+}
+
+fn numeric(bytes: &[u8], key: &[u8]) -> usize {
+    let marker = [key, &[0, 0x20]].concat();
+    bytes
+        .windows(marker.len())
+        .rposition(|v| v == marker)
+        .unwrap()
+        + marker.len()
+}
+
+fn assert_only_word(before: &[u8], after: &[u8], start: usize, value: f64) {
+    assert_eq!(before.len(), after.len());
+    assert!(
+        after[..start] == before[..start],
+        "untouched prefix differs"
+    );
+    assert!(
+        after[start..start + 8] == value.to_be_bytes(),
+        "replacement word differs"
+    );
+    assert!(
+        after[start + 8..] == before[start + 8..],
+        "untouched suffix differs"
+    );
+    assert!(
+        before[start..start + 8] != after[start..start + 8],
+        "replacement did not change word"
+    );
+}
+
+#[test]
+fn unedited_and_reverted_binary_are_byte_identical() {
+    let (bytes, mut candidate) = fixture();
+    assert_eq!(encode(&candidate).unwrap(), bytes.as_ref());
+    let id = candidate.nodes()[0].id();
+    let initial = candidate.node(id).unwrap().transform().translation[0];
+    candidate
+        .set_channel(id, Channel::TranslateX, initial + 0.25)
+        .unwrap();
+    candidate
+        .set_channel(id, Channel::TranslateX, initial)
+        .unwrap();
+    assert_eq!(encode(&candidate).unwrap(), bytes.as_ref());
+}
+
+#[test]
+fn precise_edit_replaces_only_its_authorized_word_and_reopens_in_view() {
+    let (bytes, mut candidate) = fixture();
+    let id = candidate.nodes()[0].id();
+    let value = 16777217.125000004;
+    candidate
+        .set_channel(id, Channel::TranslateX, value)
+        .unwrap();
+    let output = encode(&candidate).unwrap();
+    assert_only_word(&bytes, &output, numeric(&bytes, b"t"), value);
+    let reopened = super::super::decode(output.into()).unwrap();
+    assert_eq!(
+        reopened.node(id).unwrap().transform().translation[0].to_bits(),
+        value.to_bits()
+    );
+    assert_eq!(
+        reopened.internal_transform(id).unwrap().rotation_radians[2].to_bits(),
+        0.25f64.to_bits()
+    );
+    assert_eq!(reopened.shapes, candidate.shapes);
+    assert_eq!(reopened.dag, candidate.dag);
+    assert_eq!(reopened.units, candidate.units);
+    assert_eq!(
+        ViewScene::from_native(&reopened, 1024 * 1024)
+            .unwrap()
+            .instances()
+            .len(),
+        1
+    );
+    assert_eq!(
+        candidate.source.as_ref().unwrap().bytes.as_ref(),
+        bytes.as_ref()
+    );
+}
+
+#[test]
+fn angles_and_signed_zero_use_storage_words_without_touching_companions() {
+    for (channel, value, key, component, expected) in [
+        (
+            Channel::RotateZ,
+            90.0,
+            b"r".as_slice(),
+            2,
+            std::f64::consts::FRAC_PI_2,
+        ),
+        (Channel::RotateX, -0.0, b"r".as_slice(), 0, -0.0),
+    ] {
+        let (bytes, mut candidate) = fixture();
+        let id = candidate.nodes()[0].id();
+        candidate.set_channel(id, channel, value).unwrap();
+        let output = encode(&candidate).unwrap();
+        assert_only_word(
+            &bytes,
+            &output,
+            numeric(&bytes, key) + component * 8,
+            expected,
+        );
+        let reopened = super::super::decode(output.into()).unwrap();
+        assert_eq!(
+            reopened.internal_transform(id).unwrap().rotation_radians[component].to_bits(),
+            expected.to_bits()
+        );
+    }
+}
+
+#[test]
+fn declared_meter_and_radian_edits_preserve_internal_storage_units() {
+    let bytes = wire_fixture::scene_with_units(
+        &group(
+            b"XFRM",
+            &[
+                creation(b"object", None),
+                triple(b"t", [100.0, 200.0, 300.0]),
+                triple(b"r", [0.125, 0.25, 0.5]),
+            ]
+            .concat(),
+            4,
+        ),
+        b"m",
+        b"rad",
+    );
+    let candidate = super::super::decode(bytes.clone()).unwrap();
+    let id = candidate.nodes()[0].id();
+    assert_eq!(
+        candidate.node(id).unwrap().transform().translation,
+        [1.0, 2.0, 3.0]
+    );
+    let mut translated = candidate.clone();
+    translated
+        .set_channel(id, Channel::TranslateX, 2.5)
+        .unwrap();
+    let output = encode(&translated).unwrap();
+    assert_only_word(&bytes, &output, numeric(&bytes, b"t"), 250.0);
+    let mut rotated = candidate;
+    rotated.set_channel(id, Channel::RotateY, 0.75).unwrap();
+    let output = encode(&rotated).unwrap();
+    assert_only_word(&bytes, &output, numeric(&bytes, b"r") + 8, 0.75);
+}
+
+#[test]
+fn only_effective_last_duplicate_assignment_changes() {
+    let bytes = scene(&group(
+        b"XFRM",
+        &[
+            creation(b"object", None),
+            triple(b"t", [101.0, 102.0, 103.0]),
+            triple(b"t", [1.0, 2.0, 3.0]),
+        ]
+        .concat(),
+        4,
+    ));
+    let mut candidate = super::super::decode(bytes.clone()).unwrap();
+    candidate
+        .set_channel(candidate.nodes()[0].id(), Channel::TranslateY, 4.25)
+        .unwrap();
+    let output = encode(&candidate).unwrap();
+    assert_only_word(&bytes, &output, numeric(&bytes, b"t") + 8, 4.25);
+    let first = bytes
+        .windows(8)
+        .position(|v| v == 101.0f64.to_be_bytes())
+        .unwrap();
+    assert_eq!(&output[first..first + 24], &bytes[first..first + 24]);
+}
+
+#[test]
+fn refuses_sourcefree_absent_origin_invalid_origin_and_structural_changes() {
+    assert_eq!(
+        encode(&NativeScene::default()).unwrap_err().kind(),
+        ErrorKind::Unsupported
+    );
+    let (_, candidate) = fixture();
+    let mut changed = candidate.clone();
+    changed.nodes[0].name.push_str("changed");
+    assert_eq!(encode(&changed).unwrap_err().kind(), ErrorKind::Unsupported);
+    changed = candidate.clone();
+    changed.nodes[0].channels[6].value = 2.0;
+    changed.nodes[0].channels[6].replaced = true;
+    assert!(encode(&changed).is_err());
+    changed = candidate.clone();
+    changed.nodes[0].channels[0].origin = Some(super::super::super::source::ScalarOrigin::Binary {
+        leaf: usize::MAX,
+        component: 0,
+    });
+    assert!(encode(&changed).is_err());
+    changed = candidate.clone();
+    changed.dag.clear();
+    assert!(encode(&changed).is_err());
+    let mut transform = NativeTransform::default();
+    transform.scale[0] = 2.0;
+    assert!(
+        candidate
+            .clone()
+            .set_transform(candidate.nodes()[0].id(), transform)
+            .is_err()
+    );
+}
+
+#[test]
+fn retained_reparse_buffers_have_an_exact_boundary_and_checked_overflow() {
+    let (bytes, _) = fixture();
+    assert_eq!(
+        super::super::decode_with_retained_bytes(bytes.clone(), 128 * 1024 * 1024 - bytes.len())
+            .unwrap_err()
+            .kind(),
+        ErrorKind::ResourceLimit
+    );
+    let mut low = 0usize;
+    let mut high = 128 * 1024 * 1024;
+    while high - low > 1 {
+        let mid = low + (high - low) / 2;
+        if super::super::decode_with_retained_bytes(bytes.clone(), mid).is_ok() {
+            low = mid;
+        } else {
+            high = mid;
+        }
+    }
+    assert!(super::super::decode_with_retained_bytes(bytes.clone(), low).is_ok());
+    assert_eq!(
+        super::super::decode_with_retained_bytes(bytes.clone(), high)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::ResourceLimit
+    );
+    assert_eq!(
+        super::super::decode_with_retained_bytes(bytes, usize::MAX)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::ResourceLimit
+    );
+}
+
+#[test]
+#[ignore = "requires explicit private manifest and separate SHA precheck"]
+fn private_originals_encode_identically_and_edits_change_only_one_word() {
+    let manifest = std::env::var_os("AZTECCRAFT_MB_FIXTURE_MANIFEST").unwrap();
+    let manifest = std::path::Path::new(&manifest);
+    let directory = manifest.parent().unwrap().canonicalize().unwrap();
+    let entries: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(manifest).unwrap()).unwrap();
+    assert_eq!(entries.as_array().unwrap().len(), 5);
+    for entry in entries.as_array().unwrap() {
+        let path = directory
+            .join(entry["relative_path"].as_str().unwrap())
+            .canonicalize()
+            .unwrap();
+        assert!(path.starts_with(&directory));
+        let bytes: Arc<[u8]> = std::fs::read(path).unwrap().into();
+        assert_eq!(bytes.len(), entry["bytes"].as_u64().unwrap() as usize);
+        let mut candidate = super::super::decode(bytes.clone()).unwrap();
+        assert!(
+            encode(&candidate).unwrap().as_slice() == bytes.as_ref(),
+            "unedited private output differs"
+        );
+        let source = candidate.source.as_ref().unwrap();
+        let leaf = source
+            .leaves
+            .iter()
+            .find(|leaf| leaf.field == super::super::super::TransformField::Translation)
+            .unwrap();
+        let offset = leaf.numeric.start;
+        let node = candidate
+            .nodes
+            .iter()
+            .find(|node| node.transform_id == leaf.owner)
+            .unwrap();
+        let id = node.id();
+        let value = node.transform().translation[0] + 0.125;
+        candidate
+            .set_channel(id, Channel::TranslateX, value)
+            .unwrap();
+        let output = encode(&candidate).unwrap();
+        assert_only_word(&bytes, &output, offset, value);
+        let reopened = super::super::decode(output.into()).unwrap();
+        assert_eq!(
+            reopened.node(id).unwrap().transform().translation[0].to_bits(),
+            value.to_bits()
+        );
+        assert_eq!(reopened.shapes, candidate.shapes);
+        assert_eq!(reopened.dag, candidate.dag);
+        assert_eq!(reopened.units, candidate.units);
+        assert_eq!(
+            ViewScene::from_native(&reopened, 128 * 1024 * 1024)
+                .unwrap()
+                .instances()
+                .len(),
+            ViewScene::from_native(&candidate, 128 * 1024 * 1024)
+                .unwrap()
+                .instances()
+                .len()
+        );
+    }
+}
