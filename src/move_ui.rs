@@ -3,9 +3,9 @@ use crate::editor_operations::{
     ActiveTool, MoveDistance, Operation, OperationError, OperationReply, SelectionMode,
 };
 use azteccraft::{
-    history::{EditOutcome, MoveFinish, MoveId, MoveProvenance},
+    history::{EditOutcome, MoveError, MoveFinish, MoveId, MoveProvenance},
     move_handles::{AxisDrag, ViewportCapture, WorldHandles},
-    native_scene::{TransformTarget, WorldAxis},
+    native_scene::{NativeError, TransformTarget, WorldAxis},
 };
 use glam::Vec2;
 use uuid::Uuid;
@@ -152,7 +152,12 @@ impl Editor {
                 provenance,
                 256 * 1024 * 1024,
             )
-            .map_err(OperationError::Move)?;
+            .map_err(|error| match error {
+                MoveError::Native(error @ NativeError::ReadOnlyFormat) => {
+                    OperationError::Scene(error)
+                }
+                error => OperationError::Move(error),
+            })?;
         self.sync_fields();
         Ok(OperationReply::MoveStarted {
             move_id: id.to_decimal(),

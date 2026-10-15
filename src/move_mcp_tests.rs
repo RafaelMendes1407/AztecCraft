@@ -537,3 +537,57 @@ async fn move_sdk_refuses_begin_in_face_mode_and_reports_it_in_inspection() {
     drop(editor);
     server.await.unwrap();
 }
+
+mod ascii_fixture {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/support/maya_ascii.rs"
+    ));
+}
+
+#[tokio::test]
+async fn move_sdk_refuses_begin_on_a_read_only_ascii_curve_scene_with_a_typed_error() {
+    let context = egui::Context::default();
+    let (mut editor, client, server) = start(&context).await;
+    let scene = azteccraft::native_scene::ascii::decode(ascii_fixture::specimen().into()).unwrap();
+    editor.history = azteccraft::history::History::new(scene);
+    let node = editor.history.scene().nodes()[0].id();
+    editor.select(Some(node));
+    let token = editor.scene_token.to_string();
+    let path: Vec<_> = editor
+        .selected_path
+        .iter()
+        .map(|id| id.to_decimal())
+        .collect();
+    let before = editor.history.scene().clone();
+    let refused = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "begin_move",
+        json!({"scene_token":token,"node_id":node.to_decimal(),"instance_path":path,"axis":"x"}),
+    )
+    .await;
+    let error = &refused.structured_content.unwrap()["error"];
+    assert_eq!(error["code"], "scene_error");
+    assert!(error["message"].as_str().unwrap().contains("read-only"));
+    assert!(editor.history.active_move().is_none());
+    assert_eq!(editor.history.scene(), &before);
+    let inspected = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "inspect_scene",
+        json!({}),
+    )
+    .await
+    .structured_content
+    .unwrap();
+    assert_eq!(
+        inspected["inspection"]["move_tool"]["numeric_available"],
+        false
+    );
+    client.cancel().await.unwrap();
+    drop(editor);
+    server.await.unwrap();
+}

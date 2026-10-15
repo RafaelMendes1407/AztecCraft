@@ -1340,6 +1340,70 @@ fn native_tool_switch_reports_no_scene_edit_status() {
     assert_eq!(editor.status, "sentinel");
 }
 
+mod ascii_fixture {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/support/maya_ascii.rs"
+    ));
+}
+
+#[test]
+fn read_only_ascii_curve_scene_refuses_move_natively_and_numerically_with_the_core_reason() {
+    let scene = azteccraft::native_scene::ascii::decode(ascii_fixture::specimen().into()).unwrap();
+    let mut editor = Editor {
+        history: azteccraft::history::History::new(scene),
+        renderer: Some(crate::viewport_renderer::tests::renderer_handle()),
+        ..Editor::default()
+    };
+    let node = editor.history.scene().nodes()[0].id();
+    editor.select(Some(node));
+    let reason = editor
+        .history
+        .scene()
+        .authoring_read_only_reason()
+        .unwrap()
+        .to_string();
+    editor.native_operation(Operation::SetActiveTool(ActiveTool::Move));
+    assert_eq!(editor.active_tool, ActiveTool::Move);
+    let inspected = editor.inspect_move().unwrap();
+    assert!(!inspected.numeric_available);
+    assert_eq!(
+        inspected.numeric_unavailable_reason.as_deref(),
+        Some(reason.as_str())
+    );
+    let before = editor.history.scene().clone();
+    let target = editor.selected_move_target().unwrap();
+    assert!(matches!(
+        editor.apply_operation(Operation::BeginMove {
+            target,
+            axis: WorldAxis::X
+        }),
+        Err(OperationError::Scene(NativeError::ReadOnlyFormat))
+    ));
+    assert!(editor.history.active_move().is_none() && editor.native_move.is_none());
+    assert_eq!(editor.history.scene(), &before);
+    let context = egui::Context::default();
+    let output = frame(
+        &mut editor,
+        &context,
+        raw(egui::vec2(1440.0, 900.0), Pos2::ZERO, 1.0, vec![]),
+    );
+    let rect = viewport(&output);
+    let shown = output.shapes.iter().any(|shape| {
+        matches!(&shape.shape,
+        Shape::Text(text) if text.galley.job.text.contains(&format!("Move unavailable: {reason}")))
+    });
+    assert!(shown, "Move unavailable text with the read-only reason");
+    tap(
+        &mut editor,
+        &context,
+        rect.center() + egui::vec2(40.0, 0.0),
+        vec![],
+    );
+    assert!(editor.history.active_move().is_none() && editor.native_move.is_none());
+    assert_eq!(editor.history.scene(), &before);
+}
+
 #[test]
 fn hover_and_active_painter_states_use_the_same_actual_axis_hit() {
     let (mut editor, context, rect) = setup(1.0);
