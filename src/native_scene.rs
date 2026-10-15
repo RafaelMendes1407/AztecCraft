@@ -757,6 +757,13 @@ impl NativeScene {
         Ok(shape)
     }
     fn instance_shape(&self, path: &[NativeId]) -> Result<&NativeMeshShape, NativeError> {
+        let id = self.instance_geometry_id(path)?;
+        self.shapes
+            .iter()
+            .find(|shape| shape.id == id)
+            .ok_or(NativeError::InvalidInstancePath)
+    }
+    fn instance_geometry_id(&self, path: &[NativeId]) -> Result<NativeId, NativeError> {
         // Construction and mutation validate the opaque scene; per-instance queries must stay bounded.
         if path.len() < 2 {
             return Err(NativeError::InvalidInstancePath);
@@ -770,17 +777,26 @@ impl NativeScene {
         {
             return Err(NativeError::InvalidInstancePath);
         }
-        self.shapes
-            .iter()
-            .find(|shape| Some(&shape.id) == path.last())
-            .ok_or(NativeError::InvalidInstancePath)
+        Ok(path[path.len() - 1])
     }
     pub fn geometry_view_admission(
         &self,
         path: &[NativeId],
     ) -> Result<GeometryViewAdmission, NativeError> {
-        let shape = self.instance_shape(path)?;
-        let mut visible = shape.view.visible()?;
+        let id = self.instance_geometry_id(path)?;
+        let facts = self
+            .shapes
+            .iter()
+            .find(|shape| shape.id == id)
+            .map(|shape| &shape.view)
+            .or_else(|| {
+                self.curves
+                    .iter()
+                    .find(|curve| curve.id == id)
+                    .map(|curve| &curve.view)
+            })
+            .ok_or(NativeError::InvalidInstancePath)?;
+        let mut visible = facts.visible()?;
         for id in &path[..path.len() - 1] {
             let node = self
                 .nodes
