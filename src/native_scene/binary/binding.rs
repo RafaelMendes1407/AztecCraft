@@ -32,6 +32,13 @@ pub(super) struct Owners {
 }
 
 impl Owners {
+    pub(super) fn metadata_bytes(&self) -> Result<usize, BinaryError> {
+        self.indices
+            .capacity()
+            .checked_mul(size_of::<usize>())
+            .ok_or_else(resource)
+    }
+
     fn name<'a>(facts: &'a WireFacts<'_>, index: usize) -> &'a [u8] {
         let Data::Create(create) = &facts.records[index].data else {
             unreachable!()
@@ -74,6 +81,27 @@ impl Owners {
         Ok(Self { indices })
     }
 
+    pub(super) fn resolve_name(
+        &self,
+        facts: &WireFacts<'_>,
+        raw_owner: &[u8],
+        offset: usize,
+    ) -> Result<Option<usize>, BinaryError> {
+        let owner = Self::absolute_name(raw_owner, offset)?;
+        if owner.is_empty() {
+            return Err(fail(ErrorKind::Unsupported, offset));
+        }
+        let index = self
+            .indices
+            .binary_search_by(|index| Self::name(facts, *index).cmp(owner))
+            .ok()
+            .map(|index| self.indices[index]);
+        if index.is_none() && !raw_owner.starts_with(b":") {
+            return Err(fail(ErrorKind::Unsupported, offset));
+        }
+        Ok(index)
+    }
+
     pub(super) fn resolve(
         &self,
         facts: &WireFacts<'_>,
@@ -85,18 +113,10 @@ impl Owners {
             .position(|byte| *byte == b'.')
             .ok_or_else(|| fail(ErrorKind::Unsupported, range.start))?;
         let raw_owner = &endpoint[..dot];
-        let owner = Self::absolute_name(raw_owner, range.start)?;
-        if owner.is_empty() || dot + 1 == endpoint.len() {
+        if dot + 1 == endpoint.len() {
             return Err(fail(ErrorKind::Unsupported, range.start));
         }
-        let index = self
-            .indices
-            .binary_search_by(|index| Self::name(facts, *index).cmp(owner))
-            .ok()
-            .map(|index| self.indices[index]);
-        if index.is_none() && !raw_owner.starts_with(b":") {
-            return Err(fail(ErrorKind::Unsupported, range.start));
-        }
+        let index = self.resolve_name(facts, raw_owner, range.start)?;
         Ok((index, range.start + dot + 1..range.end))
     }
 }

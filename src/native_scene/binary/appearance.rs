@@ -94,6 +94,7 @@ struct Link {
 
 struct Graph<'a> {
     facts: &'a WireFacts<'a>,
+    owners: &'a Owners,
     links: Vec<Link>,
     cyclic: bool,
 }
@@ -123,7 +124,7 @@ fn message_link(facts: &WireFacts<'_>, link: &Link) -> bool {
 impl<'a> Graph<'a> {
     fn new(
         facts: &'a WireFacts<'a>,
-        owners: &Owners,
+        owners: &'a Owners,
         meter: &mut Meter<'_>,
     ) -> Result<Self, BinaryError> {
         meter.step(facts.records.len())?;
@@ -211,6 +212,7 @@ impl<'a> Graph<'a> {
         }
         Ok(Self {
             facts,
+            owners,
             links,
             cyclic: remaining != 0,
         })
@@ -796,6 +798,27 @@ fn material(
         placement_links.push(graph.span(index));
     }
     let placement = placement.ok_or(AppearanceIssue::UnsupportedGraph)?;
+    meter.step(graph.facts.records.len())?;
+    for record in &graph.facts.records {
+        if let Data::Selection(target) = &record.data {
+            meter.step((usize::BITS - graph.facts.records.len().leading_zeros()) as usize)?;
+            let owner =
+                match graph
+                    .owners
+                    .resolve_name(graph.facts, graph.key(target), target.start)
+                {
+                    Ok(owner) => owner,
+                    Err(error) if error.kind() == ErrorKind::Unsupported => {
+                        return Err(AppearanceIssue::UnsupportedGraph.into());
+                    }
+                    Err(error) => return Err(error.into()),
+                };
+            if owner.is_some_and(|owner| [shading_group, shader, file, placement].contains(&owner))
+            {
+                return Err(AppearanceIssue::UnsupportedGraph.into());
+            }
+        }
+    }
     meter.step(graph.links.len())?;
     for link in &graph.links {
         if let Some(owner) = link.destination {
@@ -1116,10 +1139,7 @@ fn shape_binding(
         let key = graph.key(&link.source_key);
         let supported = matches!(key, b"iog.og[0]" | b"iog[0].og[0]");
         if !supported {
-            if graph.key(&link.destination_key) == b"dsm" {
-                return Err(AppearanceIssue::OverlappingMembership.into());
-            }
-            continue;
+            return Err(AppearanceIssue::OverlappingMembership.into());
         }
         if membership.replace(index).is_some() {
             return Err(AppearanceIssue::OverlappingMembership.into());
@@ -1201,6 +1221,7 @@ pub(super) fn bind(
         steps: 0,
     };
     meter.charge(retained_appearance_bytes)?;
+    meter.charge(owners.metadata_bytes()?)?;
     let promoted = size_of::<Range<usize>>()
         .checked_add(2 * size_of::<crate::maya_binary::semantic::Words>())
         .ok_or_else(resource)?;

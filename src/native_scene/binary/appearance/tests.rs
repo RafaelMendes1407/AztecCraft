@@ -339,15 +339,49 @@ fn overlapping_membership_competing_inputs_and_cycles_do_not_choose_a_winner() {
 }
 
 #[test]
+fn selected_created_material_overrides_cannot_remain_checked() {
+    use crate::native_scene::binary::tests::wire_fixture as wire;
+
+    for target in [
+        b":surface".as_slice(),
+        b":shader",
+        b":texture",
+        b":placement",
+        b":|unresolved",
+    ] {
+        let bytes = wire_fixture::appearance_specimen();
+        let selected = wire::group(
+            b"SLCT",
+            &[
+                wire::chunk(b"SLCT", target, 8),
+                wire::chunk(
+                    b"DBLE",
+                    &[b"dc\0\x24".as_slice(), &0.25f64.to_be_bytes()].concat(),
+                    8,
+                ),
+            ]
+            .concat(),
+            4,
+        );
+        unavailable(
+            wire::group(b"Maya", &[bytes[20..].to_vec(), selected].concat(), 1),
+            AppearanceIssue::UnsupportedGraph,
+        );
+    }
+}
+
+#[test]
 fn other_membership_slots_cannot_remain_checked() {
-    unavailable(
-        wire_fixture::appearance_specimen_with_connections(&connection(
-            1,
-            b"shape.iog",
-            b":otherSet.dsm",
-        )),
-        AppearanceIssue::OverlappingMembership,
-    );
+    for (source, destination) in [
+        (b"shape.iog".as_slice(), b":otherSet.dsm".as_slice()),
+        (b"shape.iog[0]", b":otherSet.dsm[0]"),
+        (b"shape.iog[0].og[1]", b":otherSet.dsm[0]"),
+    ] {
+        unavailable(
+            wire_fixture::appearance_specimen_with_connections(&connection(1, source, destination)),
+            AppearanceIssue::OverlappingMembership,
+        );
+    }
 }
 
 #[test]
@@ -526,6 +560,46 @@ fn opaque_appearance_payloads_are_unavailable_without_invented_key_framing() {
             AppearanceIssue::UnsupportedSettings,
         );
     }
+}
+
+#[test]
+fn owner_table_capacity_counts_toward_the_local_metadata_boundary() {
+    use crate::native_scene::binary::{decode_with_retained_bytes, tests::wire_fixture};
+
+    let bytes = wire_fixture::scene(&wire_fixture::group(
+        b"XFRM",
+        &wire_fixture::creation(b"object", None),
+        4,
+    ));
+    let container = crate::maya_binary::container::inspect(bytes.clone()).unwrap();
+    let facts = crate::maya_binary::semantic::decode_records(&container).unwrap();
+    let mut budget = Budget::new(0).unwrap();
+    let owner_bytes = budget.vector::<usize>(1).unwrap().capacity() * size_of::<usize>();
+    let graph_bytes = budget
+        .vector::<usize>(facts.records.len())
+        .unwrap()
+        .capacity()
+        * size_of::<usize>()
+        + budget
+            .vector::<bool>(facts.records.len())
+            .unwrap()
+            .capacity()
+            * size_of::<bool>();
+    let promoted_bytes = facts.records.capacity()
+        * (size_of::<Range<usize>>() + 2 * size_of::<crate::maya_binary::semantic::Words>());
+    let retained = MAX_METADATA
+        - owner_bytes
+        - graph_bytes
+        - promoted_bytes
+        - size_of::<SourceAppearance>()
+        - 2 * size_of::<usize>();
+    assert!(decode_with_retained_bytes(bytes.clone(), 0, retained).is_ok());
+    assert_eq!(
+        decode_with_retained_bytes(bytes, 0, retained + 1)
+            .unwrap_err()
+            .kind(),
+        ErrorKind::ResourceLimit
+    );
 }
 
 #[test]
