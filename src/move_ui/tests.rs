@@ -1201,6 +1201,134 @@ fn release_with_a_refused_final_sample_commits_the_last_valid_preview() {
     );
 }
 
+fn tap(editor: &mut Editor, context: &egui::Context, point: Pos2, mut events: Vec<Event>) {
+    events.extend(button(point, true));
+    frame(
+        editor,
+        context,
+        raw(egui::vec2(1440.0, 900.0), Pos2::ZERO, 1.0, events),
+    );
+    frame(
+        editor,
+        context,
+        raw(
+            egui::vec2(1440.0, 900.0),
+            Pos2::ZERO,
+            1.0,
+            button(point, false),
+        ),
+    );
+}
+
+#[test]
+fn face_mode_refuses_move_handles_native_and_numeric_and_keeps_face_click_working() {
+    let (mut editor, context, rect) = setup(1.0);
+    editor.native_operation(Operation::SetSelectionMode(SelectionMode::Face));
+    let before = editor.history.scene().clone();
+    let axis = rect.center() + egui::vec2(40.0, 0.0);
+    tap(&mut editor, &context, axis, vec![]);
+    assert!(editor.history.active_move().is_none() && editor.native_move.is_none());
+    assert_eq!(editor.history.scene(), &before);
+    assert_eq!(editor.status, FACE_MODE_REFUSAL);
+    let target = editor.selected_move_target().unwrap();
+    assert!(matches!(
+        editor.apply_operation(Operation::BeginMove {
+            target,
+            axis: WorldAxis::X
+        }),
+        Err(OperationError::InvalidInput(message)) if message == FACE_MODE_REFUSAL
+    ));
+    assert!(editor.history.active_move().is_none());
+    let inspected = editor.inspect_move().unwrap();
+    assert!(!inspected.numeric_available);
+    assert_eq!(
+        inspected.numeric_unavailable_reason.as_deref(),
+        Some(FACE_MODE_REFUSAL)
+    );
+    assert!(inspected.viewport.is_none());
+    tap(&mut editor, &context, rect.center(), vec![]);
+    assert!(editor.remembered_face.is_some(), "{}", editor.status);
+}
+
+#[test]
+fn a_consumed_frame_does_not_select_a_face_from_the_same_click() {
+    let (mut editor, context, rect) = setup(1.0);
+    editor.native_operation(Operation::SetSelectionMode(SelectionMode::Face));
+    tap(&mut editor, &context, rect.center(), vec![key(Key::Escape)]);
+    assert!(editor.remembered_face.is_none());
+    tap(&mut editor, &context, rect.center(), vec![]);
+    assert!(editor.remembered_face.is_some(), "{}", editor.status);
+}
+
+#[test]
+fn native_face_mode_switch_cancels_an_active_native_move_and_remote_move_blocks_it() {
+    for via_key in [false, true] {
+        let (mut editor, context, rect) = setup(1.0);
+        let before = editor.history.scene().clone();
+        let begin = press_x(&mut editor, &context, rect, 1.0);
+        let moved = begin + egui::vec2(rect.height() / 20.0, 0.0);
+        frame(
+            &mut editor,
+            &context,
+            raw(
+                egui::vec2(1440.0, 900.0),
+                Pos2::ZERO,
+                1.0,
+                vec![Event::PointerMoved(moved)],
+            ),
+        );
+        assert_ne!(editor.history.scene(), &before);
+        if via_key {
+            frame(
+                &mut editor,
+                &context,
+                raw(
+                    egui::vec2(1440.0, 900.0),
+                    Pos2::ZERO,
+                    1.0,
+                    vec![key(Key::F11)],
+                ),
+            );
+        } else {
+            editor.native_operation(Operation::SetSelectionMode(SelectionMode::Face));
+        }
+        assert_eq!(editor.selection_mode, SelectionMode::Face);
+        assert!(editor.history.active_move().is_none() && editor.native_move.is_none());
+        assert_eq!(editor.history.scene(), &before);
+        assert!(!editor.history.can_undo() || editor.history.scene() == &before);
+    }
+    let (mut editor, _, _) = setup(1.0);
+    let target = editor.selected_move_target().unwrap();
+    editor
+        .apply_operation_guarded(
+            MoveProvenance::Remote,
+            Operation::BeginMove {
+                target,
+                axis: WorldAxis::X,
+            },
+            &|| true,
+        )
+        .unwrap();
+    for operation in [
+        Operation::SetSelectionMode(SelectionMode::Face),
+        Operation::SelectFace { target: None },
+        Operation::SetGridVisible { visible: false },
+    ] {
+        assert!(matches!(
+            editor.apply_operation_guarded(MoveProvenance::Remote, operation, &|| true),
+            Err(OperationError::BusyManipulation)
+        ));
+    }
+    assert_eq!(editor.selection_mode, SelectionMode::Object);
+    assert!(editor.grid_visible);
+    editor.native_operation(Operation::SetGridVisible { visible: false });
+    assert!(
+        editor.grid_visible,
+        "native Grid toggle is refused during a Move"
+    );
+    assert_eq!(editor.status, OperationError::BusyManipulation.to_string());
+}
+
 #[test]
 fn hover_and_active_painter_states_use_the_same_actual_axis_hit() {
     let (mut editor, context, rect) = setup(1.0);

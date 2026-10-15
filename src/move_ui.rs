@@ -1,6 +1,6 @@
 use super::Editor;
 use crate::editor_operations::{
-    ActiveTool, MoveDistance, Operation, OperationError, OperationReply,
+    ActiveTool, MoveDistance, Operation, OperationError, OperationReply, SelectionMode,
 };
 use azteccraft::{
     history::{EditOutcome, MoveFinish, MoveId, MoveProvenance},
@@ -22,6 +22,8 @@ pub(super) struct MoveViewportFeedback {
     capture: ViewportCapture,
     pointer: Option<Vec2>,
 }
+
+const FACE_MODE_REFUSAL: &str = "Move is unavailable in Face selection; switch to Object selection";
 
 fn axis_name(axis: WorldAxis) -> &'static str {
     match axis {
@@ -86,6 +88,8 @@ impl Editor {
                 operation,
                 Operation::SetActiveTool(_)
                     | Operation::Select { .. }
+                    | Operation::SetSelectionMode(_)
+                    | Operation::SelectFace { .. }
                     | Operation::NewScene
                     | Operation::OpenScene { .. }
                     | Operation::RequestClose
@@ -130,6 +134,9 @@ impl Editor {
         axis: WorldAxis,
         provenance: MoveProvenance,
     ) -> Result<OperationReply, OperationError> {
+        if self.selection_mode == SelectionMode::Face {
+            return Err(OperationError::InvalidInput(FACE_MODE_REFUSAL.into()));
+        }
         if self.selected != Some(target.node) || self.selected_path != target.path {
             return Err(OperationError::InvalidInput(
                 "Move target must be the exact selected transform instance".into(),
@@ -215,12 +222,16 @@ impl Editor {
         use crate::editor_operations::{
             ActiveMoveInspection, MoveAxisInspection, MoveInspection, MoveViewportInspection,
         };
-        let frame = self.selected_move_target().and_then(|target| {
-            self.history
-                .scene()
-                .world_move_frame(&target)
-                .map_err(OperationError::Scene)
-        });
+        let frame = if self.selection_mode == SelectionMode::Face {
+            Err(OperationError::InvalidInput(FACE_MODE_REFUSAL.into()))
+        } else {
+            self.selected_move_target().and_then(|target| {
+                self.history
+                    .scene()
+                    .world_move_frame(&target)
+                    .map_err(OperationError::Scene)
+            })
+        };
         let numeric_unavailable_reason = frame.as_ref().err().map(ToString::to_string);
         let active = self
             .history
@@ -461,6 +472,13 @@ impl Editor {
             }
             return Ok(true);
         }
+        if self.selection_mode == SelectionMode::Face {
+            if self.active_tool == ActiveTool::Move && pointer.pressed {
+                self.status = FACE_MODE_REFUSAL.into();
+                self.error = false;
+            }
+            return Ok(false);
+        }
         if self.active_tool != ActiveTool::Move
             || !pointer.pressed
             || pointer.modified
@@ -535,6 +553,9 @@ impl Editor {
             return;
         }
         let geometry = (|| {
+            if self.selection_mode == SelectionMode::Face {
+                return Err(OperationError::InvalidInput(FACE_MODE_REFUSAL.into()));
+            }
             let target = self.selected_move_target()?;
             let frame = self
                 .history

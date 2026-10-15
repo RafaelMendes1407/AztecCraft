@@ -1920,6 +1920,10 @@ impl Editor {
             } else {
                 Vec::new()
             };
+            if selection_intent.is_some() && self.native_move.is_some() && self.cancel_move()? {
+                self.status = "Move cancelled: selection mode changed".into();
+                self.error = false;
+            }
             if !self.files.is_modal()
                 && (!navigation.is_empty()
                     || clickable.is_some()

@@ -362,8 +362,13 @@ directly, with one checked conversion for declared SDK distances.
 During a gesture, inspection reads the live authoritative preview. Unrelated
 remote mutations, Save, Undo/Redo and camera operations return
 `busy_manipulation`. Only matching remote-owned updates/finish are accepted;
-remote calls cannot finish a native drag. Human Escape, tool/selection/lifecycle
-changes cancel before their existing native guard path. Native captured mapping,
+remote calls cannot finish a native drag. Viewport Grid visibility, selection mode and
+Face selection are likewise refused with `busy_manipulation` while any Move is
+active. Human Escape, tool/selection/selection-mode/lifecycle
+changes cancel a native drag before their existing native guard path. Move is
+Object-mode only: while Face selection is active `begin_move` returns
+`invalid_input`, native handles are not drawn or hit, and `inspection.move_tool`
+reports numeric Move unavailable with the reason. Native captured mapping,
 camera, DPI, modifier, focus or release loss cancels and consumes the pointer
 sequence. A finite geometric refusal, or a refused final preview update, on a valid explicit
 release commits the last validated preview, with a visible refusal and last-valid

@@ -81,8 +81,20 @@ async fn move_sdk_absolute_preview_cancel_commit_busy_and_tokens_share_one_histo
             "set_material_diffuse",
             json!({"scene_token":token,"shape_id":"1","value":0.25}),
         ),
+        (
+            "set_selection_mode",
+            json!({"scene_token":token,"mode":"face"}),
+        ),
+        ("select_face", json!({"scene_token":token,"target":null})),
+        (
+            "set_grid_visibility",
+            json!({"scene_token":token,"visible":false}),
+        ),
     ] {
+        let grid = editor.grid_visible;
+        let mode = editor.selection_mode;
         let result = call(&mut editor, &context, client.peer(), name, arguments).await;
+        assert_eq!((editor.grid_visible, editor.selection_mode), (grid, mode));
         assert_eq!(
             result.structured_content.unwrap()["error"]["code"],
             "busy_manipulation",
@@ -433,6 +445,94 @@ async fn move_sdk_never_commits_real_native_text_drafts_or_takes_their_focus() {
         );
         assert!(editor.history.active_move().is_none());
     }
+    client.cancel().await.unwrap();
+    drop(editor);
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn move_sdk_refuses_begin_in_face_mode_and_reports_it_in_inspection() {
+    let context = egui::Context::default();
+    let (mut editor, client, server) = start(&context).await;
+    let token = editor.scene_token.to_string();
+    let created = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "create_primitive",
+        json!({"scene_token":token,"primitive":"cube"}),
+    )
+    .await
+    .structured_content
+    .unwrap();
+    let node = created["node_id"].as_str().unwrap().to_owned();
+    let path: Vec<_> = editor
+        .selected_path
+        .iter()
+        .map(|id| id.to_decimal())
+        .collect();
+    let mode = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "set_selection_mode",
+        json!({"scene_token":token,"mode":"face"}),
+    )
+    .await;
+    assert!(!mode.is_error.unwrap_or(false));
+    let before = editor.history.scene().clone();
+    let refused = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "begin_move",
+        json!({"scene_token":token,"node_id":node,"instance_path":path,"axis":"x"}),
+    )
+    .await;
+    assert_eq!(
+        refused.structured_content.unwrap()["error"]["code"],
+        "invalid_input"
+    );
+    assert!(editor.history.active_move().is_none());
+    assert_eq!(editor.history.scene(), &before);
+    let inspected = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "inspect_scene",
+        json!({}),
+    )
+    .await
+    .structured_content
+    .unwrap();
+    let tool = &inspected["inspection"]["move_tool"];
+    assert_eq!(tool["numeric_available"], false);
+    assert!(
+        tool["numeric_unavailable_reason"]
+            .as_str()
+            .unwrap()
+            .contains("Face selection")
+    );
+    call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "set_selection_mode",
+        json!({"scene_token":token,"mode":"object"}),
+    )
+    .await;
+    let begun = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "begin_move",
+        json!({"scene_token":token,"node_id":node,"instance_path":path,"axis":"x"}),
+    )
+    .await;
+    assert_eq!(
+        begun.structured_content.unwrap()["outcome"],
+        "move_started"
+    );
     client.cancel().await.unwrap();
     drop(editor);
     server.await.unwrap();
