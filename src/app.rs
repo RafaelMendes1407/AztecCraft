@@ -2854,6 +2854,36 @@ mod tests {
                 before
             );
         }
+        remote(
+            &mut editor,
+            Operation::SetSelectionMode(SelectionMode::Object),
+        )
+        .unwrap();
+        let before = (
+            editor.selected,
+            editor.selected_path.clone(),
+            editor.selection_mode,
+            editor.remembered_face.clone(),
+            editor.name.clone(),
+            editor.channels.clone(),
+            editor.scene_token,
+            editor.camera.clone(),
+        );
+        assert!(remote(&mut editor, Operation::SelectFace { target: None }).is_err());
+        assert_eq!(editor.history.scene(), &scene);
+        assert_eq!(
+            (
+                editor.selected,
+                editor.selected_path.clone(),
+                editor.selection_mode,
+                editor.remembered_face.clone(),
+                editor.name.clone(),
+                editor.channels.clone(),
+                editor.scene_token,
+                editor.camera.clone(),
+            ),
+            before
+        );
     }
 
     #[test]

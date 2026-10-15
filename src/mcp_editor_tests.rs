@@ -1511,6 +1511,36 @@ mod official_client {
         )
         .await;
         assert_eq!(wrong_mode.is_error, Some(true));
+        let null_target = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "select_face",
+            json!({"scene_token":token,"target":null}),
+        )
+        .await;
+        assert_eq!(null_target.is_error, Some(true));
+        assert_eq!(
+            null_target.structured_content.unwrap()["error"]["code"],
+            "invalid_input"
+        );
+        let state = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "inspect_scene",
+            json!({}),
+        )
+        .await
+        .structured_content
+        .unwrap();
+        assert_eq!(state["inspection"]["selection_mode"], "object");
+        assert_eq!(state["inspection"]["selected_node"], ids[1]);
+        assert_eq!(
+            state["inspection"]["selected_instance_path"],
+            plane["instance_paths"][0]
+        );
+        assert!(state["inspection"]["remembered_face"].is_null());
         assert_eq!(editor.remembered_face, None);
         assert_eq!(editor.selection_mode, SelectionMode::Object);
         assert_eq!(editor.history.scene(), &scene);

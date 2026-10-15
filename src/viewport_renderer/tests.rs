@@ -217,12 +217,8 @@ fn face_submission_highlights_only_exact_identity_and_charges_physical_markers()
             .iter()
             .copied()
             .fold(Vec2::splat(f32::NEG_INFINITY), Vec2::max);
-        assert!(
-            (max - min - Vec2::splat(FACE_CENTER_MARKER_PIXELS))
-                .abs()
-                .max_element()
-                < 0.0001
-        );
+        // Literal pins the documented 4-physical-pixel policy against constant drift.
+        assert!((max - min - Vec2::splat(4.0)).abs().max_element() < 0.0001);
         let bytes = submission.bytes.len() as u64;
         assert!(
             Submission::new(
