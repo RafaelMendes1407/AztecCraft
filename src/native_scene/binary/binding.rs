@@ -439,6 +439,7 @@ pub(super) fn construct(
         dag: budget.vector(counts.dag)?,
         units,
         source: None,
+        materials: Vec::new(),
         next_id: 1,
         next_native_id: 1,
     };
@@ -559,7 +560,7 @@ pub(super) fn construct(
             });
         }
     }
-    source.appearance = Some(super::appearance::bind(
+    let (appearance, materials) = super::appearance::bind(
         container,
         facts,
         &bindings,
@@ -567,7 +568,9 @@ pub(super) fn construct(
         &scene,
         &mut budget,
         retained_appearance_bytes,
-    )?);
+    )?;
+    source.appearance = Some(appearance);
+    scene.materials = materials;
     scene.source = Some(source);
     NativeScene::from_binary_candidate(scene).map_err(|error| canonical(error, None))
 }

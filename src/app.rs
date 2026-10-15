@@ -23,6 +23,21 @@ use uuid::Uuid;
 #[path = "file_ui.rs"]
 mod files;
 
+struct MaterialDraft {
+    scene_token: Uuid,
+    shape: NativeId,
+    original: f64,
+    text: String,
+    intent: bool,
+    focus: egui::Id,
+}
+
+impl MaterialDraft {
+    fn changed(&self) -> bool {
+        self.intent || self.text != self.original.to_string()
+    }
+}
+
 pub struct Editor {
     #[cfg(feature = "mcp")]
     mcp: Option<crate::mcp::UiBridge>,
@@ -37,6 +52,8 @@ pub struct Editor {
     channels: [String; 9],
     channel_intents: [bool; 9],
     name_intent: bool,
+    material_shape: Option<NativeId>,
+    material_draft: Option<MaterialDraft>,
     native_input_pending: bool,
     status: String,
     error: bool,
@@ -60,6 +77,8 @@ impl Default for Editor {
             channels: Default::default(),
             channel_intents: [false; 9],
             name_intent: false,
+            material_shape: None,
+            material_draft: None,
             native_input_pending: false,
             status: "Ready | Create a cube or plane to start".into(),
             error: false,
@@ -108,6 +127,7 @@ impl Editor {
     }
 
     fn sync_fields(&mut self) {
+        self.material_draft = None;
         self.channel_intents = [false; 9];
         self.name_intent = false;
         let Some(node) = self
@@ -118,11 +138,43 @@ impl Editor {
             self.selected_path.clear();
             self.name.clear();
             self.channels = Default::default();
+            self.material_shape = None;
             return;
         };
         self.name = node.name().into();
         let values = node.transform().values();
         self.channels = values.map(|value| value.to_string());
+        let transform = node.transform_id();
+        let direct = |shape| {
+            self.history.scene().dag_edges().iter().any(|edge| {
+                edge.parent() == Some(transform)
+                    && edge.child() == shape
+                    && self.history.scene().shape(shape).is_ok()
+            })
+        };
+        if !self.material_shape.is_some_and(direct) {
+            let mut shapes = self
+                .history
+                .scene()
+                .dag_edges()
+                .iter()
+                .filter(|edge| edge.parent() == Some(transform))
+                .filter_map(|edge| self.history.scene().shape(edge.child()).ok())
+                .map(|shape| shape.id());
+            self.material_shape = shapes.next().filter(|_| shapes.next().is_none());
+        }
+        if let Some(shape) = self.material_shape
+            && let Ok(value) = self.history.scene().material_for_shape(shape)
+        {
+            self.material_draft = Some(MaterialDraft {
+                scene_token: self.scene_token,
+                shape,
+                original: value.diffuse,
+                text: value.diffuse.to_string(),
+                intent: false,
+                focus: material_edit_id(),
+            });
+        }
     }
 
     #[cfg(test)]
@@ -206,7 +258,9 @@ impl Editor {
     ) -> Result<OperationReply, OperationError> {
         let focused = ctx.memory(|memory| {
             memory.focused().is_some_and(|id| {
-                id == name_edit_id() || (0..9).any(|index| id == channel_edit_id(index))
+                id == name_edit_id()
+                    || id == material_edit_id()
+                    || (0..9).any(|index| id == channel_edit_id(index))
             })
         });
         if matches!(request.operation, Operation::Inspect) {
@@ -357,6 +411,19 @@ impl Editor {
                             .scene()
                             .shape_appearance_readiness(shape.id())
                             .map_err(OperationError::Scene)?,
+                        material: match self.history.scene().material_for_shape(shape.id()) {
+                            Ok(value) => Some(crate::editor_operations::MaterialInspection {
+                                shader: match value.shader {
+                                    azteccraft::native_scene::MaterialShader::Phong => "phong",
+                                },
+                                diffuse: value.diffuse,
+                                shared_users: value.shared_users,
+                                editing_available: value.editing_available,
+                                rendering_available: value.rendering_available,
+                            }),
+                            Err(azteccraft::native_scene::NativeError::UnsupportedEdit) => None,
+                            Err(error) => return Err(OperationError::Scene(error)),
+                        },
                     })
                 })
                 .collect::<Result<Vec<_>, OperationError>>()?,
@@ -505,6 +572,10 @@ impl Editor {
             return Err(OperationError::InvalidInput(self.status.clone()));
         }
         let command = match operation {
+            #[cfg(any(test, feature = "mcp"))]
+            Operation::SetMaterialDiffuse { shape, value } => {
+                Command::SetMaterialDiffuse { shape, value }
+            }
             Operation::Create { primitive, name } => {
                 let name = name.unwrap_or_else(|| {
                     let base = match primitive {
@@ -724,6 +795,13 @@ impl Editor {
     }
 
     fn has_draft(&self) -> bool {
+        self.material_draft
+            .as_ref()
+            .is_some_and(MaterialDraft::changed)
+            || self.has_channel_draft()
+    }
+
+    fn has_channel_draft(&self) -> bool {
         self.selected
             .and_then(|id| self.history.scene().node(id).ok())
             .is_some_and(|node| {
@@ -774,6 +852,58 @@ impl Editor {
     }
 
     fn commit_pending(&mut self) -> bool {
+        if self
+            .material_draft
+            .as_ref()
+            .is_some_and(MaterialDraft::changed)
+        {
+            if self.has_channel_draft() {
+                self.status = "Finish the channel edit before editing material data".into();
+                self.error = true;
+                return false;
+            }
+            let result = (|| {
+                let draft = self.material_draft.as_ref().unwrap();
+                if draft.scene_token != self.scene_token {
+                    return Err("Material draft belongs to a replaced document".to_string());
+                }
+                self.history
+                    .scene()
+                    .material_for_shape(draft.shape)
+                    .map_err(|error| error.to_string())?;
+                let value = draft
+                    .text
+                    .parse::<f64>()
+                    .map_err(|_| "Enter a valid diffuse number".to_string())?;
+                if !value.is_finite() || value < 0.0 {
+                    return Err("Diffuse must be finite and nonnegative".to_string());
+                }
+                self.history
+                    .execute(Command::SetMaterialDiffuse {
+                        shape: draft.shape,
+                        value,
+                    })
+                    .map_err(|error| error.to_string())
+            })();
+            return match result {
+                Ok(outcome) => {
+                    self.sync_fields();
+                    self.status = if outcome == EditOutcome::Unchanged {
+                        "No change"
+                    } else {
+                        "Material data edited"
+                    }
+                    .into();
+                    self.error = false;
+                    true
+                }
+                Err(error) => {
+                    self.status = error;
+                    self.error = true;
+                    false
+                }
+            };
+        }
         let Some(id) = self.selected else {
             return true;
         };
@@ -1124,6 +1254,7 @@ impl Editor {
         if apply {
             self.commit_pending();
         }
+        self.material_controls(ui);
         ui.separator();
         if ui.button("Delete selected").clicked() {
             self.native_operation(Operation::Delete(id));
@@ -1131,6 +1262,96 @@ impl Editor {
         ui.separator();
         ui.weak("Inputs / construction history");
         unsupported(ui, "Not implemented yet");
+    }
+
+    fn material_controls(&mut self, ui: &mut egui::Ui) {
+        ui.separator();
+        ui.label(RichText::new("Materials").strong());
+        ui.label("Common Material Attributes");
+        let Some(transform) = self
+            .selected
+            .and_then(|id| self.history.scene().node(id).ok())
+            .map(|node| node.transform_id())
+        else {
+            return;
+        };
+        let scene = self.history.scene();
+        let shapes = || {
+            scene
+                .dag_edges()
+                .iter()
+                .filter(|edge| edge.parent() == Some(transform))
+                .filter_map(|edge| scene.shape(edge.child()).ok())
+        };
+        let mut direct = shapes();
+        if direct.next().is_none() {
+            ui.weak("No direct mesh shape. Select a mesh transform.");
+            return;
+        }
+        if direct.next().is_some() {
+            let mut choice = self.material_shape;
+            egui::ComboBox::from_id_salt("material_shape")
+                .selected_text(
+                    shapes()
+                        .find(|shape| Some(shape.id()) == choice)
+                        .map(|shape| shape.name())
+                        .unwrap_or("Choose direct shape"),
+                )
+                .show_ui(ui, |ui| {
+                    for shape in shapes() {
+                        ui.selectable_value(&mut choice, Some(shape.id()), shape.name());
+                    }
+                });
+            if choice != self.material_shape && self.commit_pending() {
+                self.material_shape = choice;
+                self.sync_fields();
+            }
+        }
+        let Some(shape) = self.material_shape else {
+            return;
+        };
+        let Ok(material) = self.history.scene().material_for_shape(shape) else {
+            ui.weak("Material data editing unavailable for this shape.");
+            return;
+        };
+        ui.label(format!(
+            "Phong | {} shared shape users",
+            material.shared_users
+        ));
+        ui.add_enabled(false, egui::Button::new("Color (connected)"));
+        ui.weak("Material rendering unavailable");
+        let channel_draft = self.has_channel_draft();
+        let Some(draft) = self.material_draft.as_mut() else {
+            return;
+        };
+        let mut apply = false;
+        ui.add_enabled_ui(material.editing_available && !channel_draft, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Diffuse");
+                let response = ui.add(
+                    egui::TextEdit::singleline(&mut draft.text)
+                        .id(draft.focus)
+                        .desired_width(110.0),
+                );
+                draft.intent |= response.changed();
+                apply |= response.lost_focus()
+                    || (response.has_focus() && ui.input(|input| input.key_pressed(Key::Enter)));
+            });
+            let mut interaction = draft
+                .text
+                .parse::<f64>()
+                .unwrap_or(draft.original)
+                .clamp(0.0, 1.0);
+            let response = ui.add(egui::Slider::new(&mut interaction, 0.0..=1.0).show_value(false));
+            if response.changed() {
+                draft.text = interaction.to_string();
+                draft.intent = true;
+            }
+            apply |= response.drag_stopped();
+        });
+        if apply {
+            self.commit_pending();
+        }
     }
 }
 
@@ -1361,9 +1582,551 @@ fn channel_edit_id(index: usize) -> egui::Id {
     egui::Id::new(("channel", index))
 }
 
+fn material_edit_id() -> egui::Id {
+    egui::Id::new("material_diffuse")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod material_wire {
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/support/maya_binary.rs"
+        ));
+    }
+    mod material_fixture {
+        use super::material_wire as wire;
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/support/maya_appearance.rs"
+        ));
+    }
+
+    fn material_editor() -> Editor {
+        let scene = azteccraft::native_scene::binary::decode(
+            material_fixture::appearance_specimen_with_users(2).into(),
+        )
+        .unwrap();
+        let mut editor = Editor {
+            history: History::new(scene),
+            ..Editor::default()
+        };
+        editor.selected = Some(editor.history.scene().nodes()[0].id());
+        editor.selected_path = vec![editor.history.scene().nodes()[0].transform_id()];
+        editor.sync_fields();
+        editor
+    }
+
+    fn independent_material_editor() -> Editor {
+        let mut bytes = material_fixture::appearance_specimen_with_users(2);
+        let link = b"shader.oc\0surface2.ss\0";
+        let offset = bytes
+            .windows(link.len())
+            .position(|word| word == link)
+            .unwrap();
+        bytes[offset..offset + 6].copy_from_slice(b"shadeB");
+        let container = azteccraft::maya_binary::container::inspect(bytes.clone().into()).unwrap();
+        let shader = container
+            .chunks()
+            .iter()
+            .find(|chunk| chunk.form() == Some(*b"RPHO"))
+            .unwrap();
+        let mut second = bytes[shader.header_range().start..shader.padding_range().end].to_vec();
+        let offset = second
+            .windows(7)
+            .position(|word| word == b"shader\0")
+            .unwrap();
+        second[offset..offset + 6].copy_from_slice(b"shadeB");
+        let mut children = Vec::new();
+        for (index, chunk) in container
+            .chunks()
+            .iter()
+            .enumerate()
+            .filter(|(_, chunk)| chunk.parent() == Some(0))
+        {
+            if chunk.form() == Some(*b"CONS") {
+                let connection = container
+                    .chunks()
+                    .iter()
+                    .find(|child| child.parent() == Some(index) && child.form() == Some(*b"CONN"))
+                    .unwrap();
+                let mut links = bytes
+                    [connection.payload_range().start + 4..connection.payload_range().end]
+                    .to_vec();
+                links.extend(material_wire::chunk(
+                    b"CWFL",
+                    b"\0texture.oc\0shadeB.c\0",
+                    8,
+                ));
+                children.extend(material_wire::group(
+                    b"CONS",
+                    &material_wire::group(b"CONN", &links, 4),
+                    4,
+                ));
+            } else {
+                children.extend_from_slice(
+                    &bytes[chunk.header_range().start..chunk.padding_range().end],
+                );
+            }
+        }
+        children.extend(second);
+        let scene = azteccraft::native_scene::binary::decode(
+            material_wire::group(b"Maya", &children, 1).into(),
+        )
+        .unwrap();
+        let mut editor = Editor {
+            history: History::new(scene),
+            ..Editor::default()
+        };
+        editor.selected = Some(editor.history.scene().nodes()[0].id());
+        editor.sync_fields();
+        editor
+    }
+
+    #[test]
+    fn material_selection_commits_only_original_independent_shader() {
+        let mut editor = independent_material_editor();
+        let first = editor.material_shape.unwrap();
+        let second = editor.history.scene().shapes()[1].id();
+        let other = editor.history.scene().nodes()[1].id();
+        let untouched = editor
+            .history
+            .scene()
+            .material_for_shape(second)
+            .unwrap()
+            .diffuse
+            .to_bits();
+        editor.material_draft.as_mut().unwrap().text = "0.125".into();
+        editor.select(Some(other));
+        assert_eq!(editor.material_shape, Some(second));
+        assert_eq!(
+            editor
+                .history
+                .scene()
+                .material_for_shape(first)
+                .unwrap()
+                .diffuse,
+            0.125
+        );
+        assert_eq!(
+            editor
+                .history
+                .scene()
+                .material_for_shape(second)
+                .unwrap()
+                .diffuse
+                .to_bits(),
+            untouched
+        );
+        editor.history_step(false);
+        assert_eq!(
+            editor
+                .history
+                .scene()
+                .material_for_shape(first)
+                .unwrap()
+                .diffuse
+                .to_bits(),
+            untouched
+        );
+        editor.history_step(true);
+        assert_eq!(
+            editor
+                .history
+                .scene()
+                .material_for_shape(first)
+                .unwrap()
+                .diffuse,
+            0.125
+        );
+        assert_eq!(
+            editor
+                .history
+                .scene()
+                .material_for_shape(second)
+                .unwrap()
+                .diffuse
+                .to_bits(),
+            untouched
+        );
+    }
+
+    #[test]
+    fn material_real_text_enter_and_escape_preserve_precision_in_one_history_entry() {
+        let mut editor = material_editor();
+        let shape = editor.material_shape.unwrap();
+        let before = editor.history.scene().clone();
+        let ctx = egui::Context::default();
+        frame(&mut editor, &ctx, vec![]);
+        ctx.memory_mut(|memory| memory.request_focus(material_edit_id()));
+        frame(&mut editor, &ctx, vec![]);
+        let command = egui::Modifiers::COMMAND;
+        frame(
+            &mut editor,
+            &ctx,
+            vec![
+                egui::Event::ModifiersChanged(command),
+                egui::Event::Key {
+                    key: Key::A,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: command,
+                },
+                egui::Event::Text("1.0000000000000002".into()),
+                key(Key::Enter),
+            ],
+        );
+        assert_eq!(
+            editor
+                .history
+                .scene()
+                .material_for_shape(shape)
+                .unwrap()
+                .diffuse
+                .to_bits(),
+            1.0000000000000002f64.to_bits()
+        );
+        assert!(!editor.has_draft());
+        assert!(editor.history.undo());
+        assert_eq!(editor.history.scene(), &before);
+        assert!(!editor.history.can_undo());
+        editor.sync_fields();
+        ctx.memory_mut(|memory| memory.request_focus(material_edit_id()));
+        frame(&mut editor, &ctx, vec![]);
+        frame(
+            &mut editor,
+            &ctx,
+            vec![
+                egui::Event::ModifiersChanged(command),
+                egui::Event::Key {
+                    key: Key::A,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: command,
+                },
+                egui::Event::Text("0.125".into()),
+            ],
+        );
+        assert!(editor.has_draft());
+        frame(&mut editor, &ctx, vec![key(Key::Escape)]);
+        assert_eq!(editor.history.scene(), &before);
+        assert!(!editor.has_draft());
+    }
+
+    #[test]
+    fn material_failed_and_cancelled_open_preserve_draft_and_success_resets_reused_shape_choice() {
+        let mut editor = material_editor();
+        editor.material_draft.as_mut().unwrap().text = "0.125".into();
+        let before = editor.history.scene().clone();
+        let token = editor.scene_token;
+        let directory = tempfile::tempdir().unwrap();
+        assert!(
+            editor
+                .open_candidate(&directory.path().join("missing.mb"))
+                .is_err()
+        );
+        assert_eq!(editor.history.scene(), &before);
+        assert_eq!(editor.scene_token, token);
+        assert_eq!(editor.material_draft.as_ref().unwrap().text, "0.125");
+        editor.sync_fields();
+        let source = directory.path().join("replacement.mb");
+        std::fs::write(&source, material_wire::specimen()).unwrap();
+        let OperationReply::PendingConfirmation {
+            pending_action_id, ..
+        } = editor.open_candidate(&source).unwrap()
+        else {
+            panic!("original nonempty document is dirty");
+        };
+        let original_shape = editor.material_shape;
+        editor
+            .resolve_file_action(
+                Uuid::parse_str(&pending_action_id).unwrap(),
+                crate::editor_operations::FileDecision::Cancel,
+            )
+            .unwrap();
+        assert_eq!(editor.material_shape, original_shape);
+        assert_eq!(editor.scene_token, token);
+        let OperationReply::PendingConfirmation {
+            pending_action_id, ..
+        } = editor.open_candidate(&source).unwrap()
+        else {
+            panic!("confirmation required");
+        };
+        editor
+            .resolve_file_action(
+                Uuid::parse_str(&pending_action_id).unwrap(),
+                crate::editor_operations::FileDecision::Discard,
+            )
+            .unwrap();
+        assert_ne!(editor.scene_token, token);
+        assert!(editor.material_shape.is_none());
+        assert!(editor.material_draft.is_none());
+        assert!(editor.commit_pending());
+    }
+
+    #[test]
+    fn material_draft_old_target_shared_history_and_escape_use_authoritative_state() {
+        let mut editor = material_editor();
+        let shape = editor.material_shape.unwrap();
+        let original = editor
+            .history
+            .scene()
+            .material_for_shape(shape)
+            .unwrap()
+            .diffuse;
+        editor.material_draft.as_mut().unwrap().text = "1.2345678901234567".into();
+        editor.material_draft.as_mut().unwrap().intent = true;
+        let other = editor.history.scene().nodes()[1].id();
+        editor.select(Some(other));
+        assert_eq!(editor.selected, Some(other));
+        let value = editor.history.scene().material_for_shape(shape).unwrap();
+        assert_eq!(value.diffuse.to_bits(), 1.2345678901234567f64.to_bits());
+        assert_eq!(value.shared_users, 2);
+        for candidate in editor.history.scene().shapes() {
+            assert_eq!(
+                editor
+                    .history
+                    .scene()
+                    .material_for_shape(candidate.id())
+                    .unwrap()
+                    .diffuse
+                    .to_bits(),
+                value.diffuse.to_bits()
+            );
+        }
+        editor.history_step(false);
+        assert_eq!(
+            editor
+                .history
+                .scene()
+                .material_for_shape(shape)
+                .unwrap()
+                .diffuse
+                .to_bits(),
+            original.to_bits()
+        );
+        editor.history_step(true);
+        assert_eq!(
+            editor
+                .history
+                .scene()
+                .material_for_shape(shape)
+                .unwrap()
+                .diffuse
+                .to_bits(),
+            value.diffuse.to_bits()
+        );
+        let before = editor.history.scene().clone();
+        editor.material_draft.as_mut().unwrap().text = "0.25".into();
+        let context = egui::Context::default();
+        let mut frame = context.run_ui(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key: Key::Escape,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+                ..Default::default()
+            },
+            |ui| editor.cancel_on_escape(ui.ctx()),
+        );
+        frame.textures_delta.clear();
+        assert_eq!(editor.history.scene(), &before);
+        assert!(!editor.has_draft());
+        assert!(
+            editor
+                .history
+                .scene()
+                .clone()
+                .set_material_diffuse(shape, 0.5)
+                .is_ok()
+        );
+        assert!(editor.history.execute(Command::Remove(other)).is_err());
+    }
+
+    #[test]
+    fn material_paint_preserves_unrounded_words_and_focus_or_drafts_block_remote_mutation() {
+        let context = egui::Context::default();
+        let mut editor = material_editor();
+        let shape = editor.material_shape.unwrap();
+        for value in [1.2345678901234567, -0.0, 4.5] {
+            editor
+                .history
+                .execute(Command::SetMaterialDiffuse { shape, value })
+                .unwrap();
+            editor.sync_fields();
+            let before = editor.history.scene().clone();
+            for _ in 0..2 {
+                let mut frame =
+                    context.run_ui(egui::RawInput::default(), |ui| editor.material_controls(ui));
+                frame.textures_delta.clear();
+            }
+            assert_eq!(editor.history.scene(), &before);
+            assert_eq!(
+                editor.material_draft.as_ref().unwrap().text,
+                value.to_string()
+            );
+            assert!(!editor.has_draft());
+        }
+        context.memory_mut(|memory| memory.request_focus(material_edit_id()));
+        let token = editor.scene_token;
+        assert!(matches!(
+            editor.remote_operation(
+                RemoteRequest {
+                    expected_scene_token: Some(token),
+                    operation: Operation::SetMaterialDiffuse { shape, value: 0.25 }
+                },
+                &context
+            ),
+            Err(OperationError::BusyEditing)
+        ));
+        context.memory_mut(|memory| memory.surrender_focus(material_edit_id()));
+        editor.material_draft.as_mut().unwrap().text = "0.125".into();
+        assert!(matches!(
+            editor.remote_operation(
+                RemoteRequest {
+                    expected_scene_token: Some(token),
+                    operation: Operation::Undo
+                },
+                &context
+            ),
+            Err(OperationError::BusyEditing)
+        ));
+        let before = editor.history.scene().clone();
+        editor.material_draft.as_mut().unwrap().scene_token = Uuid::new_v4();
+        assert!(!editor.commit_pending());
+        assert_eq!(editor.history.scene(), &before);
+    }
+
+    #[test]
+    fn material_invalid_or_simultaneous_channel_draft_never_partially_commits() {
+        let mut editor = material_editor();
+        let before = editor.history.scene().clone();
+        editor.material_draft.as_mut().unwrap().text = "NaN".into();
+        assert!(!editor.commit_pending());
+        assert_eq!(editor.history.scene(), &before);
+        editor.material_draft.as_mut().unwrap().text = "0.2".into();
+        editor.channels[0] = "2".into();
+        assert!(!editor.commit_pending());
+        assert_eq!(editor.history.scene(), &before);
+        editor.sync_fields();
+        assert!(!editor.has_draft());
+    }
+
+    #[test]
+    fn material_new_document_commits_the_original_target_then_clears_its_draft() {
+        let mut editor = material_editor();
+        let token = editor.scene_token;
+        let shape = editor.material_shape.unwrap();
+        editor.material_draft.as_mut().unwrap().text = "0.125".into();
+        let reply = editor.new_document().unwrap();
+        let OperationReply::PendingConfirmation {
+            pending_action_id, ..
+        } = reply
+        else {
+            panic!("edited material must require confirmation");
+        };
+        assert_eq!(
+            editor
+                .history
+                .scene()
+                .material_for_shape(shape)
+                .unwrap()
+                .diffuse,
+            0.125
+        );
+        assert!(!editor.has_draft());
+        editor
+            .resolve_file_action(
+                Uuid::parse_str(&pending_action_id).unwrap(),
+                crate::editor_operations::FileDecision::Discard,
+            )
+            .unwrap();
+        assert_ne!(editor.scene_token, token);
+        assert!(editor.material_draft.is_none());
+        assert!(editor.material_shape.is_none());
+        assert!(editor.history.scene().shapes().is_empty());
+        assert!(editor.commit_pending());
+    }
+
+    #[test]
+    fn material_negative_source_word_is_not_changed_by_native_paint() {
+        let mut bytes = material_fixture::appearance_specimen();
+        let marker = [b'd', b'c', 0, 0x24];
+        let offset = bytes
+            .windows(marker.len())
+            .position(|value| value == marker)
+            .unwrap()
+            + marker.len();
+        let value = -1.2345678901234567f64;
+        bytes[offset..offset + 8].copy_from_slice(&value.to_be_bytes());
+        let scene = azteccraft::native_scene::binary::decode(bytes.into()).unwrap();
+        let mut editor = Editor {
+            history: History::new(scene),
+            ..Editor::default()
+        };
+        editor.selected = Some(editor.history.scene().nodes()[0].id());
+        editor.sync_fields();
+        let before = editor.history.scene().clone();
+        let context = egui::Context::default();
+        for _ in 0..2 {
+            let mut frame =
+                context.run_ui(egui::RawInput::default(), |ui| editor.material_controls(ui));
+            frame.textures_delta.clear();
+        }
+        assert_eq!(editor.history.scene(), &before);
+        assert_eq!(
+            editor.material_draft.as_ref().unwrap().text,
+            value.to_string()
+        );
+        assert!(!editor.has_draft());
+    }
+
+    #[test]
+    fn material_multiple_direct_shapes_require_an_explicit_choice_without_guessing() {
+        let extra = material_wire::group(
+            b"DMSH",
+            &[
+                material_wire::creation(b"secondShape", Some(b"object")),
+                material_wire::chunk(
+                    b"MESH",
+                    &material_wire::mesh_payload(&[0, 1, 0x6000_0002]),
+                    8,
+                ),
+            ]
+            .concat(),
+            4,
+        );
+        let bytes = material_fixture::appearance_specimen_with_fields(material_fixture::Fields {
+            groups: &extra,
+            ..Default::default()
+        });
+        let scene = azteccraft::native_scene::binary::decode(bytes.into()).unwrap();
+        let mut editor = Editor {
+            history: History::new(scene),
+            ..Editor::default()
+        };
+        editor.selected = Some(editor.history.scene().nodes()[0].id());
+        editor.sync_fields();
+        assert!(editor.material_shape.is_none());
+        assert!(editor.material_draft.is_none());
+        let context = egui::Context::default();
+        let before = editor.history.scene().clone();
+        let mut frame =
+            context.run_ui(egui::RawInput::default(), |ui| editor.material_controls(ui));
+        frame.textures_delta.clear();
+        assert_eq!(editor.history.scene(), &before);
+        assert!(editor.material_shape.is_none());
+        editor.material_shape = Some(editor.history.scene().shapes()[0].id());
+        editor.sync_fields();
+        assert!(editor.material_draft.is_some());
+    }
 
     #[test]
     fn channel_box_appearance_summary_precedes_controls_and_preserves_human_state() {
@@ -1558,7 +2321,7 @@ mod tests {
     #[test]
     fn remote_operations_share_native_scene_selection_history_and_camera() {
         let mut editor = Editor::default();
-        assert_eq!(crate::editor_operations::TOOL_NAMES.len(), 20);
+        assert_eq!(crate::editor_operations::TOOL_NAMES.len(), 21);
         let OperationReply::Created { node_id } = remote(
             &mut editor,
             Operation::Create {

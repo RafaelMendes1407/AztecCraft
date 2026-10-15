@@ -2,7 +2,10 @@ mod appearance;
 pub mod binary;
 mod mesh;
 mod source;
-pub use appearance::{AppearanceIssue, AppearanceIssues, AppearanceState, AppearanceSummary};
+pub use appearance::{
+    AppearanceIssue, AppearanceIssues, AppearanceState, AppearanceSummary, MaterialInspection,
+    MaterialShader,
+};
 pub use mesh::{DirectedEdge, NativeEdge, NativeFace, NativeMesh, Points};
 use source::{ScalarOrigin, SourceFormat, SourceRetention, TransformField};
 
@@ -456,6 +459,7 @@ pub struct NativeScene {
     dag: Vec<DagEdge>,
     units: Units,
     source: Option<SourceRetention>,
+    materials: Vec<appearance::MaterialDiffuse>,
     next_id: u64,
     next_native_id: u64,
 }
@@ -466,6 +470,7 @@ impl fmt::Debug for NativeScene {
             .field("transform_count", &self.nodes.len())
             .field("shape_count", &self.shapes.len())
             .field("dag_edge_count", &self.dag.len())
+            .field("material_count", &self.materials.len())
             .field("source", &self.source)
             .finish()
     }
@@ -487,6 +492,7 @@ impl PartialEq for NativeScene {
             && self.dag == other.dag
             && self.units == other.units
             && self.source == other.source
+            && self.materials == other.materials
     }
 }
 
@@ -498,6 +504,7 @@ impl Default for NativeScene {
             dag: Vec::new(),
             units: Units::default(),
             source: None,
+            materials: Vec::new(),
             next_id: 1,
             next_native_id: 1,
         }
@@ -1104,6 +1111,7 @@ impl NativeScene {
             .map_err(|_| NativeError::UnsupportedView("f32 world coordinates"))
     }
     pub fn validate(&self) -> Result<(), NativeError> {
+        self.validate_materials()?;
         #[cfg(test)]
         FULL_VALIDATIONS.with(|count| count.set(count.get() + 1));
         let mut ids = std::collections::HashSet::new();

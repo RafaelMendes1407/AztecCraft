@@ -108,6 +108,57 @@ impl AppearanceSummary {
 pub(super) struct SourceAppearance {
     pub shapes: Vec<ShapeAppearance>,
     pub materials: Vec<SourceMaterial>,
+    pub diffuse: Vec<DiffuseBinding>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct DiffuseBinding {
+    pub shader: usize,
+    pub span: SourceSpan,
+    pub shapes: Vec<NativeId>,
+}
+
+impl DiffuseBinding {
+    pub(super) fn original(&self, source: &SourceRetention) -> Result<f64, NativeError> {
+        self.span.validate(source)?;
+        let word: [u8; 8] = source.bytes[self.span.value.clone()]
+            .try_into()
+            .map_err(|_| NativeError::InvalidRetention)?;
+        let value = f64::from_be_bytes(word);
+        if !value.is_finite() {
+            return Err(NativeError::InvalidRetention);
+        }
+        Ok(value)
+    }
+}
+
+#[derive(Clone)]
+pub(super) struct MaterialDiffuse {
+    pub binding: usize,
+    pub value: f64,
+    pub replaced: bool,
+}
+
+impl PartialEq for MaterialDiffuse {
+    fn eq(&self, other: &Self) -> bool {
+        self.binding == other.binding
+            && self.value.to_bits() == other.value.to_bits()
+            && self.replaced == other.replaced
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MaterialShader {
+    Phong,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MaterialInspection {
+    pub shader: MaterialShader,
+    pub diffuse: f64,
+    pub shared_users: usize,
+    pub editing_available: bool,
+    pub rendering_available: bool,
 }
 
 impl fmt::Debug for SourceAppearance {
@@ -235,6 +286,10 @@ impl SourceAppearance {
                 self.materials.capacity(),
                 std::mem::size_of::<SourceMaterial>(),
             )?,
+            product(
+                self.diffuse.capacity(),
+                std::mem::size_of::<DiffuseBinding>(),
+            )?,
         ] {
             bytes = bytes
                 .checked_add(amount)
@@ -255,6 +310,14 @@ impl SourceAppearance {
                     .checked_add(amount)
                     .ok_or(NativeError::ResourceLimit)?;
             }
+        }
+        for binding in &self.diffuse {
+            bytes = bytes
+                .checked_add(product(
+                    binding.shapes.capacity(),
+                    std::mem::size_of::<NativeId>(),
+                )?)
+                .ok_or(NativeError::ResourceLimit)?;
         }
         Ok(bytes)
     }
@@ -366,11 +429,130 @@ impl SourceAppearance {
                 }
             }
         }
+        for (index, binding) in self.diffuse.iter().enumerate() {
+            binding.original(source)?;
+            if binding.shapes.is_empty()
+                || self.diffuse[..index]
+                    .iter()
+                    .any(|other| other.shader == binding.shader)
+            {
+                return Err(NativeError::InvalidRetention);
+            }
+            let mut users = 0usize;
+            for shape in &self.shapes {
+                let Ok(surface) = &shape.binding else {
+                    continue;
+                };
+                let material = &self.materials[surface.material];
+                if material.owners[1] != binding.shader {
+                    continue;
+                }
+                if !binding.shapes.contains(&shape.shape) || !material.inputs.iter().any(|input| {
+                    matches!(input, InputEvidence::Saved { property: InputProperty::Diffuse, span } if *span == binding.span)
+                }) {
+                    return Err(NativeError::InvalidRetention);
+                }
+                users += 1;
+            }
+            if users != binding.shapes.len() {
+                return Err(NativeError::InvalidRetention);
+            }
+        }
         Ok(())
     }
 }
 
 impl NativeScene {
+    fn material_index(&self, shape: NativeId) -> Result<usize, NativeError> {
+        self.shape(shape)?;
+        self.source
+            .as_ref()
+            .and_then(|source| source.appearance.as_ref())
+            .and_then(|appearance| {
+                appearance
+                    .diffuse
+                    .iter()
+                    .position(|binding| binding.shapes.contains(&shape))
+            })
+            .ok_or(NativeError::UnsupportedEdit)
+    }
+
+    pub fn material_for_shape(&self, shape: NativeId) -> Result<MaterialInspection, NativeError> {
+        let index = self.material_index(shape)?;
+        self.validate_materials()?;
+        let binding = &self
+            .source
+            .as_ref()
+            .unwrap()
+            .appearance
+            .as_ref()
+            .unwrap()
+            .diffuse[index];
+        Ok(MaterialInspection {
+            shader: MaterialShader::Phong,
+            diffuse: self.materials[index].value,
+            shared_users: binding.shapes.len(),
+            editing_available: true,
+            rendering_available: false,
+        })
+    }
+
+    pub fn set_material_diffuse(&mut self, shape: NativeId, value: f64) -> Result<(), NativeError> {
+        if !value.is_finite() {
+            return Err(NativeError::NonFinite);
+        }
+        if value < 0.0 {
+            return Err(NativeError::UnsupportedEdit);
+        }
+        let index = self.material_index(shape)?;
+        self.validate_materials()?;
+        if self.materials[index].value.to_bits() == value.to_bits() {
+            return Ok(());
+        }
+        let source = self.source.as_ref().unwrap();
+        let original = source.appearance.as_ref().unwrap().diffuse[index].original(source)?;
+        self.materials[index].value = value;
+        self.materials[index].replaced = value.to_bits() != original.to_bits();
+        Ok(())
+    }
+
+    pub(super) fn material_bytes(&self) -> Result<usize, NativeError> {
+        self.materials
+            .capacity()
+            .checked_mul(std::mem::size_of::<MaterialDiffuse>())
+            .ok_or(NativeError::ResourceLimit)
+    }
+
+    pub(super) fn validate_materials(&self) -> Result<(), NativeError> {
+        let Some((source, appearance)) = self.source.as_ref().and_then(|source| {
+            source
+                .appearance
+                .as_ref()
+                .map(|appearance| (source, appearance))
+        }) else {
+            return if self.materials.is_empty() {
+                Ok(())
+            } else {
+                Err(NativeError::InvalidRetention)
+            };
+        };
+        if self.materials.len() != appearance.diffuse.len() {
+            return Err(NativeError::InvalidRetention);
+        }
+        for (index, (value, binding)) in self.materials.iter().zip(&appearance.diffuse).enumerate()
+        {
+            let original = binding.original(source)?;
+            if value.binding != index
+                || !value.value.is_finite()
+                || value.replaced != (value.value.to_bits() != original.to_bits())
+                || (value.replaced && value.value < 0.0)
+            {
+                return Err(NativeError::InvalidRetention);
+            }
+        }
+        Ok(())
+    }
+
     fn appearance_binding(&self, shape: NativeId) -> Option<&ShapeAppearance> {
         let appearance = self.source.as_ref()?.appearance.as_ref()?;
         appearance

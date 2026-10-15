@@ -329,6 +329,8 @@ impl Editor {
         self.channels = Default::default();
         self.channel_intents = [false; 9];
         self.name_intent = false;
+        self.material_shape = None;
+        self.material_draft = None;
         self.camera = camera;
         self.status = "Scene ready".into();
         self.error = false;

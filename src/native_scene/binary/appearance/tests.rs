@@ -2,6 +2,277 @@ use super::*;
 use crate::native_scene::binary::{decode, tests::appearance_fixture as wire_fixture};
 
 #[test]
+fn diffuse_is_one_authoritative_word_for_two_shading_groups_sharing_a_shader() {
+    let bytes: Arc<[u8]> = wire_fixture::appearance_specimen_with_users(2).into();
+    let mut scene = decode(bytes.clone()).unwrap();
+    assert_eq!(scene.shapes().len(), 2);
+    assert_eq!(
+        scene
+            .source
+            .as_ref()
+            .unwrap()
+            .appearance
+            .as_ref()
+            .unwrap()
+            .materials
+            .len(),
+        2
+    );
+    assert_eq!(scene.materials.len(), 1);
+    let inspected = crate::maya_binary::container::inspect(bytes.clone()).unwrap();
+    let facts = crate::maya_binary::semantic::decode_records(&inspected).unwrap();
+    let shader_group = scene
+        .source
+        .as_ref()
+        .unwrap()
+        .appearance
+        .as_ref()
+        .unwrap()
+        .diffuse[0]
+        .shader;
+    let shader_record = facts
+        .records
+        .iter()
+        .position(|record| record.group == shader_group && matches!(record.data, Data::Create(_)))
+        .unwrap();
+    assert_ne!(
+        shader_group, shader_record,
+        "fixture must distinguish owner identity spaces"
+    );
+    let first = scene.shapes()[0].id();
+    let second = scene.shapes()[1].id();
+    assert_eq!(scene.material_for_shape(first).unwrap().shared_users, 2);
+    let readiness = scene.appearance_readiness();
+    let before = scene.clone();
+    let value = 1.0000000000000004;
+    scene.set_material_diffuse(first, value).unwrap();
+    assert_ne!(scene, before);
+    for shape in [first, second] {
+        let material = scene.material_for_shape(shape).unwrap();
+        assert_eq!(material.diffuse.to_bits(), value.to_bits());
+        assert!(material.editing_available && !material.rendering_available);
+    }
+    assert!(Arc::ptr_eq(&bytes, &scene.source.as_ref().unwrap().bytes));
+    assert_eq!(scene.appearance_readiness(), readiness);
+    let output = super::super::encode(&scene).unwrap();
+    let start = bytes
+        .windows(4)
+        .position(|word| word == b"dc\0\x24")
+        .unwrap()
+        + 4;
+    assert_eq!(&output[..start], &bytes[..start]);
+    assert_eq!(&output[start..start + 8], &value.to_be_bytes());
+    assert_eq!(&output[start + 8..], &bytes[start + 8..]);
+    let reopened = decode(output.into()).unwrap();
+    assert_eq!(reopened.materials.len(), 1);
+    assert_eq!(
+        reopened
+            .material_for_shape(second)
+            .unwrap()
+            .diffuse
+            .to_bits(),
+        value.to_bits()
+    );
+    assert_eq!(
+        scene.source.as_ref().unwrap().appearance,
+        reopened.source.as_ref().unwrap().appearance
+    );
+    scene.set_material_diffuse(second, 0.8).unwrap();
+    assert_eq!(scene, before);
+    assert!(super::super::encode(&scene).unwrap() == bytes.as_ref());
+}
+
+#[test]
+fn unsupported_other_shader_consumers_refuse_edits_without_changing_readiness() {
+    let mut scene = decode(wire_fixture::appearance_specimen_with_users(3).into()).unwrap();
+    assert_eq!(scene.shapes().len(), 3);
+    let readiness = scene.appearance_readiness();
+    assert_eq!(readiness.checked_source_bindings, 2);
+    assert_eq!(readiness.unavailable, 1);
+    assert!(scene.materials.is_empty());
+    let before = scene.clone();
+    for shape in scene
+        .shapes()
+        .iter()
+        .map(|shape| shape.id())
+        .collect::<Vec<_>>()
+    {
+        assert_eq!(
+            scene.material_for_shape(shape),
+            Err(crate::native_scene::NativeError::UnsupportedEdit)
+        );
+        assert_eq!(
+            scene.set_material_diffuse(shape, 0.5),
+            Err(crate::native_scene::NativeError::UnsupportedEdit)
+        );
+        assert_eq!(scene, before);
+    }
+    assert_eq!(scene.appearance_readiness(), readiness);
+}
+
+#[test]
+fn diffuse_edits_preserve_raw_zero_words_unusual_source_and_failure_baselines() {
+    let original = wire_fixture::appearance_specimen();
+    let start = original
+        .windows(4)
+        .position(|word| word == b"dc\0\x24")
+        .unwrap()
+        + 4;
+    for source_value in [-0.0f64, 0.0, -0.25, 2.5, 1.0000000000000004] {
+        let mut bytes = original.clone();
+        bytes[start..start + 8].copy_from_slice(&source_value.to_be_bytes());
+        let mut scene = decode(bytes.clone().into()).unwrap();
+        let shape = scene.shapes()[0].id();
+        assert_eq!(
+            scene.material_for_shape(shape).unwrap().diffuse.to_bits(),
+            source_value.to_bits()
+        );
+        assert!(super::super::encode(&scene).unwrap() == bytes);
+        let before = scene.clone();
+        for value in [-1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(scene.set_material_diffuse(shape, value).is_err());
+            assert_eq!(scene, before);
+        }
+        for value in [0.0f64, -0.0, 3.25] {
+            scene.set_material_diffuse(shape, value).unwrap();
+            assert_eq!(
+                scene.material_for_shape(shape).unwrap().diffuse.to_bits(),
+                value.to_bits()
+            );
+            assert_eq!(
+                scene.materials[0].replaced,
+                value.to_bits() != source_value.to_bits()
+            );
+        }
+        if source_value >= 0.0 {
+            scene.set_material_diffuse(shape, source_value).unwrap();
+            assert_eq!(scene, before);
+            assert!(super::super::encode(&scene).unwrap() == bytes);
+        }
+    }
+    let sourcefree = crate::native_scene::NativeScene::default();
+    assert!(sourcefree.materials.is_empty());
+}
+
+#[test]
+fn material_history_noop_revert_and_save_snapshot_use_the_same_scene() {
+    use crate::history::{Command, EditOutcome, History};
+    let source = wire_fixture::appearance_specimen_with_users(2);
+    let mut history = History::new(decode(source.clone().into()).unwrap());
+    let shape = history.scene().shapes()[0].id();
+    let command = |value| Command::SetMaterialDiffuse { shape, value };
+    assert_eq!(history.execute(command(0.8)), Ok(EditOutcome::Unchanged));
+    assert!(!history.can_undo());
+    assert_eq!(history.execute(command(0.5)), Ok(EditOutcome::Changed));
+    let saved = history.scene().clone();
+    let encoded = super::super::encode(&saved).unwrap();
+    assert!(history.undo());
+    assert_ne!(history.scene(), &saved);
+    assert!(history.can_redo());
+    assert_eq!(history.execute(command(0.8)), Ok(EditOutcome::Unchanged));
+    assert!(history.can_redo());
+    assert!(history.execute(command(-1.0)).is_err());
+    assert!(history.can_redo());
+    assert!(history.redo());
+    assert_eq!(history.scene(), &saved);
+    assert!(super::super::encode(history.scene()).unwrap() == encoded);
+    assert_eq!(history.execute(command(0.8)), Ok(EditOutcome::Changed));
+    assert!(super::super::encode(history.scene()).unwrap() == source);
+    assert!(history.undo());
+    assert_eq!(history.scene(), &saved);
+}
+
+#[test]
+fn diffuse_signed_zero_changes_history_while_both_words_have_replacement_intent() {
+    use crate::history::{Command, EditOutcome, History};
+    let bytes = wire_fixture::appearance_specimen();
+    let mut history = History::new(decode(bytes.clone().into()).unwrap());
+    let shape = history.scene().shapes()[0].id();
+    let command = |value| Command::SetMaterialDiffuse { shape, value };
+    assert_eq!(history.execute(command(0.0)), Ok(EditOutcome::Changed));
+    let positive = history.scene().clone();
+    assert!(positive.materials[0].replaced);
+    assert_eq!(history.execute(command(-0.0)), Ok(EditOutcome::Changed));
+    let negative = history.scene().clone();
+    assert!(negative.materials[0].replaced);
+    assert_ne!(positive, negative);
+    let output = super::super::encode(&negative).unwrap();
+    let start = bytes
+        .windows(4)
+        .position(|word| word == b"dc\0\x24")
+        .unwrap()
+        + 4;
+    assert_eq!(&output[start..start + 8], &(-0.0f64).to_be_bytes());
+    assert!(history.undo());
+    assert_eq!(history.scene(), &positive);
+    assert!(history.redo());
+    assert_eq!(history.scene(), &negative);
+    assert_eq!(history.execute(command(-0.0)), Ok(EditOutcome::Unchanged));
+}
+
+#[test]
+fn diffuse_requires_the_saved_scalar_and_refuses_connected_or_selected_overrides() {
+    use crate::native_scene::binary::tests::wire_fixture as wire;
+    let original = wire_fixture::appearance_specimen();
+    let container = crate::maya_binary::container::inspect(original.clone().into()).unwrap();
+    let scalar = container
+        .chunks()
+        .iter()
+        .find(|chunk| {
+            chunk.tag() == *b"DBLE"
+                && container.source()[chunk.payload_range()].starts_with(b"dc\0")
+        })
+        .unwrap();
+    let group_start = container
+        .chunk(scalar.parent().unwrap())
+        .unwrap()
+        .header_range()
+        .start;
+    let removed = scalar.padding_range().end - scalar.header_range().start;
+    let mut missing = original.clone();
+    let group_size = u64::from_be_bytes(
+        missing[group_start + 8..group_start + 16]
+            .try_into()
+            .unwrap(),
+    );
+    missing[group_start + 8..group_start + 16]
+        .copy_from_slice(&(group_size - removed as u64).to_be_bytes());
+    missing.drain(scalar.header_range().start..scalar.padding_range().end);
+    let root_size = (missing.len() - 16) as u64;
+    missing[8..16].copy_from_slice(&root_size.to_be_bytes());
+    let selected = wire::group(
+        b"SLCT",
+        &[
+            wire::chunk(b"SLCT", b":shader", 8),
+            wire::chunk(
+                b"DBLE",
+                &[b"dc\0\x24".as_slice(), &0.5f64.to_be_bytes()].concat(),
+                8,
+            ),
+        ]
+        .concat(),
+        4,
+    );
+    let selected = wire::group(b"Maya", &[original[20..].to_vec(), selected].concat(), 1);
+    let connected = wire_fixture::appearance_specimen_with_connections(&connection(
+        0,
+        b"texture.oc",
+        b"shader.dc",
+    ));
+    for bytes in [missing, selected, connected] {
+        let mut scene = decode(bytes.into()).unwrap();
+        let shape = scene.shapes()[0].id();
+        let before = scene.clone();
+        assert_eq!(
+            scene.material_for_shape(shape),
+            Err(crate::native_scene::NativeError::UnsupportedEdit)
+        );
+        assert!(scene.set_material_diffuse(shape, 0.25).is_err());
+        assert_eq!(scene, before);
+    }
+}
+
+#[test]
 #[ignore = "requires explicit private manifest/appearance ledger and separate original SHA precheck"]
 fn private_viewer_bindings_match_independent_owner_link_and_uv_ranges() {
     use crate::native_scene::binary::tests::read;
@@ -159,6 +430,23 @@ fn private_viewer_bindings_match_independent_owner_link_and_uv_ranges() {
                 span.value == range(&expected["value_span"]),
                 "saved input source range differs at shape {ordinal}"
             );
+            if *property == InputProperty::Diffuse {
+                let expected_range = range(&expected["value_span"]);
+                let word: [u8; 8] = bytes[expected_range.clone()].try_into().unwrap();
+                let value = scene.material_for_shape(entry.shape).unwrap();
+                assert!(
+                    value.diffuse.to_bits() == f64::from_be_bytes(word).to_bits(),
+                    "diffuse source word differs at shape {ordinal}"
+                );
+                assert!(
+                    metadata.diffuse.iter().any(|binding| {
+                        binding.shader == material.owners[1]
+                            && binding.span.value == expected_range
+                            && binding.shapes.contains(&entry.shape)
+                    }),
+                    "diffuse binding owner/range differs at shape {ordinal}"
+                );
+            }
         }
         for message in &material.message_links {
             let record = connections

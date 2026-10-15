@@ -19,10 +19,11 @@ The current prototype has a native desktop window for cube/plane creation, selec
 | Desktop shell and viewport | Create/select cube or plane, edit name/transform channels, undo/redo, delete and frame selected, with depth-tested opaque geometry | [Native shell](src/app.rs) and [viewport UI](src/viewport_ui.rs) |
 | File actions in the window | New/Open and provisional eligible Save/Save As, unsaved-change Save/Discard/Cancel, source-change guards and uncertain-write reconciliation | [File integration tests](src/file_ui.rs); current integration and native Save verification pending |
 | OBJ export | Library API writes world-space polygon geometry to a new file | [OBJ workflow tests](tests/obj_workflows.rs), with GUI Export still disabled |
-| MCP | Optional stdio server controls twenty tools, including Save/Save As, in its newly launched native editor window | [Tool contract and limits](.project-docs/mcp.md), with real Editor/official SDK tests; current integration and native Save verification remain pending |
+| MCP | Optional stdio server controls twenty-one tools, including Save/Save As and checked material Diffuse data, in its newly launched native editor window | [Tool contract and limits](.project-docs/mcp.md); isolated application/SDK checks and bounded macOS material QA pass, with committed/current-parent publication checks pending |
 | Modeling | Core API extrudes one quad along its object-space normal, including signed/zero distances; native face UI and all-face extrusion pending | [Extrusion workflow tests](tests/extrusion_workflows.rs) |
 | UVs, animation and rigging | Full workflows pending | [Implementation plan](.project-docs/plan.md) |
-| Materials, simulation and rendering | Pending | Reference scenes and output comparisons required |
+| Materials | Candidate Common Material Attributes/Diffuse control and MCP editing of an existing checked Phong scalar; shared users use one History value | Core, real-widget, SDK protocol reopen and bounded macOS edit/Undo/Save/reopen checks pass; committed cold and combined-parent publication checks pending. Material rendering, assignment, textures and color processing remain unavailable |
+| Simulation and rendering | Pending | Reference scenes and output comparisons required |
 | Maya formats, scripting and plug-ins | Pending | Existing scene/script/plug-in fixtures required |
 
 Core workflow tests and UI event regression tests cover implemented behavior. The exact Maya reference installation hasn't been pinned, so they don't establish visual or functional parity. Unsupported modeling, animation, material and other controls are disabled in the prototype.

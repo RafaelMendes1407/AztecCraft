@@ -56,6 +56,92 @@ fn postdecode_appearance_guard_rejects_otherwise_valid_mismatching_metadata() {
     assert!(check_appearance_metadata(&expected, &actual).is_err());
 }
 
+#[test]
+fn diffuse_origin_and_retained_canonical_capacity_are_decisive() {
+    let expected = super::super::decode(appearance_fixture::appearance_specimen().into()).unwrap();
+    let source = expected.source.as_ref().unwrap();
+    let metadata = source
+        .appearance
+        .as_ref()
+        .unwrap()
+        .metadata_bytes()
+        .unwrap();
+    let state = expected.materials.capacity()
+        * std::mem::size_of::<crate::native_scene::appearance::MaterialDiffuse>();
+    assert!(state > 0);
+    assert_eq!(
+        retained_material_metadata(&expected).unwrap(),
+        metadata + state
+    );
+    for owner in [false, true] {
+        let mut changed = expected.clone();
+        let appearance = Arc::make_mut(
+            changed
+                .source
+                .as_mut()
+                .unwrap()
+                .appearance
+                .as_mut()
+                .unwrap(),
+        );
+        if owner {
+            appearance.diffuse[0].shader += 1;
+        } else {
+            appearance.diffuse[0].span.value.start += 1;
+        }
+        assert!(changed.validate().is_err());
+        assert!(encode(&changed).is_err());
+    }
+    let mut wrong_word = expected.clone();
+    let wrong_span = wrong_word
+        .source
+        .as_ref()
+        .unwrap()
+        .appearance
+        .as_ref()
+        .unwrap()
+        .materials[0]
+        .inputs
+        .iter()
+        .find_map(|input| match input {
+            crate::native_scene::appearance::InputEvidence::Saved {
+                property: crate::native_scene::appearance::InputProperty::Reflectivity,
+                span,
+            } => Some(span.clone()),
+            _ => None,
+        })
+        .unwrap();
+    let appearance = Arc::make_mut(
+        wrong_word
+            .source
+            .as_mut()
+            .unwrap()
+            .appearance
+            .as_mut()
+            .unwrap(),
+    );
+    appearance.diffuse[0].span = wrong_span;
+    let source = wrong_word.source.as_ref().unwrap();
+    let original = source.appearance.as_ref().unwrap().diffuse[0]
+        .original(source)
+        .unwrap();
+    wrong_word.materials[0].value = original;
+    wrong_word.materials[0].replaced = false;
+    assert!(
+        wrong_word.validate_materials().is_ok(),
+        "wrong word must pass scalar-only checks"
+    );
+    assert!(
+        wrong_word.validate().is_err(),
+        "diffuse owner/input span must remain decisive"
+    );
+    assert!(encode(&wrong_word).is_err());
+    let mut invalid = expected.clone();
+    invalid.materials[0].binding += 1;
+    assert!(invalid.validate().is_err());
+    assert!(encode(&invalid).is_err());
+}
+
 fn numeric(bytes: &[u8], key: &[u8]) -> usize {
     let marker = [key, &[0, 0x20]].concat();
     bytes
