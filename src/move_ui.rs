@@ -328,6 +328,36 @@ impl Editor {
         Ok(())
     }
 
+    // A refused final sample leaves the previous preview intact, so release commits that preview.
+    fn finish_native_sample(
+        &mut self,
+        id: MoveId,
+        released: bool,
+        updated: Result<OperationReply, OperationError>,
+    ) -> Result<(), OperationError> {
+        if !released {
+            updated?;
+            self.status = "World-axis Move preview".into();
+            self.error = false;
+            return Ok(());
+        }
+        self.apply_operation(Operation::FinishMove {
+            id,
+            finish: MoveFinish::Commit,
+        })?;
+        match updated {
+            Ok(_) => {
+                self.status = "Move committed".into();
+                self.error = false;
+            }
+            Err(error) => {
+                self.status = format!("{error}; last valid preview committed");
+                self.error = true;
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn handle_move_input(
         &mut self,
         input: &crate::viewport_ui::ViewportInput,
@@ -393,20 +423,11 @@ impl Editor {
             let sample = native.drag.distance_cm(&capture, position);
             match sample {
                 Ok(distance) => {
-                    self.apply_operation(Operation::UpdateMove {
+                    let updated = self.apply_operation(Operation::UpdateMove {
                         id,
                         distance: MoveDistance::Centimeters(distance),
-                    })?;
-                    if pointer.released {
-                        self.apply_operation(Operation::FinishMove {
-                            id,
-                            finish: MoveFinish::Commit,
-                        })?;
-                        self.status = "Move committed".into();
-                    } else {
-                        self.status = "World-axis Move preview".into();
-                    }
-                    self.error = false;
+                    });
+                    self.finish_native_sample(id, pointer.released, updated)?;
                 }
                 Err(
                     error @ (azteccraft::move_handles::HandleError::ParallelAxis

@@ -365,8 +365,9 @@ remote mutations, Save, Undo/Redo and camera operations return
 remote calls cannot finish a native drag. Human Escape, tool/selection/lifecycle
 changes cancel before their existing native guard path. Native captured mapping,
 camera, DPI, modifier, focus or release loss cancels and consumes the pointer
-sequence. A finite geometric refusal on a valid explicit release can commit the
-last validated preview, with a visible refusal and last-valid status; it never
+sequence. A finite geometric refusal, or a refused final preview update, on a valid explicit
+release commits the last validated preview, with a visible refusal and last-valid
+status; it never
 applies a substitute motion.
 
 `inspection.move_tool` reports the active tool, World/object-translation class,

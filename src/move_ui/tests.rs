@@ -1153,6 +1153,55 @@ fn idle_cancels_from_select_new_scene_and_tool_changes_do_not_swallow_the_next_p
 }
 
 #[test]
+fn release_with_a_refused_final_sample_commits_the_last_valid_preview() {
+    let (mut editor, context, rect) = setup(1.0);
+    let node = editor.selected.unwrap();
+    let before = editor.history.scene().clone();
+    let begin = press_x(&mut editor, &context, rect, 1.0);
+    let valid = begin + egui::vec2(rect.height() / 20.0, 0.0);
+    frame(
+        &mut editor,
+        &context,
+        raw(
+            egui::vec2(1440.0, 900.0),
+            Pos2::ZERO,
+            1.0,
+            vec![Event::PointerMoved(valid)],
+        ),
+    );
+    let preview = editor.history.scene().clone();
+    assert_ne!(preview, before);
+    let id = editor.native_move.as_ref().unwrap().id;
+    editor
+        .finish_native_sample(
+            id,
+            true,
+            Err(OperationError::InvalidInput("final sample refused".into())),
+        )
+        .unwrap();
+    assert!(editor.history.active_move().is_none());
+    assert!(editor.native_move.is_none());
+    assert_eq!(editor.history.scene(), &preview, "{}", editor.status);
+    assert!(
+        editor.status == "final sample refused; last valid preview committed",
+        "{}",
+        editor.status
+    );
+    assert!(editor.error);
+    editor.history_step(false);
+    assert_eq!(
+        editor
+            .history
+            .scene()
+            .node(node)
+            .unwrap()
+            .transform()
+            .translation,
+        [0.0; 3]
+    );
+}
+
+#[test]
 fn hover_and_active_painter_states_use_the_same_actual_axis_hit() {
     let (mut editor, context, rect) = setup(1.0);
     let shaft_color = |output: &egui::FullOutput| {
