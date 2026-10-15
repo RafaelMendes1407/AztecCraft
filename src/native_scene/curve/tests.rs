@@ -1,5 +1,6 @@
 use super::*;
 use crate::{native_scene::*, scene::Primitive};
+use glam::DVec3;
 use std::sync::Arc;
 
 fn candidate() -> (NativeScene, crate::scene::NodeId) {
@@ -239,5 +240,175 @@ fn signed_zero_curve_bits_and_retention_survive_authoring_restore() {
     assert!(Arc::ptr_eq(
         &scene.source.as_ref().unwrap().bytes,
         &before.source.as_ref().unwrap().bytes
+    ));
+}
+
+fn spline(points: &[[f64; 3]], knots: &[f64]) -> NativeCurveShape {
+    let (mut scene, _) = candidate();
+    scene.curves[0].control_vertices = points.to_vec();
+    scene.curves[0].knots = knots.to_vec();
+    scene.validate().unwrap();
+    scene.curves.remove(0)
+}
+
+fn expected(points: &[[f64; 3]], weights: &[f64], denominator: f64) -> DVec3 {
+    points
+        .iter()
+        .zip(weights)
+        .fold(DVec3::ZERO, |sum, (point, weight)| {
+            sum + DVec3::from_array(*point) * *weight
+        })
+        / denominator
+}
+
+fn close(actual: DVec3, expected: DVec3) {
+    assert!(
+        (actual - expected).length() < 2e-12,
+        "actual {actual:?}, expected {expected:?}"
+    );
+}
+
+fn span_middle(curve: &NativeCurveShape, span: usize) -> DVec3 {
+    let controls = curve
+        .bezier_span(span)
+        .unwrap()
+        .map(|point| point.to_array());
+    expected(&controls, &[1.0, 3.0, 3.0, 1.0], 8.0)
+}
+
+#[test]
+fn uniform_cubic_matches_independent_rational_basis_examples() {
+    let points = [
+        [0.0, 1.0, 2.0],
+        [1.0, 3.0, -2.0],
+        [2.0, -4.0, 1.0],
+        [4.0, 2.0, 3.0],
+        [5.0, 7.0, -3.0],
+        [8.0, -1.0, 2.0],
+        [9.0, 4.0, 5.0],
+        [12.0, -3.0, 1.0],
+    ];
+    let curve = spline(&points, &[0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 5.0, 5.0]);
+    close(curve.evaluate(0.0).unwrap(), points[0].into());
+    close(curve.evaluate(5.0).unwrap(), points[7].into());
+    close(
+        curve.evaluate(0.5).unwrap(),
+        expected(&points, &[12.0, 57.0, 25.0, 2.0], 96.0),
+    );
+    close(
+        curve.evaluate(2.5).unwrap(),
+        expected(&points, &[0.0, 0.0, 1.0, 23.0, 23.0, 1.0], 48.0),
+    );
+    close(
+        curve.evaluate(4.5).unwrap(),
+        expected(&points, &[0.0, 0.0, 0.0, 0.0, 2.0, 25.0, 57.0, 12.0], 96.0),
+    );
+    close(
+        span_middle(&curve, 0),
+        expected(&points, &[12.0, 57.0, 25.0, 2.0], 96.0),
+    );
+    close(
+        span_middle(&curve, 2),
+        expected(&points, &[0.0, 0.0, 1.0, 23.0, 23.0, 1.0], 48.0),
+    );
+    close(
+        span_middle(&curve, 4),
+        expected(&points, &[0.0, 0.0, 0.0, 0.0, 2.0, 25.0, 57.0, 12.0], 96.0),
+    );
+}
+
+#[test]
+fn nonuniform_cubic_matches_independent_rational_basis_and_one_sided_derivatives() {
+    let points = [
+        [0.0, 1.0, 2.0],
+        [1.0, 3.0, -2.0],
+        [2.0, -4.0, 1.0],
+        [4.0, 2.0, 3.0],
+        [5.0, 7.0, -3.0],
+    ];
+    let curve = spline(&points, &[0.0, 0.0, 0.0, 1.0, 3.0, 3.0, 3.0]);
+    close(curve.evaluate(0.0).unwrap(), points[0].into());
+    close(curve.evaluate(3.0).unwrap(), points[4].into());
+    close(
+        curve.evaluate(0.5).unwrap(),
+        expected(&points, &[9.0, 49.0, 13.0, 1.0], 72.0),
+    );
+    close(
+        curve.evaluate(1.0).unwrap(),
+        expected(&points, &[0.0, 4.0, 4.0, 1.0], 9.0),
+    );
+    close(
+        curve.evaluate(2.0).unwrap(),
+        expected(&points, &[0.0, 4.0, 22.0, 37.0, 9.0], 72.0),
+    );
+    close(
+        span_middle(&curve, 0),
+        expected(&points, &[9.0, 49.0, 13.0, 1.0], 72.0),
+    );
+    close(
+        span_middle(&curve, 1),
+        expected(&points, &[0.0, 4.0, 22.0, 37.0, 9.0], 72.0),
+    );
+    close(
+        curve.de_boor(3, 0.0, true).unwrap(),
+        (DVec3::from(points[1]) - DVec3::from(points[0])) * 3.0,
+    );
+    close(
+        curve.de_boor(4, 3.0, true).unwrap(),
+        (DVec3::from(points[4]) - DVec3::from(points[3])) * 1.5,
+    );
+    close(
+        curve.de_boor(3, 1.0, true).unwrap(),
+        curve.de_boor(4, 1.0, true).unwrap(),
+    );
+}
+
+#[test]
+fn exact_span_bezier_controls_reconstruct_analytic_cubics() {
+    let points = [
+        [0.0, 0.0, 1.0],
+        [1.0, 3.0, -2.0],
+        [2.0, -3.0, 2.0],
+        [3.0, 0.0, -1.0],
+    ];
+    let curve = spline(&points, &[0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+    let bezier = curve.bezier_span(0).unwrap();
+    for (actual, point) in bezier.into_iter().zip(points) {
+        close(actual, point.into());
+    }
+    for t in [0.0, 0.125, 0.25, 0.5, 0.75, 0.875, 1.0] {
+        let s: f64 = 1.0 - t;
+        let oracle = expected(
+            &points,
+            &[s.powi(3), 3.0 * s * s * t, 3.0 * s * t * t, t * t * t],
+            1.0,
+        );
+        close(curve.evaluate(t).unwrap(), oracle);
+    }
+    assert!(curve.bezier_span(1).is_err());
+    assert!(curve.bezier_span(usize::MAX).is_err());
+    for t in [f64::NAN, f64::INFINITY, -1.0, 2.0] {
+        assert!(curve.evaluate(t).is_err());
+    }
+}
+
+#[test]
+fn finite_canonical_words_refuse_nonfinite_evaluation_intermediates() {
+    let curve = spline(
+        &[
+            [-f64::MAX, 0.0, 0.0],
+            [f64::MAX, 1.0, 0.0],
+            [0.0, 2.0, 0.0],
+            [1.0, 3.0, 0.0],
+        ],
+        &[0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+    );
+    assert!(matches!(
+        curve.evaluate(0.5),
+        Err(NativeError::UnsupportedView(_))
+    ));
+    assert!(matches!(
+        curve.bezier_span(0),
+        Err(NativeError::UnsupportedView(_))
     ));
 }

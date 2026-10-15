@@ -26,6 +26,14 @@ pub enum SelectionFeedback<'a> {
 }
 
 impl SelectionFeedback<'_> {
+    /// Curves are object-selectable only; Face mode never highlights or marks them.
+    fn curve_selected(self, instance: &azteccraft::view_scene::ViewCurveInstance) -> bool {
+        match self {
+            Self::Object(path) => path.is_some_and(|path| instance.path().starts_with(path)),
+            Self::Face { .. } => false,
+        }
+    }
+
     fn selected(self, instance: &ViewInstance, face: &ViewFace) -> bool {
         match self {
             Self::Object(path) => path.is_some_and(|path| instance.path().starts_with(path)),
@@ -258,6 +266,17 @@ impl Submission {
                     .ok_or(RenderError::ResourceLimit)?;
             }
         }
+        for instance in scene.curve_instances() {
+            vertices = vertices
+                .checked_add(
+                    instance
+                        .segments()
+                        .len()
+                        .checked_mul(2)
+                        .ok_or(RenderError::ResourceLimit)?,
+                )
+                .ok_or(RenderError::ResourceLimit)?;
+        }
         let byte_count = vertices
             .checked_mul(VERTEX_BYTES)
             .ok_or(RenderError::ResourceLimit)?;
@@ -338,6 +357,22 @@ impl Submission {
                                 format,
                             )?;
                         }
+                    }
+                }
+            }
+            for instance in scene.curve_instances() {
+                let selected = selection.curve_selected(instance);
+                if selected != selected_pass {
+                    continue;
+                }
+                let color = if selected {
+                    Color32::from_rgb(242, 163, 70)
+                } else {
+                    Color32::from_gray(145)
+                };
+                for segment in instance.segments() {
+                    for point in segment {
+                        submission.vertex(matrix, *point, color, format)?;
                     }
                 }
             }
