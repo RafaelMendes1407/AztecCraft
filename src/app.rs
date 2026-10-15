@@ -5036,6 +5036,10 @@ mod tests {
 mod snapshots;
 
 #[cfg(test)]
+#[path = "entry_point_tests.rs"]
+mod entry_point_tests;
+
+#[cfg(test)]
 #[path = "guard_matrix_tests.rs"]
 mod guard_matrix_tests;
 
