@@ -272,14 +272,14 @@ pub(crate) fn test_connection(
     test_connection_writer(context, |writer| writer)
 }
 
-#[cfg(all(test, feature = "mcp-test-client"))]
+#[cfg(all(unix, test, feature = "mcp-test-client"))]
 pub(crate) struct TestFlushFailure {
     armed: std::sync::atomic::AtomicBool,
     failed: std::sync::atomic::AtomicBool,
     accepted: std::sync::atomic::AtomicUsize,
 }
 
-#[cfg(all(test, feature = "mcp-test-client"))]
+#[cfg(all(unix, test, feature = "mcp-test-client"))]
 impl TestFlushFailure {
     pub(crate) fn arm(&self) {
         use std::sync::atomic::Ordering;
@@ -292,13 +292,13 @@ impl TestFlushFailure {
     }
 }
 
-#[cfg(all(test, feature = "mcp-test-client"))]
+#[cfg(all(unix, test, feature = "mcp-test-client"))]
 struct TestFailingWriter {
     inner: tokio::io::WriteHalf<tokio::io::DuplexStream>,
     failure: Arc<TestFlushFailure>,
 }
 
-#[cfg(all(test, feature = "mcp-test-client"))]
+#[cfg(all(unix, test, feature = "mcp-test-client"))]
 impl tokio::io::AsyncWrite for TestFailingWriter {
     fn poll_write(
         mut self: std::pin::Pin<&mut Self>,
@@ -334,7 +334,7 @@ impl tokio::io::AsyncWrite for TestFailingWriter {
     }
 }
 
-#[cfg(all(test, feature = "mcp-test-client"))]
+#[cfg(all(unix, test, feature = "mcp-test-client"))]
 pub(crate) fn test_connection_with_flush_failure(
     context: egui::Context,
 ) -> (
