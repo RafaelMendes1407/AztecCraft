@@ -1,4 +1,3 @@
 pub mod container;
 
-#[cfg(test)]
-mod semantic;
+pub(crate) mod semantic;

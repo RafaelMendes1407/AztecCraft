@@ -162,13 +162,31 @@ bounded file reads, byte sizes, chunk counts and complete partitions. Fixture
 SHA256 verification is a separate recorded precheck, not performed by that test.
 Private assets and manifests are not distributed or silently counted as tested.
 
-A private test-only semantic stage parses CREA, DBL3/DBLE, SLCT, CWFL, RELA and
+The crate-private semantic parser reads CREA, DBL3/DBLE, SLCT, CWFL, RELA and
 MESH records into immutable ranges over that same source. It checks counted
 blocks, the observed corner grammar, UV references, trailers and enclosing
 creation or selection ownership. Its metadata allocations have a checked
 32 MiB application limit. Endpoint flags, identity bytes and normal words stay
 unaltered; their unresolved meanings are not assigned authoring properties.
-The stage does not construct a canonical scene or enable Open or display.
+Production parsing and validation are unconditional; descriptive spans used only
+by the independent trace proof are stored only in test builds.
+
+`native_scene::binary::decode` constructs a checked `NativeScene` off-document
+using that same parser and immutable source Arc. It binds effective last
+transform assignments to their original numeric words, retains earlier source
+atoms, checks static geometry dependencies and preserves base f32 points and
+sparse f32 offsets separately. Effective points use f64 addition. Unknown edge
+smoothing and authored normal assignments remain unresolved; appearance is
+incomplete. Custom definitions are retained inert and admitted only with the
+supported framing, owner/type matching and checked appearance connections.
+
+The decoder applies a 128 MiB accounted-buffer policy and a checked 50 million
+validation-work-unit policy before canonical construction. These are operational
+limits, not a process heap guarantee, timing promise or Maya format limits.
+Errors expose only a fixed category and an optional source byte offset. The
+decoder performs no IO or live document replacement. Native and MCP Open,
+editing integration and genuine Maya Save require their separate shared-editor
+integration; this library decoder does not enable them.
 
 The ignored unit test
 `maya_binary::semantic::tests::private_wire_fixture_spans_and_mesh_trace_match_audit`
@@ -177,3 +195,14 @@ Run it explicitly with `cargo test --lib --no-default-features --locked
 maya_binary::semantic::tests::private_wire_fixture_spans_and_mesh_trace_match_audit
 -- --ignored --exact` after a separate SHA256 precheck. It compares source spans
 with an independent external trace and checks mesh loops in the fixtures.
+
+After a separate SHA256 precheck, the explicitly ignored production consumer
+test requires `AZTECCRAFT_MB_FIXTURE_MANIFEST`, `AZTECCRAFT_MB_DISPLAY_RANGES`
+and `AZTECCRAFT_MB_WIRE_RANGES`, and runs with `cargo test --lib
+--no-default-features --locked
+native_scene::binary::tests::private_native_candidates_and_views_match_independent_counts
+-- --ignored --exact`. It checks canonical scene and prepared `ViewScene`
+geometry/visibility counts and source Arc identity. Independent external ranges
+also check parent bindings, units, scalar origins and exact internal words,
+retained f32 base-point bits and exact f64 sparse-offset sums.
+Its library success does not constitute a native Open or appearance proof.

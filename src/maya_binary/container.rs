@@ -103,6 +103,12 @@ impl fmt::Debug for Container {
 }
 
 impl Container {
+    pub(crate) fn metadata_bytes(&self) -> Option<usize> {
+        self.chunks
+            .capacity()
+            .checked_mul(std::mem::size_of::<Chunk>())
+    }
+
     pub fn source(&self) -> &Arc<[u8]> {
         &self.source
     }

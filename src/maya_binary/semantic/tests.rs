@@ -1,3 +1,9 @@
+mod wire_fixture {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/support/maya_binary.rs"
+    ));
+}
 use super::*;
 use serde_json::Value;
 use std::{
@@ -6,6 +12,7 @@ use std::{
     path::{Component, Path},
     sync::Arc,
 };
+use wire_fixture::{chunk, group, mesh_payload};
 
 fn payload<T>(
     bytes: &[u8],
@@ -15,25 +22,6 @@ fn payload<T>(
     let result = decode(&mut cursor)?;
     cursor.finish()?;
     Ok(result)
-}
-
-fn chunk(tag: &[u8; 4], bytes: &[u8], alignment: usize) -> Vec<u8> {
-    let mut out = tag.to_vec();
-    out.extend(0x1234_5678u32.to_be_bytes());
-    out.extend((bytes.len() as u64).to_be_bytes());
-    out.extend(bytes);
-    out.resize(16 + bytes.len().next_multiple_of(alignment), 0xa5);
-    out
-}
-
-fn group(form: &[u8; 4], children: &[u8], alignment: usize) -> Vec<u8> {
-    let mut body = form.to_vec();
-    body.extend(children);
-    chunk(
-        if form == b"CONS" { b"LIS8" } else { b"FOR8" },
-        &body,
-        alignment,
-    )
 }
 
 fn container(children: &[u8]) -> Container {
@@ -62,32 +50,6 @@ fn double(triple: bool) -> Vec<u8> {
     {
         bytes.extend(value.to_bits().to_be_bytes());
     }
-    bytes
-}
-
-fn counted(bytes: &mut Vec<u8>, words: &[u32]) {
-    bytes.extend((words.len() as u32).to_be_bytes());
-    for word in words {
-        bytes.extend(word.to_be_bytes());
-    }
-}
-
-fn mesh_payload(corners: &[u32]) -> Vec<u8> {
-    let mut bytes = b"o\0\x20".to_vec();
-    counted(
-        &mut bytes,
-        &[0, 0, 0, 1f32.to_bits(), 0, 0, 0, 1f32.to_bits(), 0],
-    );
-    counted(&mut bytes, &[0x8000_0000, 1, 1, 2, 2, 0]);
-    counted(&mut bytes, corners);
-    counted(&mut bytes, &[1e20f32.to_bits(), 0, 0]);
-    for word in [0u32, 1, 0] {
-        bytes.extend(word.to_be_bytes());
-    }
-    bytes.extend(b"uv\0");
-    counted(&mut bytes, &[0, 0, 1f32.to_bits(), 0, 0, 1f32.to_bits()]);
-    counted(&mut bytes, &[0, 1, 2]);
-    bytes.extend([0; 20]);
     bytes
 }
 
@@ -370,7 +332,7 @@ fn metadata_reservations_are_bounded_and_debug_never_expands_source() {
         metadata_bytes(1, usize::MAX).unwrap_err().kind,
         ErrorKind::Resource
     );
-    let source = container(&group(b"XFRM", &chunk(b"CREA", &create(0x80, false), 8), 4));
+    let source = super::super::container::inspect(Arc::from(wire_fixture::specimen())).unwrap();
     let facts = decode_records(&source).unwrap();
     assert!(!format!("{facts:?}").contains(&format!("{:?}", source.source())));
     assert!(
@@ -533,7 +495,7 @@ fn private_wire_fixture_spans_and_mesh_trace_match_audit() {
                     assert_eq!(value.destination.end - base, number(&row[4]));
                     counts[2] += 1;
                 }
-                Data::Relation(value) => {
+                Data::Relation { value } => {
                     let row = expected["rela"]
                         .as_array()
                         .unwrap()

@@ -190,7 +190,6 @@ impl NativeMesh {
         )
         .unwrap()
     }
-    #[cfg(test)]
     pub(super) fn from_binary_parts(
         base: Vec<[f32; 3]>,
         edges: Vec<NativeEdge>,

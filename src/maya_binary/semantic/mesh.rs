@@ -1,21 +1,28 @@
 use super::{BinaryError, Cursor, ErrorKind, Span, Words, error};
 
 #[derive(Debug)]
-pub(super) struct Mesh {
+pub(crate) struct Mesh {
     pub key: Span,
+    #[cfg(test)]
     pub kind_offset: usize,
     pub positions: Words,
     pub endpoints: Words,
     pub corners: Words,
+    #[cfg(test)]
     pub normals: Words,
+    #[cfg(test)]
     pub uv_header: Span,
+    #[cfg(test)]
     pub uv_name: Span,
+    #[cfg(test)]
     pub uv_points: Words,
+    #[cfg(test)]
     pub uv_ids: Words,
+    #[cfg(test)]
     pub trailer: Span,
 }
 
-pub(super) fn corner(word: u32, offset: usize) -> Result<(usize, bool, bool), BinaryError> {
+pub(crate) fn corner(word: u32, offset: usize) -> Result<(usize, bool, bool), BinaryError> {
     let (reverse, terminal) = match word >> 24 {
         0x00 => (false, false),
         0x80 => (true, false),
@@ -26,7 +33,7 @@ pub(super) fn corner(word: u32, offset: usize) -> Result<(usize, bool, bool), Bi
     Ok(((word & 0x00ff_ffff) as usize, reverse, terminal))
 }
 
-pub(super) fn decode_mesh(cursor: &mut Cursor<'_>) -> Result<Mesh, BinaryError> {
+pub(crate) fn decode_mesh(cursor: &mut Cursor<'_>) -> Result<Mesh, BinaryError> {
     let key = cursor.string()?;
     let kind_offset = cursor.position;
     if cursor.byte()? != 0x20 {
@@ -35,13 +42,13 @@ pub(super) fn decode_mesh(cursor: &mut Cursor<'_>) -> Result<Mesh, BinaryError> 
     let positions = cursor.words(3)?;
     let endpoints = cursor.words(2)?;
     let corners = cursor.words(1)?;
-    let normals = cursor.words(3)?;
+    let _normals = cursor.words(3)?;
     let uv_start = cursor.position;
     if cursor.u32()? != 0 || cursor.u32()? != 1 || cursor.u32()? != 0 {
         return Err(error(uv_start, ErrorKind::Unsupported));
     }
-    let uv_header = uv_start..cursor.position;
-    let uv_name = cursor.string()?;
+    let _uv_header = uv_start..cursor.position;
+    let _uv_name = cursor.string()?;
     let uv_points = cursor.words(2)?;
     let uv_ids = cursor.words(1)?;
     if uv_ids.count != corners.count {
@@ -83,15 +90,22 @@ pub(super) fn decode_mesh(cursor: &mut Cursor<'_>) -> Result<Mesh, BinaryError> 
     }
     Ok(Mesh {
         key,
+        #[cfg(test)]
         kind_offset,
         positions,
         endpoints,
         corners,
-        normals,
-        uv_header,
-        uv_name,
+        #[cfg(test)]
+        normals: _normals,
+        #[cfg(test)]
+        uv_header: _uv_header,
+        #[cfg(test)]
+        uv_name: _uv_name,
+        #[cfg(test)]
         uv_points,
+        #[cfg(test)]
         uv_ids,
+        #[cfg(test)]
         trailer,
     })
 }

@@ -1,14 +1,16 @@
 use super::{BinaryError, Cursor, ErrorKind, Span, error};
 
 #[derive(Debug)]
-pub(super) struct Create {
+pub(crate) struct Create {
+    #[cfg(test)]
     pub flags: u8,
     pub name: Span,
     pub parent: Option<Span>,
+    #[cfg(test)]
     pub identity: Span,
 }
 
-pub(super) fn decode_create(cursor: &mut Cursor<'_>) -> Result<Create, BinaryError> {
+pub(crate) fn decode_create(cursor: &mut Cursor<'_>) -> Result<Create, BinaryError> {
     let offset = cursor.position;
     let flags = cursor.byte()?;
     let has_parent = match flags {
@@ -28,23 +30,25 @@ pub(super) fn decode_create(cursor: &mut Cursor<'_>) -> Result<Create, BinaryErr
     if cursor.position != identity_start {
         return Err(error(cursor.position, ErrorKind::Layout));
     }
-    let identity = cursor.take(16)?;
+    let _identity = cursor.take(16)?;
     Ok(Create {
+        #[cfg(test)]
         flags,
         name,
         parent,
-        identity,
+        #[cfg(test)]
+        identity: _identity,
     })
 }
 
 #[derive(Debug)]
-pub(super) struct Double {
+pub(crate) struct Double {
     pub key: Span,
     pub kind: u8,
     pub numeric: Span,
 }
 
-pub(super) fn decode_double(cursor: &mut Cursor<'_>, triple: bool) -> Result<Double, BinaryError> {
+pub(crate) fn decode_double(cursor: &mut Cursor<'_>, triple: bool) -> Result<Double, BinaryError> {
     let key = cursor.string()?;
     let offset = cursor.position;
     let kind = cursor.byte()?;
@@ -56,13 +60,14 @@ pub(super) fn decode_double(cursor: &mut Cursor<'_>, triple: bool) -> Result<Dou
 }
 
 #[derive(Debug)]
-pub(super) struct Connection {
+pub(crate) struct Connection {
+    #[cfg(test)]
     pub mode: u8,
     pub source: Span,
     pub destination: Span,
 }
 
-pub(super) fn decode_connection(cursor: &mut Cursor<'_>) -> Result<Connection, BinaryError> {
+pub(crate) fn decode_connection(cursor: &mut Cursor<'_>) -> Result<Connection, BinaryError> {
     let offset = cursor.position;
     let mode = cursor.byte()?;
     if !matches!(mode, 0 | 1) {
@@ -71,6 +76,7 @@ pub(super) fn decode_connection(cursor: &mut Cursor<'_>) -> Result<Connection, B
     let source = cursor.string()?;
     let destination = cursor.string()?;
     Ok(Connection {
+        #[cfg(test)]
         mode,
         source,
         destination,
@@ -78,29 +84,37 @@ pub(super) fn decode_connection(cursor: &mut Cursor<'_>) -> Result<Connection, B
 }
 
 #[derive(Debug)]
-pub(super) struct Relation {
+pub(crate) struct Relation {
+    #[cfg(test)]
     pub kind: Span,
+    #[cfg(test)]
     pub head: Span,
+    #[cfg(test)]
     pub count_word: Span,
+    #[cfg(test)]
     pub tails: [Span; 2],
 }
 
-pub(super) fn decode_relation(cursor: &mut Cursor<'_>) -> Result<Relation, BinaryError> {
+pub(crate) fn decode_relation(cursor: &mut Cursor<'_>) -> Result<Relation, BinaryError> {
     let kind = cursor.string()?;
     if !matches!(&cursor.source[kind.clone()], b"link" | b"shadowLink") {
         return Err(error(kind.start, ErrorKind::Unsupported));
     }
-    let head = cursor.string()?;
+    let _head = cursor.string()?;
     let offset = cursor.position;
     if cursor.u32()? != 2 {
         return Err(error(offset, ErrorKind::Unsupported));
     }
-    let count_word = offset..cursor.position;
-    let tails = [cursor.string()?, cursor.string()?];
+    let _count_word = offset..cursor.position;
+    let _tails = [cursor.string()?, cursor.string()?];
     Ok(Relation {
+        #[cfg(test)]
         kind,
-        head,
-        count_word,
-        tails,
+        #[cfg(test)]
+        head: _head,
+        #[cfg(test)]
+        count_word: _count_word,
+        #[cfg(test)]
+        tails: _tails,
     })
 }

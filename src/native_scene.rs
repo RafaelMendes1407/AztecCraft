@@ -1,3 +1,4 @@
+pub mod binary;
 mod mesh;
 mod source;
 pub use mesh::{DirectedEdge, NativeEdge, NativeFace, NativeMesh, Points};
@@ -492,7 +493,6 @@ impl Default for NativeScene {
 }
 
 impl NativeScene {
-    #[cfg(test)]
     fn from_binary_candidate(mut candidate: Self) -> Result<Self, NativeError> {
         if candidate
             .source

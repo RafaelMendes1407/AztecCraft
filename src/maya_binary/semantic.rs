@@ -1,5 +1,6 @@
-mod mesh;
-mod records;
+pub(crate) mod mesh;
+pub(crate) mod records;
+#[cfg(test)]
 mod tests;
 
 use super::container::{Chunk, Container};
@@ -9,7 +10,7 @@ const MAX_FACT_METADATA_BYTES: usize = 32 * 1024 * 1024;
 type Span = Range<usize>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ErrorKind {
+pub(crate) enum ErrorKind {
     Truncated,
     Unsupported,
     Layout,
@@ -19,16 +20,16 @@ enum ErrorKind {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct BinaryError {
-    offset: usize,
-    kind: ErrorKind,
+pub(crate) struct BinaryError {
+    pub(crate) offset: Option<usize>,
+    pub(crate) kind: ErrorKind,
 }
 
 impl fmt::Display for BinaryError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
-            "binary wire {:?} at byte {}",
+            "binary wire {:?} at byte {:?}",
             self.kind, self.offset
         )
     }
@@ -36,11 +37,18 @@ impl fmt::Display for BinaryError {
 
 impl std::error::Error for BinaryError {}
 
-fn error(offset: usize, kind: ErrorKind) -> BinaryError {
-    BinaryError { offset, kind }
+pub(crate) fn global_error(kind: ErrorKind) -> BinaryError {
+    BinaryError { offset: None, kind }
 }
 
-struct Cursor<'a> {
+pub(crate) fn error(offset: usize, kind: ErrorKind) -> BinaryError {
+    BinaryError {
+        offset: Some(offset),
+        kind,
+    }
+}
+
+pub(crate) struct Cursor<'a> {
     source: &'a [u8],
     position: usize,
     end: usize,
@@ -124,13 +132,13 @@ impl<'a> Cursor<'a> {
 }
 
 #[derive(Debug)]
-struct Words {
-    range: Span,
-    count: usize,
+pub(crate) struct Words {
+    pub(crate) range: Span,
+    pub(crate) count: usize,
 }
 
 impl Words {
-    fn values<'a>(&self, source: &'a [u8]) -> impl Iterator<Item = u32> + 'a {
+    pub(crate) fn values<'a>(&self, source: &'a [u8]) -> impl Iterator<Item = u32> + 'a {
         source[self.range.clone()]
             .as_chunks::<4>()
             .0
@@ -140,33 +148,42 @@ impl Words {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Owner {
+pub(crate) enum Owner {
     Created(usize),
     Selected(usize),
 }
 
 #[derive(Debug)]
-enum Data {
+pub(crate) enum Data {
     Create(records::Create),
     Double(records::Double),
     Selection(Span),
     Connection(records::Connection),
-    Relation(records::Relation),
+    Relation {
+        #[cfg(test)]
+        value: records::Relation,
+    },
     Mesh(mesh::Mesh),
 }
 
 #[derive(Debug)]
-struct Record {
-    chunk: usize,
-    group: usize,
-    owner: Option<Owner>,
-    data: Data,
+pub(crate) struct Record {
+    pub(crate) chunk: usize,
+    pub(crate) group: usize,
+    pub(crate) owner: Option<Owner>,
+    pub(crate) data: Data,
 }
 
-struct WireFacts<'a> {
-    container: &'a Container,
-    records: Vec<Record>,
-    owners: Vec<Option<Owner>>,
+pub(crate) struct WireFacts<'a> {
+    pub(crate) container: &'a Container,
+    pub(crate) records: Vec<Record>,
+    pub(crate) owners: Vec<Option<Owner>>,
+}
+
+impl WireFacts<'_> {
+    pub(crate) fn metadata_bytes(&self) -> Result<usize, BinaryError> {
+        metadata_bytes(self.records.capacity(), self.owners.capacity())
+    }
 }
 
 impl fmt::Debug for WireFacts<'_> {
@@ -180,7 +197,7 @@ impl fmt::Debug for WireFacts<'_> {
     }
 }
 
-fn metadata_bytes(records: usize, owners: usize) -> Result<usize, BinaryError> {
+pub(crate) fn metadata_bytes(records: usize, owners: usize) -> Result<usize, BinaryError> {
     let bytes = records
         .checked_mul(size_of::<Record>())
         .and_then(|bytes| {
@@ -189,18 +206,21 @@ fn metadata_bytes(records: usize, owners: usize) -> Result<usize, BinaryError> {
                 .and_then(|owner_bytes| bytes.checked_add(owner_bytes))
         })
         .filter(|bytes| *bytes <= MAX_FACT_METADATA_BYTES)
-        .ok_or_else(|| error(0, ErrorKind::Resource))?;
+        .ok_or_else(|| global_error(ErrorKind::Resource))?;
     Ok(bytes)
 }
 
-fn recognized(tag: [u8; 4]) -> bool {
+pub(crate) fn recognized(tag: [u8; 4]) -> bool {
     matches!(
         &tag,
         b"CREA" | b"DBL3" | b"DBLE" | b"SLCT" | b"CWFL" | b"RELA" | b"MESH"
     )
 }
 
-fn require_connection_group(container: &Container, chunk: &Chunk) -> Result<(), BinaryError> {
+pub(crate) fn require_connection_group(
+    container: &Container,
+    chunk: &Chunk,
+) -> Result<(), BinaryError> {
     let group = chunk
         .parent()
         .and_then(|index| container.chunk(index))
@@ -216,7 +236,7 @@ fn require_connection_group(container: &Container, chunk: &Chunk) -> Result<(), 
     Ok(())
 }
 
-fn decode_records(container: &Container) -> Result<WireFacts<'_>, BinaryError> {
+pub(crate) fn decode_records(container: &Container) -> Result<WireFacts<'_>, BinaryError> {
     let record_count = container
         .chunks()
         .iter()
@@ -231,11 +251,11 @@ fn decode_records(container: &Container) -> Result<WireFacts<'_>, BinaryError> {
     facts
         .records
         .try_reserve_exact(record_count)
-        .map_err(|_| error(0, ErrorKind::Resource))?;
+        .map_err(|_| global_error(ErrorKind::Resource))?;
     facts
         .owners
         .try_reserve_exact(container.chunks().len())
-        .map_err(|_| error(0, ErrorKind::Resource))?;
+        .map_err(|_| global_error(ErrorKind::Resource))?;
     metadata_bytes(facts.records.capacity(), facts.owners.capacity())?;
     facts.owners.resize(container.chunks().len(), None);
     let source = container.source();
@@ -309,7 +329,13 @@ fn decode_records(container: &Container) -> Result<WireFacts<'_>, BinaryError> {
             }
             b"RELA" => {
                 require_connection_group(container, chunk)?;
-                Data::Relation(records::decode_relation(&mut cursor)?)
+                {
+                    let _relation = records::decode_relation(&mut cursor)?;
+                    Data::Relation {
+                        #[cfg(test)]
+                        value: _relation,
+                    }
+                }
             }
             _ => unreachable!(),
         };
