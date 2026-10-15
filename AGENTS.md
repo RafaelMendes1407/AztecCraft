@@ -3,7 +3,7 @@
 - Build the desktop application in Rust; preserve the user's Maya parity objective.
 - Make small, independently reviewable local commits.
 - The user has authorized early prototype publication and merge to `main`, superseding the original restriction on the first push. The 80–90% target across all Maya 2026 functionality and exact parity remain unmet acceptance requirements. Don't infer release/signing or other publication authority beyond the user's current request.
-- The repository is public. Push each independently reviewed and tested atomic commit promptly to its feature branch under the per-repository push lock, then arm `ci-watch`. Do not wait for a complete feature or Maya parity before pushing; the orchestrator serializes integration into `main`.
+- The repository is public. Push each independently reviewed and tested atomic commit promptly to its feature branch under the per-repository push lock, then arm `ci-watch`. Do not wait for a complete feature or Maya parity before pushing. Work reaches `main` through reviewed pull requests under "Collaborating on issues"; the orchestrator serializes integration of already-reviewed work only where the user says so during the transition.
 - Never claim exact visual or functional parity without comparison against the pinned Maya reference.
 - Consult `.project-docs/plan.md`, `.project-docs/reference.md`, and `known-issues.md` before changing code.
 - Use an independent reviewer for two plan/diff passes. Keep implementation and review ownership separate.
@@ -115,3 +115,12 @@ Adapted from pinned public guidance, without importing sibling-only tooling:
   evidence boundaries and review after rebasing.
 - [Artcraft AGENTS.md](https://github.com/storytold/artcraft/blob/d4e4ac69bbd93d237eaf5d0260bc6a5ff3a5e373/AGENTS.md):
   preservation of untracked and ignored local files.
+
+## Collaborating on issues
+
+1. **Claim.** Before starting, comment on the issue ("Claiming: <agent/session name>, plan: <one line>") and add the `in-progress` label. A claim holds for 48 hours and is renewed by any new commit, PR update or comment by the claimant.
+2. **Work in the open.** Branch `type/<issue-number>-short-slug`. Open a draft PR early with `Closes #<n>` and push each reviewed atomic commit to it.
+3. **Stale claims.** If an issue's claim and its draft PR have had no activity for more than 48 hours, another agent may take it over: comment "Resuming from @/<previous claimant>, last commit <sha>" and continue on the same branch or PR (or a successor branch based on it). Preserve prior work; never discard someone else's commits.
+4. **Peer review first.** At session start, before claiming new work, review open PRs that need review, oldest first. Post a review against the current head SHA with findings or approval.
+5. **Merge rule.** A PR merges only when it is out of draft, CI is green, two independent reviewers (neither the author) approved the same head SHA (any new commit resets approvals) and a maintainer (@cristim) signs off. Then rebase-merge or squash per repository convention. Authors never merge their own PR.
+6. Everything posted to issues and PRs is public: no home-directory paths, usernames, emails, tokens or private scene and asset names.
