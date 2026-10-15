@@ -29,6 +29,24 @@ pub enum FileActionKind {
 pub enum FileDecision {
     Cancel,
     Discard,
+    Save,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PendingActionStatus {
+    None,
+    Retained,
+    SourceChanged,
+}
+
+#[cfg(any(test, feature = "mcp"))]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DocumentOrigin {
+    Untitled,
+    MayaBinary,
+    LegacyAztec,
 }
 #[cfg(any(test, feature = "mcp"))]
 use uuid::Uuid;
@@ -39,7 +57,7 @@ pub const MAX_NAME_BYTES: usize = 4096;
 pub const MAX_RESULT_BYTES: usize = 512 * 1024;
 
 #[cfg(any(test, feature = "mcp"))]
-pub const TOOL_NAMES: [&str; 18] = [
+pub const TOOL_NAMES: [&str; 20] = [
     "inspect_scene",
     "create_primitive",
     "select_node",
@@ -55,6 +73,8 @@ pub const TOOL_NAMES: [&str; 18] = [
     "pan_camera",
     "dolly_camera",
     "open_scene",
+    "save_scene",
+    "save_scene_as",
     "new_scene",
     "resolve_file_action",
     "request_close",
@@ -74,6 +94,10 @@ pub enum Operation {
     NewScene,
     RequestClose,
     OpenScene {
+        path: PathBuf,
+    },
+    SaveScene,
+    SaveSceneAs {
         path: PathBuf,
     },
     ResolveFileAction {
@@ -144,6 +168,22 @@ pub enum OperationReply {
     CloseRequested {
         scene_token: String,
     },
+    Saved {
+        scene_token: String,
+        dirty: bool,
+        pending_action_status: PendingActionStatus,
+    },
+    SaveUncertain {
+        scene_token: String,
+        dirty: bool,
+        pending_action_status: PendingActionStatus,
+        message: String,
+    },
+    SaveReconciled {
+        scene_token: String,
+        dirty: bool,
+        pending_action_status: PendingActionStatus,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -154,6 +194,10 @@ pub struct SceneInspection {
     pub shapes: Vec<ShapeInspection>,
     pub units: UnitsInspection,
     pub save_available: bool,
+    pub save_as_available: bool,
+    pub save_reconciliation_required: bool,
+    pub document_origin: DocumentOrigin,
+    pub has_file: bool,
     pub closing: bool,
     pub viewport_backend: &'static str,
     pub viewport_error: Option<crate::viewport_renderer::ViewportError>,
@@ -226,6 +270,7 @@ pub struct ShapeInspection {
 pub struct PendingInspection {
     pub id: String,
     pub kind: FileActionKind,
+    pub source_changed: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -247,6 +292,7 @@ pub enum OperationError {
     InvalidInput(String),
     Scene(NativeError),
     File(String),
+    NativeSave(azteccraft::document::NativeSaveError),
     AmbiguousSelection,
     StalePendingAction,
     Camera(InvalidCameraInput),
@@ -266,6 +312,7 @@ impl fmt::Display for OperationError {
             Self::InvalidInput(message) => f.write_str(message),
             Self::Scene(error) => error.fmt(f),
             Self::File(error) => f.write_str(error),
+            Self::NativeSave(error) => error.fmt(f),
             Self::AmbiguousSelection => {
                 f.write_str("object has multiple instances; supply an instance_path")
             }

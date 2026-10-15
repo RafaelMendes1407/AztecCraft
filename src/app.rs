@@ -160,6 +160,9 @@ impl Editor {
             Operation::Redo => Some("Redo"),
             Operation::OpenScene { .. } | Operation::NewScene => Some("Scene ready"),
             Operation::RequestClose => None,
+            Operation::SaveScene
+            | Operation::SaveSceneAs { .. }
+            | Operation::ResolveFileAction { .. } => None,
             _ => Some("Scene edited"),
         };
         match self.apply_operation(operation) {
@@ -185,11 +188,21 @@ impl Editor {
         }
     }
 
-    #[cfg(any(test, feature = "mcp"))]
+    #[cfg(test)]
     pub(crate) fn remote_operation(
         &mut self,
         request: RemoteRequest,
         ctx: &egui::Context,
+    ) -> Result<OperationReply, OperationError> {
+        self.remote_operation_guarded(request, ctx, &|| true)
+    }
+
+    #[cfg(any(test, feature = "mcp"))]
+    pub(crate) fn remote_operation_guarded(
+        &mut self,
+        request: RemoteRequest,
+        ctx: &egui::Context,
+        may_install: &dyn Fn() -> bool,
     ) -> Result<OperationReply, OperationError> {
         let focused = ctx.memory(|memory| {
             memory.focused().is_some_and(|id| {
@@ -213,7 +226,7 @@ impl Editor {
         {
             return Err(OperationError::BusyEditing);
         }
-        self.apply_operation(request.operation)
+        self.apply_operation_guarded(request.operation, may_install)
     }
 
     #[cfg(any(test, feature = "mcp"))]
@@ -352,7 +365,11 @@ impl Editor {
                 angular: angular.into(),
                 time: units.time.clone(),
             },
-            save_available: false,
+            save_available: self.files.save_available(),
+            save_as_available: self.files.save_as_available(),
+            save_reconciliation_required: self.files.reconciliation_required(),
+            document_origin: self.files.document_origin(),
+            has_file: self.files.has_file(),
             closing: self.files.is_closing(),
             viewport_backend: if self.renderer.is_some() {
                 "wgpu_geometry_preview"
@@ -424,11 +441,19 @@ impl Editor {
     }
 
     fn apply_operation(&mut self, operation: Operation) -> Result<OperationReply, OperationError> {
+        self.apply_operation_guarded(operation, &|| true)
+    }
+
+    fn apply_operation_guarded(
+        &mut self,
+        operation: Operation,
+        may_install: &dyn Fn() -> bool,
+    ) -> Result<OperationReply, OperationError> {
         if self.files.is_closing() {
             return Err(OperationError::BusyEditing);
         }
         match &operation {
-            Operation::OpenScene { path } => {
+            Operation::OpenScene { path } | Operation::SaveSceneAs { path } => {
                 let text = path.to_str().ok_or_else(|| {
                     OperationError::InvalidInput("Scene path must be UTF-8".into())
                 })?;
@@ -437,14 +462,28 @@ impl Editor {
                         "Scene path must contain 1 to 4096 bytes and no NUL".into(),
                     ));
                 }
-                return self.open_candidate(path);
+                if matches!(operation, Operation::OpenScene { .. }) {
+                    return self.open_candidate(path);
+                }
+                if self.files.is_modal() {
+                    return Err(OperationError::BusyEditing);
+                }
+                return self
+                    .save_document(azteccraft::document::SaveDestination::As(path), may_install);
+            }
+            Operation::SaveScene => {
+                if self.files.is_modal() {
+                    return Err(OperationError::BusyEditing);
+                }
+                return self
+                    .save_document(azteccraft::document::SaveDestination::Active, may_install);
             }
             Operation::NewScene => return self.new_document(),
             Operation::RequestClose => return self.close_document(),
             Operation::ResolveFileAction {
                 pending_id,
                 decision,
-            } => return self.resolve_file_action(*pending_id, *decision),
+            } => return self.resolve_file_action_guarded(*pending_id, *decision, may_install),
             _ => {}
         }
         let selected_path = match &operation {
@@ -650,6 +689,8 @@ impl Editor {
                 });
             }
             Operation::OpenScene { .. }
+            | Operation::SaveScene
+            | Operation::SaveSceneAs { .. }
             | Operation::NewScene
             | Operation::RequestClose
             | Operation::ResolveFileAction { .. } => {
@@ -702,12 +743,14 @@ impl Editor {
         {
             return;
         }
-        let (undo, redo, delete, frame) = ctx.input(|i| {
+        let (undo, redo, delete, frame, save, save_as) = ctx.input(|i| {
             (
                 i.modifiers.command && !i.modifiers.shift && i.key_pressed(Key::Z),
                 i.modifiers.command && i.modifiers.shift && i.key_pressed(Key::Z),
                 i.modifiers.is_none() && i.key_pressed(Key::Delete),
                 i.modifiers.is_none() && i.key_pressed(Key::F),
+                i.modifiers.command && !i.modifiers.shift && i.key_pressed(Key::S),
+                i.modifiers.command && i.modifiers.shift && i.key_pressed(Key::S),
             )
         });
         if undo {
@@ -721,6 +764,12 @@ impl Editor {
         }
         if frame {
             self.frame_selected();
+        }
+        if save && self.files.save_available() {
+            self.native_operation(Operation::SaveScene);
+        }
+        if save_as && self.files.save_as_available() {
+            self.save_as_dialog();
         }
     }
 
@@ -794,7 +843,23 @@ impl Editor {
                     ui.close();
                     self.open_dialog();
                 }
-                unsupported(ui, "Save As...");
+                if ui
+                    .add_enabled(self.files.save_available(), egui::Button::new("Save"))
+                    .clicked()
+                {
+                    ui.close();
+                    self.native_operation(Operation::SaveScene);
+                }
+                if ui
+                    .add_enabled(
+                        self.files.save_as_available(),
+                        egui::Button::new("Save As..."),
+                    )
+                    .clicked()
+                {
+                    ui.close();
+                    self.save_as_dialog();
+                }
                 unsupported(ui, "Export...");
                 ui.separator();
                 if ui.button("Close").clicked() {
@@ -1493,7 +1558,7 @@ mod tests {
     #[test]
     fn remote_operations_share_native_scene_selection_history_and_camera() {
         let mut editor = Editor::default();
-        assert_eq!(crate::editor_operations::TOOL_NAMES.len(), 18);
+        assert_eq!(crate::editor_operations::TOOL_NAMES.len(), 20);
         let OperationReply::Created { node_id } = remote(
             &mut editor,
             Operation::Create {

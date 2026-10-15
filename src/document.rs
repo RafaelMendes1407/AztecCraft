@@ -50,6 +50,17 @@ pub enum NativeOrigin {
     Legacy(SourceBaseline),
 }
 impl NativeOrigin {
+    pub fn active_save_available(&self) -> bool {
+        #[cfg(unix)]
+        {
+            matches!(self, Self::Binary(source) if matches!(source.link, LinkStatus::Direct) && source.destination.is_some())
+        }
+        #[cfg(not(unix))]
+        false
+    }
+    pub fn save_as_available(&self) -> bool {
+        cfg!(unix) && matches!(self, Self::Binary(_))
+    }
     pub fn kind(&self) -> &'static str {
         match self {
             Self::Untitled => "untitled",
@@ -62,6 +73,34 @@ impl NativeOrigin {
             Self::Untitled => None,
             Self::Binary(s) | Self::Legacy(s) => Some(&s.bytes),
         }
+    }
+}
+
+pub fn verify_native_origin(path: &Path, origin: &NativeOrigin) -> Result<(), NativeSaveError> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let source = match origin {
+            NativeOrigin::Binary(source) | NativeOrigin::Legacy(source) => source,
+            NativeOrigin::Untitled => return Err(NativeSaveError::SourceChanged),
+        };
+        let (bytes, metadata, _, _) =
+            read_bytes(path).map_err(|_| NativeSaveError::SourceChanged)?;
+        if metadata.dev() != source.metadata.dev()
+            || metadata.ino() != source.metadata.ino()
+            || bytes.as_slice() != source.bytes.as_ref()
+        {
+            return Err(NativeSaveError::SourceChanged);
+        }
+        if let Some(destination) = &source.destination {
+            destination.verify(&source.file, &source.bytes)?;
+        }
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (path, origin);
+        Err(NativeSaveError::Unsupported)
     }
 }
 pub struct NativeDocument {

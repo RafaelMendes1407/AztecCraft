@@ -124,6 +124,7 @@ struct OpenArgs {
 enum FileDecisionInput {
     Cancel,
     Discard,
+    Save,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -341,7 +342,11 @@ fn parse_request(name: &str, arguments: JsonObject) -> Result<RemoteRequest, Err
             let args: MutationArgs = decode(arguments)?;
             (token(&args.scene_token)?, Operation::RequestClose)
         }
-        "open_scene" => {
+        "save_scene" => {
+            let args: MutationArgs = decode(arguments)?;
+            (token(&args.scene_token)?, Operation::SaveScene)
+        }
+        "open_scene" | "save_scene_as" => {
             let args: OpenArgs = decode(arguments)?;
             if args.path.is_empty() || args.path.len() > 4096 || args.path.contains('\0') {
                 return Err(ErrorData::invalid_params(
@@ -351,8 +356,14 @@ fn parse_request(name: &str, arguments: JsonObject) -> Result<RemoteRequest, Err
             }
             (
                 token(&args.scene_token)?,
-                Operation::OpenScene {
-                    path: args.path.into(),
+                if name == "open_scene" {
+                    Operation::OpenScene {
+                        path: args.path.into(),
+                    }
+                } else {
+                    Operation::SaveSceneAs {
+                        path: args.path.into(),
+                    }
                 },
             )
         }
@@ -363,6 +374,7 @@ fn parse_request(name: &str, arguments: JsonObject) -> Result<RemoteRequest, Err
             let decision = match args.decision {
                 FileDecisionInput::Cancel => FileDecision::Cancel,
                 FileDecisionInput::Discard => FileDecision::Discard,
+                FileDecisionInput::Save => FileDecision::Save,
             };
             (
                 token(&args.scene_token)?,
@@ -496,11 +508,19 @@ fn catalog() -> Vec<Tool> {
                     schema::<MutationArgs>(),
                 ),
                 "open_scene" => (
-                    "Open a supported scene from a local UTF-8 path (1 to 4096 bytes, no NUL); dirty documents require confirmation. No writer is available",
+                    "Open a supported scene from a local UTF-8 path (1 to 4096 bytes, no NUL); dirty documents require confirmation",
+                    schema::<OpenArgs>(),
+                ),
+                "save_scene" => (
+                    "Save the active supported Maya binary document, or reconcile an earlier uncertain installation without another write",
+                    schema::<MutationArgs>(),
+                ),
+                "save_scene_as" => (
+                    "Save a supported Maya binary scene to a fresh .mb path without overwriting; an uncertain prior save is reconciled instead",
                     schema::<OpenArgs>(),
                 ),
                 "resolve_file_action" => (
-                    "Cancel or discard the exact pending file action using its UUID and current scene token; replayed IDs are rejected",
+                    "Cancel, discard or save before the exact pending file action using its UUID and current scene token; source-changed Open requires Cancel and reopening",
                     schema::<ResolveFileArgs>(),
                 ),
                 _ => unreachable!("catalogue names must have schemas"),
@@ -560,6 +580,19 @@ fn tool_reply(reply: Result<OperationReply, OperationError>) -> CallToolResult {
                 OperationError::Scene(_) => "scene_error",
                 OperationError::Camera(_) => "camera_error",
                 OperationError::File(_) => "file_error",
+                OperationError::NativeSave(error) => match error {
+                    azteccraft::document::NativeSaveError::Unsupported => "save_unsupported",
+                    azteccraft::document::NativeSaveError::InvalidDestination => {
+                        "invalid_destination"
+                    }
+                    azteccraft::document::NativeSaveError::SourceChanged => "source_changed",
+                    azteccraft::document::NativeSaveError::DestinationExists => {
+                        "destination_exists"
+                    }
+                    azteccraft::document::NativeSaveError::Cancelled => "save_cancelled",
+                    azteccraft::document::NativeSaveError::Io(_) => "save_io",
+                    azteccraft::document::NativeSaveError::Encode(_) => "save_encode",
+                },
                 OperationError::AmbiguousSelection => "ambiguous_selection",
                 OperationError::StalePendingAction => "stale_pending_action",
             };
@@ -597,6 +630,7 @@ impl ServerHandler for EditorServer {
             return Ok(tool_error("unavailable", "Editor protocol connection is closed").into());
         }
         let (reply, receiver) = oneshot::channel();
+        let deadline = std::time::Instant::now() + UI_REPLY_TIMEOUT;
         if self
             .sender
             .try_send(EditorEnvelope {
@@ -604,6 +638,9 @@ impl ServerHandler for EditorServer {
                 reply,
                 cancellation: context.ct.clone(),
                 request_id: context.id.clone(),
+                deadline,
+                #[cfg(test)]
+                install_probe: None,
             })
             .is_err()
         {
@@ -615,7 +652,7 @@ impl ServerHandler for EditorServer {
                 self.shared.fail_close(&context.id);
                 tool_error("cancelled", "Request cancelled; inspect to reconcile any completed operation")
             },
-            outcome = tokio::time::timeout(UI_REPLY_TIMEOUT, receiver) => match outcome {
+            outcome = tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), receiver) => match outcome {
                 Ok(Ok(reply)) => tool_reply(reply),
                 Ok(Err(_)) => {
                     self.shared.fail_close(&context.id);
@@ -691,7 +728,7 @@ mod tests {
                 "orbit_camera" => json!({"scene_token":token,"radians":[0,0]}),
                 "pan_camera" => json!({"scene_token":token,"world_units":[0,0]}),
                 "dolly_camera" => json!({"scene_token":token,"factor":1}),
-                "open_scene" => json!({"scene_token":token,"path":"scene.mb"}),
+                "open_scene" | "save_scene_as" => json!({"scene_token":token,"path":"scene.mb"}),
                 "resolve_file_action" => {
                     json!({"scene_token":token,"pending_action_id":Uuid::new_v4().to_string(),"decision":"cancel"})
                 }
@@ -729,7 +766,9 @@ mod tests {
         let pending = Uuid::new_v4().to_string();
         for path in [String::new(), "x\0.mb".into(), "é".repeat(2049)] {
             let args = json!({"scene_token":token,"path":path});
-            assert!(parse_request("open_scene", args.as_object().unwrap().clone()).is_err());
+            for tool in ["open_scene", "save_scene_as"] {
+                assert!(parse_request(tool, args.as_object().unwrap().clone()).is_err());
+            }
         }
         let args = json!({"scene_token":token,"path":"é".repeat(2048)});
         assert!(parse_request("open_scene", args.as_object().unwrap().clone()).is_ok());
@@ -745,7 +784,7 @@ mod tests {
         let args = json!({"scene_token":token,"node_id":null,"instance_path":[]});
         assert!(parse_request("select_node", args.as_object().unwrap().clone()).is_err());
         for args in [
-            json!({"scene_token":token,"pending_action_id":pending,"decision":"save"}),
+            json!({"scene_token":token,"pending_action_id":pending,"decision":"save_as"}),
             json!({"scene_token":token,"pending_action_id":"bad","decision":"cancel"}),
             json!({"scene_token":token,"pending_action_id":pending,"decision":"cancel","path":"ignored.mb"}),
             json!({"scene_token":token,"path":"scene.mb","extra":true}),
@@ -757,6 +796,16 @@ mod tests {
             };
             assert!(parse_request(name, args.as_object().unwrap().clone()).is_err());
         }
+        let save = json!({"scene_token":token,"pending_action_id":pending,"decision":"save"});
+        assert!(matches!(
+            parse_request("resolve_file_action", save.as_object().unwrap().clone())
+                .unwrap()
+                .operation,
+            Operation::ResolveFileAction {
+                decision: FileDecision::Save,
+                ..
+            }
+        ));
         let args = json!({"scene_token":token,"node_id":"1","translation":[16777217.125,0,0],"rotation_degrees":[90,0,0],"scale":[1,1,1]});
         let request = parse_request("set_transform", args.as_object().unwrap().clone()).unwrap();
         let Operation::SetTransform { transform, .. } = request.operation else {

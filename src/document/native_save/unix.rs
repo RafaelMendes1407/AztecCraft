@@ -104,7 +104,7 @@ impl Destination {
         let file = self.open(&self.leaf)?;
         Ok(Identity::of(&file.metadata()?) == Identity::of(metadata))
     }
-    fn verify(&self, file: &File, bytes: &[u8]) -> Result<(), Error> {
+    pub(in crate::document) fn verify(&self, file: &File, bytes: &[u8]) -> Result<(), Error> {
         self.binding().map_err(|_| Error::SourceChanged)?;
         let current = self.open(&self.leaf).map_err(|_| Error::SourceChanged)?;
         if Identity::of(&current.metadata().map_err(io_error)?)
