@@ -24,20 +24,68 @@ pub(crate) fn assert_snapshot(name: &str, actual: &str) {
             "snapshot {name} is unreadable ({error}); regenerate with UPDATE_SNAPSHOTS=1 and review the diff"
         )
     });
-    if expected != actual.as_bytes() {
-        let expected = String::from_utf8_lossy(&expected);
-        let line = expected
-            .lines()
-            .zip(actual.lines())
-            .position(|(left, right)| left != right)
-            .unwrap_or_else(|| expected.lines().count().min(actual.lines().count()));
+    // A checkout may apply autocrlf despite .gitattributes; line endings are not content.
+    let expected = String::from_utf8_lossy(&expected).replace("\r\n", "\n");
+    if let Some(difference) = first_difference(&expected, actual) {
         panic!(
-            "snapshot {name} differs, first at line {}:\n  expected: {}\n  actual:   {}\nregenerate with UPDATE_SNAPSHOTS=1 only if the change is intended",
-            line + 1,
-            expected.lines().nth(line).unwrap_or("<end>"),
-            actual.lines().nth(line).unwrap_or("<end>")
+            "snapshot {name} differs, {difference}\nregenerate with UPDATE_SNAPSHOTS=1 only if the change is intended"
         );
     }
+}
+
+/// Describes the first difference between two LF-normalized texts, or `None` when equal. Never
+/// reports a difference without saying what differs, including final-newline and trailing bytes.
+fn first_difference(expected: &str, actual: &str) -> Option<String> {
+    if expected == actual {
+        return None;
+    }
+    let mut left = expected.split('\n');
+    let mut right = actual.split('\n');
+    let mut line = 1;
+    loop {
+        match (left.next(), right.next()) {
+            (Some(l), Some(r)) if l == r => line += 1,
+            (Some(l), Some(r)) => {
+                return Some(format!(
+                    "first at line {line}:\n  expected: {l:?}\n  actual:   {r:?}"
+                ));
+            }
+            (Some(_), None) | (None, Some(_)) => {
+                return Some(format!(
+                    "line counts differ at line {line}: expected {} bytes, actual {} bytes (final newline or trailing content)",
+                    expected.len(),
+                    actual.len()
+                ));
+            }
+            (None, None) => return Some("texts differ in an unclassified way".into()),
+        }
+    }
+}
+
+#[test]
+fn reporter_normalizes_nothing_it_cannot_explain() {
+    assert!(first_difference("a\nb\n", "a\nb\n").is_none());
+    let message = first_difference("a\nb\n", "a\nb").unwrap();
+    assert!(message.contains("final newline"), "{message}");
+    let message = first_difference("a\nb", "a\nb\nc\n").unwrap();
+    assert!(
+        message.contains("final newline") || message.contains("line"),
+        "{message}"
+    );
+    let message = first_difference("a\nb\n", "a\nx\n").unwrap();
+    assert!(
+        message.contains("line 2") && message.contains("\"b\""),
+        "{message}"
+    );
+    assert!(!message.contains("<end>"));
+}
+
+#[test]
+fn crlf_committed_text_compares_equal_after_normalization() {
+    let committed = "a\r\nb\r\n";
+    assert!(first_difference(&committed.replace("\r\n", "\n"), "a\nb\n").is_none());
+    // A CR that is not part of CRLF is content and still differs.
+    assert!(first_difference("a\rb\n", "a\nb\n").is_some());
 }
 
 fn is_uuid(bytes: &[u8]) -> bool {
