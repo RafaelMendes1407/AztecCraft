@@ -59,6 +59,8 @@ const HEAD_HALF: f32 = 4.0;
 const HANDLE: f32 = 6.8;
 const CENTER_HALF: f32 = 1.9;
 const CENTER: Pos2 = pos2(10.0, 14.0);
+/// Centre of the 24-unit grid.
+const GRID_CENTER: Pos2 = pos2(12.0, 12.0);
 const X_DIR: Vec2 = vec2(1.0, 0.0);
 const Y_DIR: Vec2 = vec2(0.0, -1.0);
 const Z_DIR: Vec2 = vec2(-FRAC_1_SQRT_2, FRAC_1_SQRT_2);
@@ -223,7 +225,7 @@ fn lasso(fit: &Fit) -> Vec<Shape> {
     let outward = (p0 - c).normalized();
     let ctrl = p0 - tangent * 4.0;
     let end = p0 - tangent * 5.5 + outward * 1.2;
-    let knot = end + (end - ctrl).normalized() * 2.9;
+    let knot = end + (end - ctrl).normalized() * 3.4;
     let cord: Vec<Pos2> = (0..8)
         .map(|i| quad_bezier(end, ctrl, p0, i as f32 / 7.0))
         .collect();
@@ -273,7 +275,7 @@ fn axes(fit: &Fit, shape: fn(Pos2, Vec2, f32, f32) -> Vec<Pos2>, gaps: [f32; 3])
 }
 
 fn rotate(fit: &Fit) -> Vec<Shape> {
-    let c = pos2(12.0, 12.0);
+    let c = GRID_CENTER;
     // 96 samples include the closing duplicate of point 0; keep the first 95.
     let ring = |radii: Vec2, tilt: f32| ellipse(c, radii, tilt, 0.0, TAU, 96)[..95].to_vec();
     let (z, y, x) = (
@@ -343,7 +345,7 @@ fn rect_path(a: Pos2, b: Pos2) -> [Pos2; 4] {
 }
 
 /// Gap between neighbouring regions, in grid units.
-const REGION_GAP: f32 = 0.6;
+const REGION_GAP: f32 = 0.7;
 /// Hierarchy node disc radius.
 const NODE_RADIUS: f32 = 2.8;
 /// Half the width of a hierarchy connector bar.

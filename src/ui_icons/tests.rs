@@ -268,7 +268,7 @@ fn alpha_grid_at(icon: UiIcon, opacity: f32, size: f32, ppp: f32) -> (Vec<f32>, 
 }
 
 /// Floor for eroded interior pixels per icon at 32px@2x. The sparsest glyphs measure
-/// 315 (LastUsed) and 332 (SelectComponent); 200 leaves slack for geometry tweaks but
+/// 315 (LastUsed) and 330 (SelectComponent); 200 leaves slack for geometry tweaks but
 /// fails if a glyph collapses to hairlines.
 const MIN_ERODED_INTERIOR_PX: usize = 200;
 
@@ -344,9 +344,9 @@ const GOLDEN_LASSO: [&str; 12] = [
     "..#......##.",
     "..#.....##..",
     "..#..###....",
-    ".##.........",
-    ".##.........",
-    "............",
+    ".#..........",
+    "###.........",
+    ".#..........",
 ];
 const GOLDEN_PAINT_SELECT: [&str; 12] = [
     "............",
@@ -423,9 +423,9 @@ const GOLDEN_SELECT_HIERARCHY: [&str; 12] = [
     "............",
     ".....##.....",
     ".....##.....",
+    "............",
     ".....##.....",
-    ".....##.....",
-    "......#.....",
+    "............",
     "..########..",
     "..#......#..",
     "..#......#..",
@@ -437,14 +437,14 @@ const GOLDEN_SELECT_HIERARCHY: [&str; 12] = [
 const GOLDEN_SELECT_OBJECT: [&str; 12] = [
     "............",
     "....####....",
+    "...######...",
     "..########..",
     ".##########.",
     ".##########.",
     ".##########.",
     ".##########.",
     ".##########.",
-    ".##########.",
-    "..########..",
+    "...######...",
     "....####....",
     "............",
 ];
@@ -454,10 +454,10 @@ const GOLDEN_SELECT_COMPONENT: [&str; 12] = [
     ".....##.....",
     "...#....#...",
     ".#........#.",
-    "...#....#.#.",
+    "...#....#...",
     ".#...##...#.",
     ".#...##...#.",
-    "..........#.",
+    "............",
     ".#........#.",
     "...#....#...",
     ".....##.....",
@@ -735,7 +735,7 @@ fn every_shape_contributes_ink() {
 #[test]
 fn regions_never_sum_above_full_coverage() {
     // Calibrated to SIZES, SCALES and integer origins; at 1x with fractional origins the
-    // 0.6-unit gaps' feathers overlap (up to ~1.09), so re-measure before widening the grid.
+    // REGION_GAP feathers overlap (up to ~1.09), so re-measure before widening the grid.
     const SUM_LIMIT: f32 = 1.02;
     for &icon in ALL {
         for size in SIZES {
@@ -750,5 +750,54 @@ fn regions_never_sum_above_full_coverage() {
                 }
             }
         }
+    }
+}
+
+/// Smallest empty space, in px, between the ink masks of two shapes: the centre distance of
+/// their nearest pixels minus one pixel. Overlapping or edge-adjacent ink measures 0 or less.
+fn mask_gap(a: &[bool], b: &[bool], w: usize) -> f32 {
+    let points = |m: &[bool]| -> Vec<(f32, f32)> {
+        (0..m.len())
+            .filter(|&i| m[i])
+            .map(|i| ((i % w) as f32, (i / w) as f32))
+            .collect()
+    };
+    let (pa, pb) = (points(a), points(b));
+    let mut best = f32::MAX;
+    for &(ax, ay) in &pa {
+        for &(bx, by) in &pb {
+            best = best.min((ax - bx).hypot(ay - by));
+        }
+    }
+    best - 1.0
+}
+
+/// Smallest gap between any two shapes of `icon` at 32px@2x, with the shape indices.
+fn min_shape_gap(icon: UiIcon) -> (f32, usize, usize) {
+    let masks = shape_ink_masks(icon, OVERLAP_ALPHA);
+    let w = shapes_alpha(vec![]).1;
+    let mut best = (f32::MAX, 0, 0);
+    for i in 0..masks.len() {
+        for j in i + 1..masks.len() {
+            let gap = mask_gap(&masks[i], &masks[j], w);
+            if gap < best.0 {
+                best = (gap, i, j);
+            }
+        }
+    }
+    best
+}
+
+/// Neighbouring shapes need at least this much empty space between their ink masks.
+const MIN_INK_GAP_PX: f32 = 1.0;
+
+#[test]
+fn regions_keep_a_visible_gap() {
+    for &icon in ALL {
+        let (gap, i, j) = min_shape_gap(icon);
+        assert!(
+            gap >= MIN_INK_GAP_PX,
+            "{icon:?} shapes {i} and {j} are only {gap} px apart"
+        );
     }
 }
