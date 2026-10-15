@@ -147,7 +147,9 @@ is 8x8 physical pixels. Homogeneous clipping, viewport dimensions and scale use
 the same snapped physical capture as rendering. A ray through each eligible
 center, rather than the offset click, checks all rendered triangles, including
 the face itself, within the rendered near/far range. A closer surface blocks the
-center; planar depth equality is admitted. A nonplanar face can hide its own
+center; planar depth equality is admitted. Center-ray occlusion compares linear
+view depth with a 1e-4 relative tolerance, so occluders closer than that to the
+center (z-fighting range) do not hide it. A nonplanar face can hide its own
 center, while an unobstructed finite degenerate center can remain selectable.
 The GPU markers use the existing depth attachment and comparison path.
 

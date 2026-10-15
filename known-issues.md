@@ -111,7 +111,10 @@ Face mode supports one exact canonical face target, visible depth-tested center
 markers and plain primary-click replacement/clearing. The fixed 4x4 marker,
 8x8 click box, corner-mean center, center-ray visibility and 1,000,000-intersection
 budget are application policies, not verified Maya defaults. Nonplanar faces can
-hide their own centers; unobstructed finite degenerate centers can be selected.
+hide their own centers. Center visibility uses a 1e-4 relative linear
+view-depth tolerance, so occluders within about 1e-4 of the center's view depth
+(z-fighting range, e.g. stacked planes 1e-3 apart at distance 50) do not hide it;
+unobstructed finite degenerate centers can be selected.
 Other component masks, multiple-face gestures, marquee, hover and marking menus
 are unsupported. Native Extrude remains disabled until a real history and
 manipulator workflow exists.

@@ -1171,3 +1171,154 @@ fn center_pick_keeps_two_direct_imported_shapes_and_excludes_descendant_shapes()
         1
     );
 }
+
+fn default_cube_center_view() -> (ViewScene, NodeId, Vec<NativeId>, Vec3) {
+    let mut native = NativeScene::default();
+    let owner = native.create(Primitive::Cube, "cube").unwrap();
+    let view = ViewScene::from_native(&native, VIEW_BUDGET).unwrap();
+    let instance = &view.instances[0];
+    let path = instance.path[..instance.path.len() - 1].to_vec();
+    let vertices = &instance.world_vertices;
+    let centroid = vertices.iter().copied().sum::<Vec3>() / vertices.len() as f32;
+    (view, owner, path, centroid)
+}
+
+fn cube_camera(target: Vec3, yaw: f32, pitch: f32, distance: f32) -> Camera {
+    Camera::new(
+        target,
+        yaw,
+        pitch,
+        distance,
+        45_f32.to_radians(),
+        0.01,
+        100.0,
+    )
+    .unwrap()
+}
+
+#[test]
+fn center_pick_returns_own_face_for_reviewed_depth_rounding_pose() {
+    let (view, owner, path, centroid) = default_cube_center_view();
+    let camera = cube_camera(centroid, 0.1, -0.43, 10.3);
+    let instance = &view.instances[0];
+    let face = instance.faces.iter().find(|f| f.source_index == 3).unwrap();
+    let center = face.center(&instance.world_vertices).unwrap();
+    for size in [[600, 600], [800, 600], [1280, 720], [1920, 1080]] {
+        let pointer = center_pointer(&camera, center, size, 1.0);
+        let hit = camera
+            .pick_face_center(&view, Some((owner, &path)), pointer, size, 1.0)
+            .unwrap();
+        assert_eq!(hit.map(|h| h.face_index), Some(3), "{size:?}");
+    }
+}
+
+#[test]
+fn center_pick_returns_own_face_for_every_visible_cube_center_over_a_pose_sweep() {
+    let (view, owner, path, centroid) = default_cube_center_view();
+    let instance = &view.instances[0];
+    let size = [600, 600];
+    let mut visible = 0;
+    for yaw_step in 0..24 {
+        let yaw = yaw_step as f32 * std::f32::consts::TAU / 24.0 + 0.1;
+        for pitch in [-1.2, -0.8, -0.43, 0.0, 0.3, 0.7, 1.2] {
+            for distance in [4.0, 6.5, 10.3, 20.0, 40.0, 80.0] {
+                let camera = cube_camera(centroid, yaw, pitch, distance);
+                for face in &instance.faces {
+                    let center = face.center(&instance.world_vertices).unwrap();
+                    let front = (center - centroid).dot(camera.eye() - center) > 0.0;
+                    if !front || camera.project(center, 1.0).unwrap().is_none() {
+                        continue;
+                    }
+                    visible += 1;
+                    let pointer = center_pointer(&camera, center, size, 1.0);
+                    let hit = camera
+                        .pick_face_center(&view, Some((owner, &path)), pointer, size, 1.0)
+                        .unwrap();
+                    assert_eq!(
+                        hit.map(|h| h.face_index),
+                        Some(face.source_index),
+                        "yaw {yaw} pitch {pitch} distance {distance} face {}",
+                        face.source_index
+                    );
+                }
+            }
+        }
+    }
+    assert!(visible > 1000, "{visible}");
+}
+
+#[test]
+fn center_pick_still_rejects_back_face_centers_and_centers_behind_another_object() {
+    let (view, owner, path, centroid) = default_cube_center_view();
+    let instance = &view.instances[0];
+    let size = [600, 600];
+    let camera = cube_camera(centroid, 0.1, -0.43, 10.3);
+    for face in &instance.faces {
+        let center = face.center(&instance.world_vertices).unwrap();
+        if (center - centroid).dot(camera.eye() - center) >= 0.0 {
+            continue;
+        }
+        let pointer = center_pointer(&camera, center, size, 1.0);
+        let hit = camera
+            .pick_face_center(&view, Some((owner, &path)), pointer, size, 1.0)
+            .unwrap();
+        assert!(hit.is_none(), "back face {} was picked", face.source_index);
+    }
+    // A second object just in front of the cube's front-face center occludes it.
+    let (mut view, owner, path, centroid) = default_cube_center_view();
+    let camera = cube_camera(centroid, 0.1, -0.43, 10.3);
+    let instance = &mut view.instances[0];
+    let face = instance.faces.iter().find(|f| f.source_index == 3).unwrap();
+    let center = face.center(&instance.world_vertices).unwrap();
+    let toward = (camera.eye() - center).normalize();
+    let base = instance.world_vertices.len();
+    let right = toward.cross(Vec3::Y).normalize() * 0.05;
+    let up = toward.cross(right).normalize() * 0.05;
+    let plate = center + toward * 0.01;
+    instance.world_vertices.extend([
+        plate - right - up,
+        plate + right - up,
+        plate + right + up,
+        plate - right + up,
+    ]);
+    instance.faces.push(ViewFace {
+        source_index: 99,
+        corners: ViewCorners::Quad([base, base + 1, base + 2, base + 3]),
+    });
+    let pointer = center_pointer(&camera, center, size, 1.0);
+    let hit = camera
+        .pick_face_center(&view, Some((owner, &path)), pointer, size, 1.0)
+        .unwrap();
+    assert_eq!(hit.map(|h| h.face_index), Some(99));
+}
+
+#[test]
+fn center_depth_tolerance_admits_rounding_gaps_but_not_half_percent_occluders() {
+    let camera = front_camera();
+    for (gap, expected) in [(0.0001, Some(0)), (0.025, None)] {
+        let (mut view, owner, path) =
+            center_fixture(center_quad(0.0), ViewCorners::Quad([0, 1, 2, 3]));
+        let instance = &mut view.instances[0];
+        // The blocker covers the base center ray but its own center is far off-pointer.
+        instance.world_vertices.extend(
+            center_quad(gap)
+                .into_iter()
+                .map(|v| v * 0.5 + Vec3::new(0.3, 0.0, 0.0)),
+        );
+        instance.faces.push(ViewFace {
+            source_index: 1,
+            corners: ViewCorners::Quad([4, 5, 6, 7]),
+        });
+        let hit = camera
+            .pick_face_center(
+                &view,
+                Some((owner, &path)),
+                Vec2::splat(300.0),
+                [600, 600],
+                1.0,
+            )
+            .unwrap()
+            .map(|hit| hit.face_index);
+        assert_eq!(hit, expected, "gap {gap}");
+    }
+}

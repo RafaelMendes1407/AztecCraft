@@ -8,6 +8,9 @@ use std::fmt;
 
 const MAX_FACE_CENTER_INTERSECTIONS: usize = 1_000_000;
 
+/// Relative view-depth slack for a face center against its own surface hit (f32 rounding).
+const FACE_CENTER_DEPTH_TOLERANCE: f32 = 1e-4;
+
 // Right-handed, Y-up; yaw zero looks from +Z. NDC uses X/Y [-1, 1], Y up, Z [0, 1].
 // UI pixels map to NDC as (2*x/width - 1, 1 - 2*y/height).
 #[derive(Clone, Debug, PartialEq)]
@@ -382,8 +385,8 @@ impl Camera {
             return Err(ViewError::Camera(InvalidCameraInput));
         }
         let aspect = size.x / size.y;
-        let matrix =
-            self.projection_matrix(aspect).map_err(ViewError::Camera)? * self.view_matrix();
+        let view = self.view_matrix();
+        let matrix = self.projection_matrix(aspect).map_err(ViewError::Camera)? * view;
         let Some((owner, path)) = active else {
             return Ok(None);
         };
@@ -433,6 +436,7 @@ impl Camera {
                 let Some((center, ndc)) = candidate(instance, face)? else {
                     continue;
                 };
+                let center_depth = -view.transform_point3(center).z;
                 let ray = self
                     .ray(ndc.truncate(), aspect)
                     .map_err(ViewError::Camera)?;
@@ -446,12 +450,16 @@ impl Camera {
                     self.closest_triangle(ray, triangles, &mut closest);
                 }
                 if let Some((distance, ())) = closest {
-                    let hit = matrix * (ray.origin + distance * ray.direction).extend(1.0);
-                    if hit.z / hit.w < ndc.z {
+                    // Compare linear view depth: the center lies on its own face, so f32
+                    // rounding between the ray hit and the center must not self-occlude.
+                    let hit_depth = -view
+                        .transform_point3(ray.origin + distance * ray.direction)
+                        .z;
+                    if hit_depth < center_depth * (1.0 - FACE_CENTER_DEPTH_TOLERANCE) {
                         continue;
                     }
                 }
-                let depth = -self.view_matrix().transform_point3(center).z;
+                let depth = center_depth;
                 let key = (
                     instance.path(),
                     instance.transform().value(),
