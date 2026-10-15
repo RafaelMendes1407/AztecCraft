@@ -1,11 +1,15 @@
+pub(crate) mod admission;
 mod appearance;
+pub mod ascii;
 pub mod binary;
+mod curve;
 mod mesh;
 mod source;
 pub use appearance::{
     AppearanceIssue, AppearanceIssues, AppearanceState, AppearanceSummary, MaterialInspection,
     MaterialShader,
 };
+pub use curve::{CurveForm, NativeCurveShape};
 pub use mesh::{DirectedEdge, NativeEdge, NativeFace, NativeMesh, Points};
 use source::{ScalarOrigin, SourceFormat, SourceRetention, TransformField};
 
@@ -456,6 +460,7 @@ pub struct TransformTarget {
 pub struct NativeScene {
     nodes: Vec<NativeTransformNode>,
     shapes: Vec<NativeMeshShape>,
+    curves: Vec<NativeCurveShape>,
     dag: Vec<DagEdge>,
     units: Units,
     source: Option<SourceRetention>,
@@ -469,6 +474,7 @@ impl fmt::Debug for NativeScene {
         f.debug_struct("NativeScene")
             .field("transform_count", &self.nodes.len())
             .field("shape_count", &self.shapes.len())
+            .field("curve_count", &self.curves.len())
             .field("dag_edge_count", &self.dag.len())
             .field("material_count", &self.materials.len())
             .field("source", &self.source)
@@ -489,6 +495,7 @@ impl PartialEq for NativeScene {
     fn eq(&self, other: &Self) -> bool {
         self.nodes == other.nodes
             && self.shapes == other.shapes
+            && self.curves == other.curves
             && self.dag == other.dag
             && self.units == other.units
             && self.source == other.source
@@ -501,6 +508,7 @@ impl Default for NativeScene {
         Self {
             nodes: Vec::new(),
             shapes: Vec::new(),
+            curves: Vec::new(),
             dag: Vec::new(),
             units: Units::default(),
             source: None,
@@ -518,16 +526,20 @@ impl NativeScene {
             source.format == SourceFormat::Binary && std::sync::Arc::ptr_eq(&source.bytes, bytes)
         })
     }
-    fn from_binary_candidate(mut candidate: Self) -> Result<Self, NativeError> {
+    fn from_binary_candidate(candidate: Self) -> Result<Self, NativeError> {
         if candidate
             .source
             .as_ref()
             .is_none_or(|s| s.format != SourceFormat::Binary)
             || candidate.nodes.iter().any(|n| n.transform_uuid.is_some())
             || candidate.shapes.iter().any(|s| s.uuid.is_some())
+            || !candidate.curves.is_empty()
         {
             return Err(NativeError::InvalidRetention);
         }
+        Self::from_source_candidate(candidate)
+    }
+    fn from_source_candidate(mut candidate: Self) -> Result<Self, NativeError> {
         candidate.next_id = candidate
             .nodes
             .iter()
@@ -541,6 +553,7 @@ impl NativeScene {
             .iter()
             .map(|n| n.transform_id.0)
             .chain(candidate.shapes.iter().map(|s| s.id.0))
+            .chain(candidate.curves.iter().map(|s| s.id.0))
             .max()
             .unwrap_or(0)
             .checked_add(1)
@@ -716,6 +729,9 @@ impl NativeScene {
     pub fn shapes(&self) -> &[NativeMeshShape] {
         &self.shapes
     }
+    pub fn curves(&self) -> &[NativeCurveShape] {
+        &self.curves
+    }
     pub fn shape(&self, id: NativeId) -> Result<&NativeMeshShape, NativeError> {
         self.shapes
             .iter()
@@ -853,6 +869,7 @@ impl NativeScene {
     }
 
     fn editable(&self, id: NodeId) -> Result<usize, NativeError> {
+        self.authoring_preflight()?;
         self.validate()?;
         let index = self
             .nodes
@@ -863,9 +880,20 @@ impl NativeScene {
         Ok(index)
     }
     fn structural_edit(&self) -> Result<(), NativeError> {
+        self.authoring_preflight()?;
         self.validate()?;
         if self.source.is_some() {
             return Err(NativeError::UnsupportedEdit);
+        }
+        Ok(())
+    }
+    fn authoring_preflight(&self) -> Result<(), NativeError> {
+        if self
+            .source
+            .as_ref()
+            .is_some_and(|source| source.format == SourceFormat::Ascii)
+        {
+            return Err(NativeError::ReadOnlyFormat);
         }
         Ok(())
     }
@@ -1080,6 +1108,9 @@ impl NativeScene {
         Ok(())
     }
     pub fn supported_view(&self) -> Result<Scene, NativeError> {
+        if !self.curves.is_empty() {
+            return Err(NativeError::UnsupportedView("curves in legacy mesh view"));
+        }
         let (linear, angular) = self.units.factors()?;
         let mut nodes = Vec::with_capacity(self.nodes.len());
         for node in &self.nodes {
@@ -1123,6 +1154,7 @@ impl NativeScene {
                 self.nodes
                     .len()
                     .checked_add(self.shapes.len())
+                    .and_then(|count| count.checked_add(self.curves.len()))
                     .ok_or(NativeError::ResourceLimit)?,
             )
             .map_err(|_| NativeError::ResourceLimit)?;
@@ -1157,6 +1189,13 @@ impl NativeScene {
                 return Err(NativeError::InvalidIdentity);
             }
             shape.mesh.validate()?;
+        }
+        for curve in &self.curves {
+            if curve.id.0 == 0 || curve.id.0 >= self.next_native_id || !native_ids.insert(curve.id)
+            {
+                return Err(NativeError::InvalidIdentity);
+            }
+            curve.validate(self.source.as_ref())?;
         }
         self.validate_dag(&native_ids)?;
         if let Some(source) = &self.source {
@@ -1288,6 +1327,7 @@ pub enum NativeError {
     InvalidIdentity,
     InvalidRetention,
     InvalidTopology,
+    InvalidCurve,
     ResourceLimit,
     MissingShape(NativeId),
     InvalidInstancePath,
@@ -1295,6 +1335,7 @@ pub enum NativeError {
     InvalidName,
     NameCollision,
     UnsupportedEdit,
+    ReadOnlyFormat,
     UnsupportedView(&'static str),
 }
 impl From<SceneError> for NativeError {
@@ -1310,6 +1351,7 @@ impl fmt::Display for NativeError {
             Self::InvalidIdentity => f.write_str("invalid native identities or DAG references"),
             Self::InvalidRetention => f.write_str("invalid retained source ranges"),
             Self::InvalidTopology => f.write_str("invalid native polygon connectivity"),
+            Self::InvalidCurve => f.write_str("invalid supported native cubic curve"),
             Self::ResourceLimit => f.write_str("native validation resource limit exceeded"),
             Self::MissingShape(id) => {
                 write!(f, "native mesh shape {} does not exist", id.to_decimal())
@@ -1327,6 +1369,7 @@ impl fmt::Display for NativeError {
             Self::UnsupportedEdit => {
                 f.write_str("native ownership or edit effects are unsupported")
             }
+            Self::ReadOnlyFormat => f.write_str("Maya ASCII scenes are read-only in this version"),
             Self::UnsupportedView(reason) => {
                 write!(f, "native viewport representation unsupported: {reason}")
             }
