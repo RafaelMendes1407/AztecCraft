@@ -16,9 +16,14 @@ fn index(icon: UiIcon) -> usize {
         UiIcon::SelectHierarchy => 7,
         UiIcon::SelectObject => 8,
         UiIcon::SelectComponent => 9,
+        UiIcon::SidebarModelingToolkit => 10,
+        UiIcon::SidebarHumanIk => 11,
+        UiIcon::SidebarAttributeEditor => 12,
+        UiIcon::SidebarToolSettings => 13,
+        UiIcon::SidebarChannelBox => 14,
     }
 }
-const ICON_COUNT: usize = 10;
+const ICON_COUNT: usize = 15;
 
 struct Raster {
     w: usize,
@@ -317,6 +322,11 @@ fn golden(icon: UiIcon) -> [&'static str; 12] {
         UiIcon::SelectHierarchy => GOLDEN_SELECT_HIERARCHY,
         UiIcon::SelectObject => GOLDEN_SELECT_OBJECT,
         UiIcon::SelectComponent => GOLDEN_SELECT_COMPONENT,
+        UiIcon::SidebarModelingToolkit => GOLDEN_SIDEBAR_MODELING_TOOLKIT,
+        UiIcon::SidebarHumanIk => GOLDEN_SIDEBAR_HUMAN_IK,
+        UiIcon::SidebarAttributeEditor => GOLDEN_SIDEBAR_ATTRIBUTE_EDITOR,
+        UiIcon::SidebarToolSettings => GOLDEN_SIDEBAR_TOOL_SETTINGS,
+        UiIcon::SidebarChannelBox => GOLDEN_SIDEBAR_CHANNEL_BOX,
     }
 }
 
@@ -462,6 +472,77 @@ const GOLDEN_SELECT_COMPONENT: [&str; 12] = [
     "...#....#...",
     ".....##.....",
     ".....##.....",
+];
+
+const GOLDEN_SIDEBAR_MODELING_TOOLKIT: [&str; 12] = [
+    "............",
+    ".....##.....",
+    "....####....",
+    "....####....",
+    ".....##.....",
+    "............",
+    ".#.########.",
+    ".#...#.####.",
+    "............",
+    ".#.########.",
+    "............",
+    "............",
+];
+const GOLDEN_SIDEBAR_HUMAN_IK: [&str; 12] = [
+    "............",
+    ".....##.....",
+    ".....##.....",
+    ".....##.....",
+    "..########..",
+    ".....##.....",
+    ".....##.....",
+    "............",
+    "....####....",
+    "....####....",
+    "....####....",
+    "............",
+];
+const GOLDEN_SIDEBAR_ATTRIBUTE_EDITOR: [&str; 12] = [
+    "............",
+    "............",
+    ".###.######.",
+    ".....######.",
+    "............",
+    ".###.####...",
+    ".###.####...",
+    "............",
+    ".....#####..",
+    ".###.#####..",
+    "............",
+    "............",
+];
+const GOLDEN_SIDEBAR_TOOL_SETTINGS: [&str; 12] = [
+    "............",
+    "...#........",
+    ".##########.",
+    "...#........",
+    "............",
+    ".##########.",
+    ".##########.",
+    "............",
+    "....##......",
+    ".##########.",
+    "....##......",
+    "............",
+];
+const GOLDEN_SIDEBAR_CHANNEL_BOX: [&str; 12] = [
+    "............",
+    ".##########.",
+    ".##########.",
+    ".##########.",
+    ".##########.",
+    ".##########.",
+    ".##########.",
+    ".##########.",
+    "............",
+    ".##########.",
+    ".##########.",
+    "............",
 ];
 
 fn occupancy_rows(icon: UiIcon) -> Vec<String> {

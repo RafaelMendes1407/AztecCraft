@@ -21,6 +21,11 @@ pub enum UiIcon {
     SelectHierarchy,
     SelectObject,
     SelectComponent,
+    SidebarModelingToolkit,
+    SidebarHumanIk,
+    SidebarAttributeEditor,
+    SidebarToolSettings,
+    SidebarChannelBox,
 }
 
 /// Tool Box order.
@@ -35,6 +40,11 @@ pub const ALL: &[UiIcon] = &[
     UiIcon::SelectHierarchy,
     UiIcon::SelectObject,
     UiIcon::SelectComponent,
+    UiIcon::SidebarModelingToolkit,
+    UiIcon::SidebarHumanIk,
+    UiIcon::SidebarAttributeEditor,
+    UiIcon::SidebarToolSettings,
+    UiIcon::SidebarChannelBox,
 ];
 
 // Newly chosen values; not sampled from any Maya image.
@@ -390,8 +400,7 @@ fn select_hierarchy(fit: &Fit) -> Vec<Shape> {
 }
 
 /// Cube silhouette vertices: six hexagon corners clockwise from the top, then the centre.
-fn cube_vertices(radius: f32) -> [Pos2; 7] {
-    let c = pos2(12.0, 12.0);
+fn cube_vertices(c: Pos2, radius: f32) -> [Pos2; 7] {
     let corner = |k: usize| {
         let a = k as f32 * PI / 3.0;
         c + vec2(radius * a.sin(), -radius * a.cos())
@@ -428,7 +437,12 @@ fn inset(poly: &[Pos2], d: f32) -> Vec<Pos2> {
 }
 
 fn select_object(fit: &Fit) -> Vec<Shape> {
-    let [top, ur, lr, bottom, ll, ul, c] = cube_vertices(OBJECT_CUBE_RADIUS);
+    shaded_cube(fit, GRID_CENTER, OBJECT_CUBE_RADIUS)
+}
+
+/// A cube as three shaded rhombus regions separated by `REGION_GAP`.
+fn shaded_cube(fit: &Fit, center: Pos2, radius: f32) -> Vec<Shape> {
+    let [top, ur, lr, bottom, ll, ul, c] = cube_vertices(center, radius);
     let half_gap = REGION_GAP / 2.0;
     [
         ([top, ur, c, ul], NEUTRAL_LIGHT),
@@ -449,7 +463,7 @@ const EDGE_HALF: f32 = 0.6;
 const POINT_HALF: f32 = 1.4;
 
 fn select_component(fit: &Fit) -> Vec<Shape> {
-    let v = cube_vertices(COMPONENT_CUBE_RADIUS);
+    let v = cube_vertices(GRID_CENTER, COMPONENT_CUBE_RADIUS);
     let [top, ur, lr, bottom, ll, ul, c] = v;
     let edges = [
         (top, ur),
@@ -489,6 +503,121 @@ fn select_component(fit: &Fit) -> Vec<Shape> {
     shapes
 }
 
+/// One filled rectangle region per `([x0, y0, x1, y1], colour)` entry, in grid units.
+fn rects(fit: &Fit, list: &[([f32; 4], Color32)]) -> Vec<Shape> {
+    list.iter()
+        .map(|&([x0, y0, x1, y1], color)| fit.fill(&rect_path(pos2(x0, y0), pos2(x1, y1)), color))
+        .collect()
+}
+
+/// Left and right edge of the panel glyphs' content, in grid units.
+const PANEL_LEFT: f32 = 2.0;
+const PANEL_RIGHT: f32 = 22.0;
+/// Half-height of an Attribute Editor label bar.
+const LABEL_HALF: f32 = 1.2;
+/// Modeling Toolkit list rows: pitch and height are multiples of 1.5 units, one pixel at 16 px.
+const LIST_PITCH: f32 = 3.0;
+const LIST_ROW_HEIGHT: f32 = 1.5;
+const LIST_TOP: f32 = 12.0;
+/// Chip width and the clear space between a row's chip and bar.
+const CHIP_WIDTH: f32 = 3.0;
+const CHIP_BAR_GAP: f32 = 1.5;
+
+fn sidebar_modeling_toolkit(fit: &Fit) -> Vec<Shape> {
+    let mut shapes = shaded_cube(fit, pos2(12.0, 5.4), 5.0);
+    let mut list = vec![];
+    for k in 0..3 {
+        let top = LIST_TOP + LIST_PITCH * k as f32;
+        let bottom = top + LIST_ROW_HEIGHT;
+        let chip_right = PANEL_LEFT + CHIP_WIDTH;
+        list.push(([PANEL_LEFT, top, chip_right, bottom], ACCENT));
+        list.push((
+            [chip_right + CHIP_BAR_GAP, top, PANEL_RIGHT, bottom],
+            NEUTRAL_MID,
+        ));
+    }
+    shapes.extend(rects(fit, &list));
+    shapes
+}
+
+fn sidebar_human_ik(fit: &Fit) -> Vec<Shape> {
+    let mut shapes = vec![fit.fill(&disc(pos2(12.0, 4.2), 2.6), ACCENT)];
+    let (torso_l, torso_r) = (9.4, 14.6);
+    let (torso_top, torso_bottom) = (7.4, 14.4);
+    let leg_top = torso_bottom + REGION_GAP;
+    shapes.extend(rects(
+        fit,
+        &[
+            ([torso_l, torso_top, torso_r, torso_bottom], NEUTRAL_LIGHT),
+            ([3.0, torso_top, torso_l - REGION_GAP, 9.8], NEUTRAL_MID),
+            ([torso_r + REGION_GAP, torso_top, 21.0, 9.8], NEUTRAL_MID),
+            ([8.6, leg_top, 11.0, 22.4], NEUTRAL_MID),
+            ([13.0, leg_top, 15.4, 22.4], NEUTRAL_MID),
+        ],
+    ));
+    shapes
+}
+
+/// Right edge of each Attribute Editor value box; ragged on purpose.
+const VALUE_RIGHT: [f32; 3] = [22.0, 17.0, 20.0];
+
+fn sidebar_attribute_editor(fit: &Fit) -> Vec<Shape> {
+    let mut list = vec![];
+    for (k, right) in VALUE_RIGHT.into_iter().enumerate() {
+        let c = 5.4 + 6.6 * k as f32;
+        list.push((
+            [PANEL_LEFT, c - LABEL_HALF, 9.0, c + LABEL_HALF],
+            NEUTRAL_LIGHT,
+        ));
+        list.push(([10.4, c - 2.3, right, c + 2.3], NEUTRAL_MID));
+    }
+    rects(fit, &list)
+}
+
+/// Half-size of a slider knob, and its (centre x, centre y) per track.
+const KNOB_HALF: f32 = 2.2;
+const TRACK_HALF: f32 = 1.0;
+const SLIDERS: [(f32, f32); 3] = [(7.0, 5.0), (15.0, 12.0), (10.5, 19.0)];
+
+fn sidebar_tool_settings(fit: &Fit) -> Vec<Shape> {
+    let mut list = vec![];
+    for (kx, cy) in SLIDERS {
+        let (lo, hi) = (kx - KNOB_HALF, kx + KNOB_HALF);
+        list.push((
+            [
+                PANEL_LEFT,
+                cy - TRACK_HALF,
+                lo - REGION_GAP,
+                cy + TRACK_HALF,
+            ],
+            NEUTRAL_MID,
+        ));
+        list.push(([lo, cy - KNOB_HALF, hi, cy + KNOB_HALF], ACCENT));
+        list.push((
+            [
+                hi + REGION_GAP,
+                cy - TRACK_HALF,
+                PANEL_RIGHT,
+                cy + TRACK_HALF,
+            ],
+            NEUTRAL_MID,
+        ));
+    }
+    rects(fit, &list)
+}
+
+fn sidebar_channel_box(fit: &Fit) -> Vec<Shape> {
+    let mut list = vec![];
+    for k in 0..3 {
+        let top = 2.5 + 4.0 * k as f32;
+        list.push(([PANEL_LEFT, top, 9.4, top + 3.0], NEUTRAL_LIGHT));
+        list.push(([10.6, top, PANEL_RIGHT, top + 3.0], NEUTRAL_MID));
+    }
+    list.push(([PANEL_LEFT, 14.5, PANEL_RIGHT, 15.9], NEUTRAL_DARK));
+    list.push(([PANEL_LEFT, 18.6, PANEL_RIGHT, 21.4], ACCENT));
+    rects(fit, &list)
+}
+
 /// Geometry of `icon` fitted to `rect`, without needing a window. Disabled looks
 /// come from the host `Ui` (egui's disabled opacity); icons have no tone.
 pub fn shapes(icon: UiIcon, rect: Rect) -> Vec<Shape> {
@@ -522,6 +651,11 @@ pub fn shapes(icon: UiIcon, rect: Rect) -> Vec<Shape> {
         UiIcon::SelectHierarchy => select_hierarchy(&fit),
         UiIcon::SelectObject => select_object(&fit),
         UiIcon::SelectComponent => select_component(&fit),
+        UiIcon::SidebarModelingToolkit => sidebar_modeling_toolkit(&fit),
+        UiIcon::SidebarHumanIk => sidebar_human_ik(&fit),
+        UiIcon::SidebarAttributeEditor => sidebar_attribute_editor(&fit),
+        UiIcon::SidebarToolSettings => sidebar_tool_settings(&fit),
+        UiIcon::SidebarChannelBox => sidebar_channel_box(&fit),
     }
 }
 
