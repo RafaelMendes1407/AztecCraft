@@ -18,7 +18,7 @@ denominator are still missing, so overall coverage remains unmeasured.
 | Animation | timeline, keys, tangents, graph/dope editors, layers, playback | Not implemented |
 | Rigging | joints, constraints, IK, skinning, weight editing, blend shapes, deformers | Not implemented |
 | Materials and lighting | shaders, textures, networks, lights, color management | Not implemented |
-| Rendering | viewport rendering, render settings/layers, final rendering | Not implemented |
+| Rendering | viewport rendering, render settings/layers, final rendering | Partial: depth-tested opaque geometry viewport; appearance, render settings/layers and final rendering pending |
 | Interchange | native document, OBJ, glTF, FBX, USD, Alembic, Maya formats | Partial: structurally validated quad meshes in JSON v1, 16 MiB limit, create-new writes, New/Open/Save As UI and geometry-only OBJ API. GUI Export, OBJ import and other formats pending |
 | Scripting and extensions | commands, MEL, Python, plugins | Not implemented |
 | Dynamics and extended systems | particles, cloth, hair, simulation, caches, motion graphics | Not implemented |
@@ -29,5 +29,5 @@ The original first-push restriction required 80–90% of the complete Maya 2026 
 Core suites cover scene edits, command history, document validation, OBJ export
 and camera mathematics, while UI tests cover editing/file-action events. They
 don't replace native file-dialog checks or Maya comparison. History is unbounded
-and in-memory, documents don't persist history/camera state, and projected
-drawing isn't a depth-tested mesh renderer. See [development limits](development.md).
+and in-memory, documents don't persist history/camera state, and the depth-tested
+geometry viewport does not implement Maya appearance. See [development limits](development.md).

@@ -5,6 +5,7 @@ mod editor_operations;
 #[cfg(feature = "mcp")]
 mod mcp;
 mod tool_icons;
+mod viewport_renderer;
 mod viewport_ui;
 
 fn main() -> eframe::Result {
@@ -19,13 +20,16 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "AztecCraft | Untitled",
         eframe::NativeOptions {
+            depth_buffer: 32,
+            stencil_buffer: 0,
+            multisampling: 0,
             viewport: eframe::egui::ViewportBuilder::default()
                 .with_inner_size([1440.0, 900.0])
                 .with_min_inner_size([960.0, 640.0]),
             ..Default::default()
         },
         Box::new(move |cc| {
-            let editor = app::Editor::new(cc);
+            let editor = app::Editor::new(cc)?;
             #[cfg(feature = "mcp")]
             let mut editor = editor;
             #[cfg(feature = "mcp")]

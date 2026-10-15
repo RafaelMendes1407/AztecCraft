@@ -70,6 +70,23 @@ Each new Editor and each applied New/Open replaces the scene token. A `document_
 
 ## Human edits, errors and limits
 
+The production viewport uses the same canonical geometry and camera as native
+selection and the navigation tools. Inspection reports `viewport_backend` as
+`wgpu_geometry_preview` for the initialized GPU pipeline, or `uninitialized` in
+device-free test Editors. `depth_complete` and `clipping_complete` describe a
+healthy initialized backend; both become false on a terminal backend failure.
+`viewport_error` is null or one fixed category: `uninitialized`, `backend_failed`,
+`camera_input`, `non_finite_clip` or `resource_limit`. Inspection reads the live
+backend latch even while hidden, without exposing driver messages. A successful
+submission clears a recoverable category; it cannot clear a terminal failure.
+
+Rendering remains an opaque flat geometry preview. Materials, transparency,
+normal shading, textures and the document color-management transform are not
+implemented; `appearance_incomplete` and the persistent viewport HUD retain that
+limitation. Remote camera/selection edits appear in the next fresh native frame,
+after the current immutable callback snapshot. No renderer setting tool or CPU
+fallback is advertised.
+
 Remote mutations return `busy_editing` while a native text field is focused, a differing draft exists, or a modal dialog is open. This includes valid uncommitted drafts. They do not commit unrelated human edits. `resolve_file_action` is the sole modal exception; text focus, drafts, pending native input and scene-token checks still apply. Inspection remains available and reports these states without returning draft text. Native inputs are processed before queued remote requests at the end of each UI frame, and remote changes request repaint.
 
 Approved remote closure reports `closing: true` while waiting for its matching successful JSON-RPC response to flush. Ordinary mutations refuse during closure; readonly inspection stays available. An unrelated response, error, cancellation, deadline or failed write cannot authorize exit. Failed delivery withdraws approval, preserves document state and suppresses an automatic disconnect retry; an explicit native Close remains available. The resolver response owns this delivery barrier when Discard approves a pending Close. A flushed response establishes transport delivery, not proof that a client processed it.
@@ -122,6 +139,7 @@ Nine verified tools establish the initial server foundation, not catch-up with e
 | Core OBJ export | No tool; file authority and create-new/no-clobber behavior need a dedicated slice |
 | Core mesh extrusion | No tool; native face selection/extrusion, component inspection and protocol support belong in the completed native face slice |
 | Interactive camera orbit/pan/dolly | Three navigation tools use the same typed operations as native captured gestures; live camera state is inspectable |
+| GPU geometry viewport | `inspect_scene` exposes live backend/error/depth/clipping/appearance state; camera and object selection share the native frame consumer. Materials and complete appearance remain unsupported |
 
 Initial catch-up remains incomplete while these implemented capabilities lack their reviewed MCP support. Full Maya parity remains a separate unmet objective.
 

@@ -1,9 +1,11 @@
 use super::*;
+use crate::viewport_renderer::tests::{RecordedSubmission, recorded_submission, renderer_handle};
 use azteccraft::{
     native_scene::{NativeScene, NativeTransform},
     scene::Primitive,
 };
-use egui::{Event, Modifiers, MouseWheelUnit};
+use egui::{Event, Modifiers, MouseWheelUnit, Pos2, Shape};
+use glam::Vec3;
 
 mod maya_binary {
     include!(concat!(
@@ -44,7 +46,7 @@ fn capture_frame(
 }
 
 #[test]
-fn clipped_effective_rect_drives_click_ndc_without_mutating_camera() {
+fn narrower_scissor_crops_without_reframing_click_or_mutating_camera() {
     let context = egui::Context::default();
     let camera = camera();
     let before = camera.clone();
@@ -84,9 +86,12 @@ fn clipped_effective_rect_drives_click_ndc_without_mutating_camera() {
         raw(2.0 / 60.0, Modifiers::NONE, vec![release]),
         clip,
     );
-    assert_eq!(input.rect, clip);
-    assert_eq!(input.aspect(), 1.2);
-    assert_eq!(input.click_ndc(), Some(Vec2::splat(0.5)));
+    assert_eq!(
+        input.rect,
+        Rect::from_min_size(Pos2::ZERO, egui::vec2(128.0, 96.0))
+    );
+    assert_eq!(input.aspect(), 4.0 / 3.0);
+    assert!((input.click_ndc().unwrap() - Vec2::new(0.375, 5.0 / 12.0)).length() < 1e-6);
     assert!(input.take_navigation().is_empty());
     assert_eq!(camera, before);
 }
@@ -165,8 +170,69 @@ fn captured_typed_navigation_preserves_orbit_pan_and_both_dollies_and_drains_onc
     assert_eq!(camera, before);
 }
 
+fn painted_submission(
+    view: &ViewScene,
+    camera: &Camera,
+    prefix: Option<&[NativeId]>,
+) -> RecordedSubmission {
+    let context = egui::Context::default();
+    let producer = renderer_handle();
+    let mut output = context.run_ui(raw(0.0, Modifiers::NONE, Vec::new()), |ui| {
+        capture(ui, camera)
+            .unwrap()
+            .unwrap()
+            .paint(Some(&producer), camera, view, prefix)
+            .unwrap();
+    });
+    assert_eq!(
+        output
+            .shapes
+            .iter()
+            .filter(|s| matches!(s.shape, Shape::Callback(_)))
+            .count(),
+        1
+    );
+    assert!(
+        !output
+            .shapes
+            .iter()
+            .any(|s| matches!(s.shape, Shape::Mesh(_)))
+    );
+    if view.instances().iter().any(|i| i.appearance_incomplete()) {
+        assert!(
+            output
+                .shapes
+                .iter()
+                .any(|s| matches!(&s.shape, Shape::Text(t)
+            if t.galley.job.text.contains("Appearance incomplete: geometry preview")))
+        );
+    }
+    assert!(
+        output
+            .shapes
+            .iter()
+            .any(|s| matches!(&s.shape, Shape::Text(t)
+        if t.galley.job.text.contains("Opaque geometry preview")))
+    );
+    output.textures_delta.clear();
+    recorded_submission(&producer)
+}
+
+fn surface_color_count(submission: &RecordedSubmission, rgb: [u8; 3]) -> usize {
+    let rgba = [
+        f32::from(rgb[0]) / 255.0,
+        f32::from(rgb[1]) / 255.0,
+        f32::from(rgb[2]) / 255.0,
+        1.0,
+    ];
+    submission.vertices[submission.surfaces.start as usize..submission.surfaces.end as usize]
+        .iter()
+        .filter(|vertex| vertex[4..] == rgba)
+        .count()
+}
+
 #[test]
-fn canonical_quad_instances_paint_only_the_selected_prefix_and_persistent_limitations() {
+fn canonical_quad_instances_paint_only_selected_prefix_and_persistent_limitations() {
     let mut scene = NativeScene::default();
     for (name, x) in [("first", -1.0), ("second", 1.0)] {
         let id = scene.create(Primitive::Cube, name).unwrap();
@@ -183,21 +249,11 @@ fn canonical_quad_instances_paint_only_the_selected_prefix_and_persistent_limita
     let before = scene.clone();
     let view = ViewScene::from_native(&scene, 256 * 1024 * 1024).unwrap();
     let path = view.instances()[0].path();
-    let selected = &path[..path.len() - 1];
-    let camera = camera();
-    let context = egui::Context::default();
-    let mut output = context.run_ui(raw(0.0, Modifiers::NONE, Vec::new()), |ui| {
-        capture(ui, &camera)
-            .unwrap()
-            .unwrap()
-            .paint(&camera, &view, Some(selected))
-            .unwrap();
-    });
-    let selected_faces = output.shapes.iter().filter(|shape| matches!(&shape.shape, Shape::Mesh(mesh) if mesh.vertices.len() == 4 && mesh.indices.len() == 6 && mesh.vertices.iter().all(|vertex| vertex.color == Color32::from_rgb(95, 110, 120)))).count();
-    let dormant_faces = output.shapes.iter().filter(|shape| matches!(&shape.shape, Shape::Mesh(mesh) if mesh.vertices.len() == 4 && mesh.indices.len() == 6 && mesh.vertices.iter().all(|vertex| vertex.color == Color32::from_gray(83)))).count();
-    assert_eq!((selected_faces, dormant_faces), (6, 6));
-    assert!(output.shapes.iter().any(|shape| matches!(&shape.shape, Shape::Text(text) if text.galley.job.text.contains("CPU preview: depth/clipping incomplete"))));
-    output.textures_delta.clear();
+    let submission = painted_submission(&view, &camera(), Some(&path[..path.len() - 1]));
+    assert_eq!(submission.surfaces, 0..72);
+    assert_eq!(submission.lines, 72..252);
+    assert_eq!(surface_color_count(&submission, [95, 110, 120]), 36);
+    assert_eq!(surface_color_count(&submission, [83, 83, 83]), 36);
     assert_eq!(scene, before);
 }
 
@@ -211,38 +267,25 @@ fn actual_binary_triangle_paints_source_corners_and_persistent_appearance_limit(
         .unwrap();
     let before = scene.clone();
     let view = ViewScene::from_native(&scene, 1024 * 1024).unwrap();
-    assert_eq!(view.instances()[0].faces()[0].corners().len(), 3);
-    let path = view.instances()[0].path();
+    let instance = &view.instances()[0];
+    assert_eq!(instance.faces()[0].corners().len(), 3);
+    let path = instance.path();
     let mut camera = camera();
     camera.frame_view(&view, None, 4.0 / 3.0).unwrap();
-    let context = egui::Context::default();
-    let mut output = context.run_ui(raw(0.0, Modifiers::NONE, Vec::new()), |ui| {
-        capture(ui, &camera)
-            .unwrap()
-            .unwrap()
-            .paint(&camera, &view, Some(&path[..path.len() - 1]))
-            .unwrap();
-    });
-    let meshes = output
-        .shapes
+    let submission = painted_submission(&view, &camera, Some(&path[..path.len() - 1]));
+    assert_eq!(submission.surfaces, 0..3);
+    assert_eq!(submission.lines, 3..93);
+    assert_eq!(surface_color_count(&submission, [95, 110, 120]), 3);
+    let matrix = camera.projection_matrix(4.0 / 3.0).unwrap() * camera.view_matrix();
+    for (vertex, index) in submission.vertices[..3]
         .iter()
-        .filter_map(|shape| match &shape.shape {
-            Shape::Mesh(mesh)
-                if mesh
-                    .vertices
-                    .iter()
-                    .all(|vertex| vertex.color == Color32::from_rgb(95, 110, 120)) =>
-            {
-                Some(mesh)
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(meshes.len(), 1);
-    assert_eq!(meshes[0].vertices.len(), 3);
-    assert_eq!(meshes[0].indices, [0, 1, 2]);
-    assert!(output.shapes.iter().any(|shape| matches!(&shape.shape, Shape::Text(text) if text.galley.job.text.contains("Appearance incomplete: geometry preview"))));
-    output.textures_delta.clear();
+        .zip(instance.faces()[0].triangles().flatten())
+    {
+        assert_eq!(
+            vertex[..4],
+            (matrix * instance.world_vertices()[index].extend(1.0)).to_array()
+        );
+    }
     assert_eq!(scene, before);
 }
 
@@ -290,29 +333,18 @@ fn actual_binary_group_prefix_highlights_child_geometry_and_excludes_outside_geo
     let prefix = [scene
         .nodes()
         .iter()
-        .find(|node| node.name() == "assembly")
+        .find(|n| n.name() == "assembly")
         .unwrap()
         .transform_id()];
     let view = ViewScene::from_native(&scene, 1024 * 1024).unwrap();
     assert_eq!(view.instances().len(), 2);
     let mut camera = camera();
     camera.frame_view(&view, None, 4.0 / 3.0).unwrap();
-    let context = egui::Context::default();
-    let mut output = context.run_ui(raw(0.0, Modifiers::NONE, Vec::new()), |ui| {
-        capture(ui, &camera)
-            .unwrap()
-            .unwrap()
-            .paint(&camera, &view, Some(&prefix))
-            .unwrap();
-    });
-    for (color, expected) in [
-        (Color32::from_rgb(95, 110, 120), 1),
-        (Color32::from_gray(83), 1),
-    ] {
-        let count = output.shapes.iter().filter(|shape| matches!(&shape.shape, Shape::Mesh(mesh) if mesh.vertices.len() == 3 && mesh.vertices.iter().all(|vertex| vertex.color == color))).count();
-        assert_eq!(count, expected);
-    }
-    output.textures_delta.clear();
+    let submission = painted_submission(&view, &camera, Some(&prefix));
+    assert_eq!(submission.surfaces, 0..6);
+    assert_eq!(submission.lines, 6..102);
+    assert_eq!(surface_color_count(&submission, [95, 110, 120]), 3);
+    assert_eq!(surface_color_count(&submission, [83, 83, 83]), 3);
     assert_eq!(scene, before);
 }
 
@@ -331,109 +363,123 @@ fn acute_native_face_tessellation_stays_near_its_bounded_projected_geometry() {
     let view = ViewScene::from_native(&native, 1024 * 1024).unwrap();
     let path = view.instances()[0].path();
     let camera = camera();
-    for vertex in view.instances()[0].world_vertices() {
+    let submission = painted_submission(&view, &camera, Some(&path[..path.len() - 1]));
+    assert_eq!(submission.surfaces, 0..6);
+    assert_eq!(submission.lines, 6..98);
+    for vertex in submission.vertices[..6]
+        .iter()
+        .chain(submission.vertices[90..].iter())
+    {
+        assert!(vertex.iter().all(|v| v.is_finite()));
+        let x = vertex[0] / vertex[3];
+        let y = vertex[1] / vertex[3];
         assert!(
-            camera
-                .project(*vertex, 4.0 / 3.0)
-                .unwrap()
-                .unwrap()
-                .truncate()
-                .abs()
-                .max_element()
-                < 1.0
+            x.abs() < 0.3 && y.abs() < 0.001,
+            "acute source generated distant geometry"
         );
     }
-    let context = egui::Context::default();
-    let mut output = context.run_ui(raw(0.0, Modifiers::NONE, Vec::new()), |ui| {
-        capture(ui, &camera)
-            .unwrap()
-            .unwrap()
-            .paint(&camera, &view, Some(&path[..path.len() - 1]))
-            .unwrap();
-    });
-    output.textures_delta.clear();
-    let fill = Color32::from_rgb(95, 110, 120);
-    let edge = Color32::from_rgb(242, 163, 70);
-    let face_shapes = output
-        .shapes
-        .into_iter()
-        .filter(|shape| match &shape.shape {
-            Shape::Path(path) => path.fill == fill,
-            Shape::Mesh(mesh) => mesh.vertices.iter().any(|vertex| vertex.color == fill),
-            Shape::LineSegment { stroke, .. } => stroke.color == edge,
-            _ => false,
-        })
-        .collect::<Vec<_>>();
-    assert!(!face_shapes.is_empty());
-    let jobs = context.tessellate(face_shapes, output.pixels_per_point);
-    let bound = Rect::from_min_size(Pos2::ZERO, egui::vec2(128.0, 96.0)).expand(4.0);
-    for job in jobs {
-        if let egui::epaint::Primitive::Mesh(mesh) = job.primitive {
-            for vertex in mesh.vertices {
-                assert!(
-                    vertex.pos.is_finite() && bound.contains(vertex.pos),
-                    "unexpected tessellated face vertex {:?}",
-                    vertex.pos
-                );
-            }
-        }
-    }
+    assert_eq!(surface_color_count(&submission, [95, 110, 120]), 6);
 }
 
 #[test]
 #[ignore = "requires an explicitly supplied private Maya binary fixture"]
 fn private_native_open_face_tessellation_preserves_prepared_frustum_bounds() {
-    let path =
-        std::env::var("AZTECCRAFT_PRIVATE_MB").expect("set the private fixture path explicitly");
+    let path = std::env::var_os("AZTECCRAFT_PRIVATE_MB").expect("private fixture required");
     let document = azteccraft::document::load_native(std::path::Path::new(&path)).unwrap();
     let view = ViewScene::from_native(&document.scene, 256 * 1024 * 1024).unwrap();
-    let mut camera = Camera::default();
+    let mut camera = camera();
     camera.frame_view(&view, None, 4.0 / 3.0).unwrap();
-    for vertex in view
+    let submission = painted_submission(&view, &camera, None);
+    let surfaces = view
         .instances()
         .iter()
-        .flat_map(|instance| instance.world_vertices())
+        .flat_map(|i| i.faces())
+        .map(|f| f.triangles().count() * 3)
+        .sum::<usize>();
+    let boundaries = view
+        .instances()
+        .iter()
+        .flat_map(|i| i.faces())
+        .map(|f| f.corners().len() * 2)
+        .sum::<usize>();
+    assert_eq!(submission.surfaces, 0..surfaces as u32);
+    assert_eq!(
+        submission.lines,
+        surfaces as u32..(surfaces + boundaries + 84) as u32
+    );
+    for vertex in submission.vertices[..surfaces]
+        .iter()
+        .chain(submission.vertices[surfaces + 84..].iter())
     {
-        let ndc = camera.project(*vertex, 4.0 / 3.0).unwrap().unwrap();
-        assert!(ndc.truncate().abs().max_element() <= 1.0);
+        assert!(vertex.iter().all(|v| v.is_finite()));
+        assert!((vertex[0] / vertex[3]).abs() <= 1.001);
+        assert!((vertex[1] / vertex[3]).abs() <= 1.001);
+        assert!((0.0..=1.0).contains(&(vertex[2] / vertex[3])));
     }
+}
+
+#[test]
+fn missing_startup_state_fails_and_uninitialized_ui_never_paints_fake_geometry() {
     let context = egui::Context::default();
+    let creation = eframe::CreationContext::_new_kittest(context.clone());
+    assert!(matches!(
+        crate::app::Editor::new(&creation),
+        Err(RenderError::Backend(_))
+    ));
+    let mut scene = NativeScene::default();
+    scene.create(Primitive::Cube, "cube").unwrap();
+    let view = ViewScene::from_native(&scene, 1024 * 1024).unwrap();
     let mut output = context.run_ui(raw(0.0, Modifiers::NONE, Vec::new()), |ui| {
-        capture(ui, &camera)
-            .unwrap()
-            .unwrap()
-            .paint(&camera, &view, None)
-            .unwrap();
+        assert!(matches!(
+            capture(ui, &camera())
+                .unwrap()
+                .unwrap()
+                .paint(None, &camera(), &view, None),
+            Err(RenderError::Uninitialized)
+        ));
     });
+    assert!(
+        !output
+            .shapes
+            .iter()
+            .any(|s| matches!(s.shape, Shape::Callback(_) | Shape::Mesh(_)))
+    );
+    assert!(output.shapes.iter().any(
+        |s| matches!(&s.shape, Shape::Text(t) if t.galley.job.text.contains("uninitialized"))
+    ));
     output.textures_delta.clear();
-    let bound = Rect::from_min_size(Pos2::ZERO, egui::vec2(128.0, 96.0)).expand(4.0);
-    let mut faces = 0;
-    for shape in output.shapes {
-        let is_face = match &shape.shape {
-            Shape::Path(path) => path.fill == Color32::from_gray(83),
-            Shape::Mesh(mesh) => mesh
-                .vertices
-                .iter()
-                .any(|vertex| vertex.color == Color32::from_gray(83)),
-            Shape::LineSegment { stroke, .. } => stroke.color == Color32::from_gray(145),
-            _ => false,
-        };
-        if !is_face {
-            continue;
-        }
-        faces += 1;
-        let description = format!("{:?}", shape.shape);
-        for job in context.tessellate(vec![shape], output.pixels_per_point) {
-            if let egui::epaint::Primitive::Mesh(mesh) = job.primitive {
-                for vertex in mesh.vertices {
-                    assert!(
-                        vertex.pos.is_finite() && bound.contains(vertex.pos),
-                        "face primitive {description}; unexpected tessellated vertex {:?}",
-                        vertex.pos
-                    );
-                }
-            }
-        }
+}
+
+#[test]
+fn capture_uses_rounded_screen_clamped_physical_rect_at_one_and_two_x() {
+    for scale in [1.0, 2.0] {
+        let context = egui::Context::default();
+        let mut input = raw(0.0, Modifiers::NONE, Vec::new());
+        input
+            .viewports
+            .get_mut(&egui::ViewportId::ROOT)
+            .unwrap()
+            .native_pixels_per_point = Some(scale);
+        let mut output = context.run_ui(input, |ui| {
+            let rect = Rect::from_min_max(egui::pos2(16.3, 8.3), egui::pos2(112.3, 104.3));
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+            child.set_clip_rect(Rect::from_min_max(
+                egui::pos2(24.0, 16.0),
+                egui::pos2(100.0, 80.0),
+            ));
+            let captured = capture(&mut child, &camera()).unwrap().unwrap();
+            let min = if scale == 1.0 {
+                egui::pos2(16.0, 8.0)
+            } else {
+                egui::pos2(16.5, 8.5)
+            };
+            let max = if scale == 1.0 {
+                egui::pos2(112.0, 96.0)
+            } else {
+                egui::pos2(112.5, 96.0)
+            };
+            assert_eq!(captured.rect, Rect::from_min_max(min, max));
+        });
+        output.textures_delta.clear();
     }
-    assert!(faces > 0);
 }

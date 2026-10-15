@@ -46,7 +46,7 @@ pending. Legacy JSON v1 and OBJ remain separate library utilities; their geometr
 tests don't establish native persistence. GUI Export remains disabled. Structural
 validation doesn't repair geometry or guarantee rendering fidelity.
 
-The camera core is connected to the native viewport. Drawing sorts projected faces by average depth, and depth-tested rendering and reference navigation parity remain pending. These limits are described in [development instructions](.project-docs/development.md).
+The camera core is connected to a depth-tested opaque GPU geometry viewport with hardware clipping. Materials, transparency, normal shading, textures, document color management and reference navigation parity remain pending. Backend failures remain explicit with no CPU fallback. These limits are described in [development instructions](.project-docs/development.md).
 
 The extrusion API supports one quad with signed object-space normal displacement,
 including zero-distance topology. All-face extrusion, including a one-quad plane,

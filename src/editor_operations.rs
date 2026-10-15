@@ -143,6 +143,7 @@ pub struct SceneInspection {
     pub save_available: bool,
     pub closing: bool,
     pub viewport_backend: &'static str,
+    pub viewport_error: Option<crate::viewport_renderer::ViewportError>,
     pub depth_complete: bool,
     pub clipping_complete: bool,
     pub appearance_incomplete: bool,

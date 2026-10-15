@@ -29,6 +29,8 @@ pub struct Editor {
     selected: Option<NodeId>,
     selected_path: Vec<NativeId>,
     camera: Camera,
+    renderer: Option<crate::viewport_renderer::ViewportRenderer>,
+    viewport_error: Option<crate::viewport_renderer::ViewportError>,
     name: String,
     channels: [String; 9],
     channel_intents: [bool; 9],
@@ -50,6 +52,8 @@ impl Default for Editor {
             selected: None,
             selected_path: Vec::new(),
             camera: Camera::default(),
+            renderer: None,
+            viewport_error: None,
             name: String::new(),
             channels: Default::default(),
             channel_intents: [false; 9],
@@ -64,12 +68,26 @@ impl Default for Editor {
 }
 
 impl Editor {
+    #[cfg(any(test, feature = "mcp"))]
+    fn current_viewport_error(&self) -> Option<crate::viewport_renderer::ViewportError> {
+        use crate::viewport_renderer::ViewportError;
+        match &self.renderer {
+            None => Some(ViewportError::Uninitialized),
+            Some(renderer) if renderer.terminal_error().is_some() => {
+                Some(ViewportError::BackendFailed)
+            }
+            Some(_) => self.viewport_error,
+        }
+    }
     #[cfg(feature = "mcp")]
     pub(crate) fn start_mcp(&mut self, context: &egui::Context) -> std::io::Result<()> {
         self.mcp = Some(crate::mcp::UiBridge::start(context.clone())?);
         Ok(())
     }
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+    ) -> Result<Self, crate::viewport_renderer::RenderError> {
+        let renderer = crate::viewport_renderer::ViewportRenderer::initialize(cc)?;
         let mut style = egui::Style {
             visuals: egui::Visuals::dark(),
             ..Default::default()
@@ -81,7 +99,10 @@ impl Editor {
         style.spacing.button_padding = egui::vec2(8.0, 4.0);
         cc.egui_ctx.set_theme(egui::Theme::Dark);
         cc.egui_ctx.set_style_of(egui::Theme::Dark, style);
-        Self::default()
+        Ok(Self {
+            renderer: Some(renderer),
+            ..Self::default()
+        })
     }
 
     fn sync_fields(&mut self) {
@@ -326,6 +347,9 @@ impl Editor {
                 })
             })
             .collect::<Result<Vec<_>, OperationError>>()?;
+        let viewport_error = self.current_viewport_error();
+        let gpu_healthy = self.renderer.is_some()
+            && viewport_error != Some(crate::viewport_renderer::ViewportError::BackendFailed);
         Ok(SceneInspection {
             scene_token: self.scene_token.to_string(),
             nodes,
@@ -354,9 +378,14 @@ impl Editor {
             },
             save_available: false,
             closing: self.files.is_closing(),
-            viewport_backend: "cpu_geometry_preview",
-            depth_complete: false,
-            clipping_complete: false,
+            viewport_backend: if self.renderer.is_some() {
+                "wgpu_geometry_preview"
+            } else {
+                "uninitialized"
+            },
+            viewport_error,
+            depth_complete: gpu_healthy,
+            clipping_complete: gpu_healthy,
             appearance_incomplete: self.history.scene().appearance_incomplete(),
             pending_action: self.files.pending_inspection(),
             selected_node: self.selected.map(NodeId::to_decimal),
@@ -987,6 +1016,7 @@ impl eframe::App for Editor {
 
 impl Editor {
     fn render(&mut self, ui: &mut egui::Ui) {
+        let frame_token = self.scene_token;
         self.handle_close(ui.ctx());
         if !self.files.is_modal() {
             self.cancel_on_escape(ui.ctx());
@@ -1040,8 +1070,7 @@ impl Editor {
                     self.channels(ui)
                 });
             });
-        egui::CentralPanel::default().show(ui, |ui| self.viewport(ui));
-        self.file_modal(ui.ctx());
+        egui::CentralPanel::default().show(ui, |ui| self.viewport(ui, frame_token));
         ui.ctx()
             .send_viewport_cmd(egui::ViewportCommand::Title(self.document_title()));
         self.native_input_pending = false;
@@ -1049,38 +1078,49 @@ impl Editor {
         self.process_mcp(ui.ctx());
     }
 
-    fn viewport(&mut self, ui: &mut egui::Ui) {
+    fn viewport(&mut self, ui: &mut egui::Ui, frame_token: Uuid) {
         ui.horizontal(|ui| {
             ui.label("persp");
             ui.separator();
             ui.weak("Alt + left: orbit | Middle: pan | Right / wheel: dolly");
         });
-        let token = self.scene_token;
+        let captured = crate::viewport_ui::capture(ui, &self.camera);
+        if let Ok(Some(input)) = &captured {
+            self.aspect = input.aspect();
+        }
+        self.file_modal(ui.ctx());
         let result = (|| -> Result<(), OperationError> {
-            let Some(mut input) =
-                crate::viewport_ui::capture(ui, &self.camera).map_err(OperationError::Camera)?
+            let Some(mut input) = captured.map_err(|error| {
+                self.viewport_error = Some(crate::viewport_renderer::ViewportError::CameraInput);
+                OperationError::Camera(error)
+            })?
             else {
                 return Ok(());
             };
-            self.aspect = input.aspect();
             let navigation = input.take_navigation();
-            let clickable = input.click_ndc();
+            let current_document = self.scene_token == frame_token;
+            let clickable = input.click_ndc().filter(|_| current_document);
+            let navigation = if current_document {
+                navigation
+            } else {
+                Vec::new()
+            };
             if !self.files.is_modal() && (!navigation.is_empty() || clickable.is_some()) {
                 if !self.commit_pending() {
                     return Err(OperationError::InvalidInput(self.status.clone()));
-                }
-                if self.scene_token != token {
-                    return Ok(());
                 }
                 for operation in navigation {
                     self.apply_operation(operation)?;
                 }
             }
-            if self.scene_token != token {
-                return Ok(());
-            }
-            let view = ViewScene::from_native(self.history.scene(), 256 * 1024 * 1024)
-                .map_err(|e| OperationError::File(e.to_string()))?;
+            let view =
+                ViewScene::from_native(self.history.scene(), 256 * 1024 * 1024).map_err(|e| {
+                    if matches!(e, azteccraft::view_scene::ViewError::ResourceLimit) {
+                        self.viewport_error =
+                            Some(crate::viewport_renderer::ViewportError::ResourceLimit);
+                    }
+                    OperationError::File(e.to_string())
+                })?;
             if !self.files.is_modal()
                 && let Some(ndc) = clickable
             {
@@ -1100,20 +1140,37 @@ impl Editor {
                     instance_path,
                 })?;
             }
-            if self.scene_token != token {
-                return Ok(());
+            let painted = input.paint(
+                self.renderer.as_ref(),
+                &self.camera,
+                &view,
+                self.selected.map(|_| self.selected_path.as_slice()),
+            );
+            self.viewport_error = painted.as_ref().err().map(|error| error.category());
+            match painted {
+                Ok(()) | Err(crate::viewport_renderer::RenderError::Uninitialized) => Ok(()),
+                Err(error) => Err(OperationError::File(error.to_string())),
             }
-            input
-                .paint(
-                    &self.camera,
-                    &view,
-                    self.selected.map(|_| self.selected_path.as_slice()),
-                )
-                .map_err(OperationError::Camera)
         })();
         if let Err(error) = result {
+            if matches!(error, OperationError::Camera(_)) {
+                self.viewport_error = Some(crate::viewport_renderer::ViewportError::CameraInput);
+            }
             self.status = error.to_string();
             self.error = true;
+            if self
+                .renderer
+                .as_ref()
+                .is_some_and(|r| r.terminal_error().is_some())
+            {
+                ui.painter().text(
+                    ui.max_rect().left_top() + egui::vec2(12.0, 32.0),
+                    egui::Align2::LEFT_TOP,
+                    "Viewport GPU failed: backend_failed",
+                    egui::FontId::proportional(12.0),
+                    Color32::from_rgb(255, 160, 130),
+                );
+            }
         }
     }
 
@@ -1722,7 +1779,7 @@ mod tests {
                     ..Default::default()
                 },
                 |ui| {
-                    editor.viewport(ui);
+                    editor.viewport(ui, editor.scene_token);
                     *rect = ui.min_rect();
                 },
             );
@@ -1884,3 +1941,7 @@ mod tests {
 #[cfg(all(test, feature = "mcp"))]
 #[path = "mcp_editor_tests.rs"]
 mod mcp_editor_tests;
+
+#[cfg(test)]
+#[path = "gpu_viewport_tests.rs"]
+mod gpu_viewport_tests;

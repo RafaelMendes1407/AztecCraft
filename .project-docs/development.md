@@ -143,9 +143,18 @@ and used by the native viewport UI.
 Coordinates are right-handed/Y-up. Normalized device coordinates use X/Y in
 [-1, 1], Y up and depth in [0, 1], with pixel mapping in `src/viewport_ui.rs`.
 Tests exercise projection/ray agreement, transforms, clipping, framing, nearest
-hits and invalid inputs. Current drawing sorts projected faces by average depth
-instead of using a depth-tested mesh renderer. Occlusion/clipping fidelity and
-comparison with Maya's camera controls remain pending.
+hits and invalid inputs. The native viewport submits homogeneous clip positions
+through eframe's wgpu device, with Depth32Float depth testing and hardware
+clipping. It paints opaque flat geometry and source boundary edges, with no CPU
+fallback. Appearance, document color management and comparison with Maya remain
+pending. The persistent HUD and MCP inspection report backend and appearance
+limitations. Device-free test Editors remain explicitly uninitialized.
+
+Run actual framebuffer proofs explicitly with `cargo test --locked --bin
+azteccraft --features mcp-test-client headless_gpu -- --ignored --test-threads=1`.
+These require an adapter and fail when it is absent. CI additionally runs this
+suite with Mesa software Vulkan. Ordinary numeric submission tests do not
+establish rasterization or platform/native-window fidelity.
 
 An empty mesh is unpickable; framing it returns an error and preserves the camera.
 Unused vertices are retained by native documents and OBJ export. Structural

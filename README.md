@@ -16,7 +16,7 @@ The current prototype has a native desktop window for cube/plane creation, selec
 | History | Undo/redo create, remove, rename, transform and single-face extrusion commands, with failed/no-op edits preserving history | [History workflow tests](tests/history_workflows.rs) |
 | Native scene files | Bounded Maya binary decoding with retained source bytes; legacy JSON reads retained; native writing unavailable | [Document loader](src/document.rs) and [binary decoder](src/native_scene/binary.rs) |
 | Camera math | Orbit/pan/dolly, perspective projection, rays, nearest-geometry picking and framing | [Viewport workflow tests](tests/viewport_workflows.rs) |
-| Desktop shell and viewport | Create/select cube or plane, edit name/transform channels, undo/redo, delete and frame selected, with projected mesh drawing | [Native shell](src/app.rs) and [viewport UI](src/viewport_ui.rs) |
+| Desktop shell and viewport | Create/select cube or plane, edit name/transform channels, undo/redo, delete and frame selected, with depth-tested opaque geometry | [Native shell](src/app.rs) and [viewport UI](src/viewport_ui.rs) |
 | File actions in the window | New/Open, staged validation, unsaved-change Discard/Cancel and error presentation; Save As explicitly unavailable | [File integration tests](src/file_ui.rs); updated native Open verification and other platforms remain pending |
 | OBJ export | Library API writes world-space polygon geometry to a new file | [OBJ workflow tests](tests/obj_workflows.rs), with GUI Export still disabled |
 | MCP | Optional stdio server controls sixteen tools in its newly launched native editor window | [Tool contract and limits](.project-docs/mcp.md), with real Editor/official SDK tests; native protocol/window verification remains separate |
@@ -59,9 +59,9 @@ For MCP, build with `cargo build --release --locked --features mcp` and configur
 
 ## Architecture and platforms
 
-[src/native_scene.rs](src/native_scene.rs) owns native authoring state and retained source data. [src/history.rs](src/history.rs) applies commands to that model, while [src/document.rs](src/document.rs) stages file candidates before replacement. [src/view_scene.rs](src/view_scene.rs) derives bounded geometry for camera math and the provisional CPU viewport. The legacy JSON and OBJ library utilities remain separate from native document writing.
+[src/native_scene.rs](src/native_scene.rs) owns native authoring state and retained source data. [src/history.rs](src/history.rs) applies commands to that model, while [src/document.rs](src/document.rs) stages file candidates before replacement. [src/view_scene.rs](src/view_scene.rs) derives bounded geometry for camera math and the wgpu geometry viewport. The legacy JSON and OBJ library utilities remain separate from native document writing.
 
-History is in-memory and unbounded. Imported edits require proved ownership and refuse unsupported source changes. Native Save and Save As remain unavailable until a genuine Maya writer can preserve the document. The CPU geometry preview has incomplete depth ordering, clipping and appearance; it does not establish Maya rendering or navigation parity.
+History is in-memory and unbounded. Imported edits require proved ownership and refuse unsupported source changes. Native Save and Save As remain unavailable until a genuine Maya writer can preserve the document. The opaque GPU geometry preview uses depth testing and hardware clipping; materials, transparency, normal shading, textures and document color management remain unsupported. It does not establish Maya rendering or navigation parity.
 
 Cross-platform desktop support and packaged launch behavior still need native evidence for macOS, Windows and Linux. The [CI matrix](.project-docs/builds.md) defines checks for those platforms, and a configured job doesn't establish a passing build. The eframe/egui UI remains provisional, with docking, focus, marking menus and Maya-style editing still to be compared against the reference.
 

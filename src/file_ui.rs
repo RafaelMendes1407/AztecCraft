@@ -201,8 +201,7 @@ impl Editor {
         self.channel_intents = [false; 9];
         self.name_intent = false;
         self.camera = camera;
-        self.status =
-            "Scene ready | CPU viewport depth, clipping and appearance limits remain".into();
+        self.status = "Scene ready".into();
         self.error = false;
     }
     pub(super) fn resolve_file_action(
