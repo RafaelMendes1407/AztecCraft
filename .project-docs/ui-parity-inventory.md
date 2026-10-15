@@ -2,6 +2,8 @@
 
 Research date: 2026-10-16. Main SHA: ef86b64. All `file:line` evidence is at that SHA. Main has since moved to 7a6d46c; view cited lines with `git show ef86b64:src/app.rs` (or the other cited file).
 
+Umbrella issue: #71. Slice labels S1 to S15 map to the GitHub issues and PR listed in the Prioritized backlog.
+
 Precedence: [inventory-seed.md](inventory-seed.md) and [parity.md](parity.md) own the functional denominator. [mcp.md](mcp.md) owns MCP coverage. This document owns only the UI-surface backlog. Its MCP column points to tool names and does not define coverage. No percentage is reported here, and nothing here claims that AztecCraft matches Maya.
 
 ## How to read this
@@ -11,9 +13,9 @@ Precedence: [inventory-seed.md](inventory-seed.md) and [parity.md](parity.md) ow
 - Evidence: required for Supported and Visible-unsupported rows. Missing rows say what was checked.
 - Priority: P1 is frequent and blocking in a modeler's daily loop. P2 is regular use. P3 is occasional or outside the modeling loop.
 - Visible-unsupported rows confirmed in a native macOS screenshot on 2026-10-16 of a build whose application code is identical to ef86b64: Tool Box Move/Rotate/Scale/Snap, shelf Extrude/Bevel/Materials, five Time Slider buttons. The screenshot shows the menu-bar labels only, with no menu open, so menu contents were checked from source. Rows tagged source-verified are not shown in that screenshot.
-- On this SHA, Move, Rotate and Scale in the Tool Box are disabled. The in-flight world-axis Move branch is not included.
+- On this SHA, Move, Rotate and Scale in the Tool Box are disabled. PR #77 (Move) is not included.
 - MCP is ahead of the native UI; the shelf Extrude is deliberately disabled (known-issues.md). Enabling it is a backlog item.
-- Names of tools come from `src/mcp/tools.rs`. Run `python3 -I .claude/scripts/check-mcp-names.py` to check them.
+- Names of tools come from `src/mcp/tools.rs`.
 
 
 ## 1. Main menus and menu sets
@@ -22,24 +24,25 @@ Menu bar draws File, Edit, Create, Select, Modify, Mesh, UV, Windows, Render and
 
 | Maya 2026 element | Source | AztecCraft status | Evidence | MCP | Priority | Proposed slice |
 | --- | --- | --- | --- | --- | --- | --- |
-| File menu | [menus] | Supported | src/app.rs:1102 "File" (New scene, Open, Save, Save As, Close); Export at :1128 "Export" is Visible-unsupported (source-verified) | `new_scene`, `open_scene`, `save_scene`, `save_scene_as`, `resolve_file_action`, `request_close` | P1 | S6 Menu content |
-| Edit menu | [menus] | Supported | src/app.rs:1135 "Edit" (Undo, Redo, Delete only) | `undo`, `redo`, `delete_node` | P1 | S6 Menu content |
-| Create menu | [menus] | Supported | src/app.rs:1170 "Create" (Polygon cube and plane; other primitives at :1179 "Other primitives" are Visible-unsupported, source-verified) | `create_primitive` | P1 | S6 Menu content |
-| Select menu | [menus] | Supported | src/app.rs:1181 "Select" (Object/Component F8, Face F11) | `set_selection_mode`, `select_node`, `select_face` | P1 | S3 Component modes |
-| Select > Components: Vertex, Edge, UV | [select] | Visible-unsupported | src/app.rs:1194 "Vertices" (single disabled entry; source-verified) | none | P1 | S3 Component modes |
-| Modify menu | [menus] | Visible-unsupported | src/app.rs:1197-1199 "Modify" (disabled placeholder entry; source-verified) | none | P1 | S6 Menu content |
-| Display menu | [menus] | Missing | absent from the menu label list at src/app.rs:1197 | none | P2 | S6 Menu content |
-| Windows menu | [menus] | Visible-unsupported | src/app.rs:1197-1199 "Windows" (disabled placeholder entry; source-verified) | none | P2 | S6 Menu content |
-| Modeling menu set (default, UNCONFIRMED as default) | [menus] UNCONFIRMED | Missing | src/app.rs:1209 is a static label, not a selector; see the Status Line 'Menu set drop-down' row | none | P2 | S1 Status Line strip |
-| Rigging menu set | [menus] | Missing | no set switching in src/app.rs | none | P3 | S6 Menu content |
-| Animation menu set | [menus] | Missing | no set switching in src/app.rs | none | P3 | S6 Menu content |
-| FX menu set (page also says Dynamics) | [menus] | Missing | no set switching in src/app.rs | none | P3 | S6 Menu content |
-| Rendering menu set | [menus] | Missing | src/app.rs:1197 has a disabled Render placeholder menu, not a set | none | P3 | S6 Menu content |
-| Per-set menu lists (Mesh, UV and similar) | [menus] UNCONFIRMED | Visible-unsupported | src/app.rs:1197 "Mesh" (Mesh, UV, Render placeholders; contents UNCONFIRMED in the report; source-verified) | none | P2 | S6 Menu content |
-| Menu set switching by F2 to F6 | [menus]; [hotkeys-2025] FALLBACK 2025 lists F2, F3, F4, F6 only | Missing | no handler in Editor::shortcuts src/app.rs:953 | none | P3 | S1 Status Line strip |
-| Custom sets through Menu Set Editor | [menuset-editor] | Missing | absent | none | P3 | S6 Menu content |
-| Menu bar toggle Ctrl+M | [hotkeys-2025] FALLBACK 2025 | Missing | absent | none | P3 | S5 Hotkeys |
-| Application Home icon | [overview] | Missing | absent | none | P3 | S6 Menu content |
+| File menu | [menus] | Supported | src/app.rs:1102 "File" (New scene, Open, Save, Save As, Close); Export at :1128 "Export" is Visible-unsupported (source-verified); Save: current main also disables these for read-only curve scenes (after ef86b64) | `new_scene`, `open_scene`, `save_scene`, `save_scene_as`, `resolve_file_action`, `request_close` | P1 | S6 Menu content (#66) |
+| Edit menu | [menus] | Supported | src/app.rs:1135 "Edit" (Undo, Redo, Delete only) | `undo`, `redo`, `delete_node` | P1 | S6 Menu content (#66) |
+| Create menu | [menus] | Supported | src/app.rs:1170 "Create" (Polygon cube and plane; other primitives at :1179 "Other primitives" are Visible-unsupported, source-verified; current main also disables these for read-only curve scenes (after ef86b64)) | `create_primitive` | P1 | S6 Menu content (#66) |
+| Select menu | [menus] | Supported | src/app.rs:1181 "Select" (Object/Component F8, Face F11) | `set_selection_mode`, `select_node`, `select_face` | P1 | S3 Component modes (#29) |
+| Select > Components: Vertex, Edge, UV | [select] | Visible-unsupported | src/app.rs:1194 "Vertices" (single disabled entry; source-verified) | none | P1 | S3 Component modes (#29) |
+| Modify menu | [menus] | Visible-unsupported | src/app.rs:1197-1199 "Modify" (disabled placeholder entry; source-verified) | none | P1 | S6 Menu content (#66) |
+| Display menu | [menus] | Missing | absent from the menu label list at src/app.rs:1197 | none | P2 | S6 Menu content (#66) |
+| Display menu items (Heads-up display, UI Elements and others) | source not yet researched | Missing | absent; no Display menu is drawn | none | P2 | S6 Menu content (#66) |
+| Windows menu | [menus] | Visible-unsupported | src/app.rs:1197-1199 "Windows" (disabled placeholder entry; source-verified) | none | P2 | S6 Menu content (#66) |
+| Modeling menu set (default, UNCONFIRMED as default) | [menus] UNCONFIRMED | Missing | src/app.rs:1209 is a static label, not a selector; see the Status Line 'Menu set drop-down' row | none | P2 | S1 Status Line strip (#59) |
+| Rigging menu set | [menus] | Missing | no set switching in src/app.rs | none | P3 | S6 Menu content (#66) |
+| Animation menu set | [menus] | Missing | no set switching in src/app.rs | none | P3 | S6 Menu content (#66) |
+| FX menu set (page also says Dynamics) | [menus] | Missing | no set switching in src/app.rs | none | P3 | S6 Menu content (#66) |
+| Rendering menu set | [menus] | Missing | src/app.rs:1197 has a disabled Render placeholder menu, not a set | none | P3 | S6 Menu content (#66) |
+| Per-set menu lists (Mesh, UV and similar) | [menus] UNCONFIRMED | Visible-unsupported | src/app.rs:1197 "Mesh" (Mesh, UV, Render placeholders; contents UNCONFIRMED in the report; source-verified) | none | P2 | S6 Menu content (#66) |
+| Menu set switching by F2 to F6 | [menus]; [hotkeys-2025] FALLBACK 2025 lists F2, F3, F4, F6 only | Missing | no handler in Editor::shortcuts src/app.rs:953 | none | P3 | S1 Status Line strip (#59) |
+| Custom sets through Menu Set Editor | [menuset-editor] | Missing | absent | none | P3 | S6 Menu content (#66) |
+| Menu bar toggle Ctrl+M | [hotkeys-2025] FALLBACK 2025 | Missing | absent | none | P3 | S5 Hotkeys (#32) |
+| Application Home icon | [overview] | Missing | absent | none | P3 | S6 Menu content (#66) |
 
 ## 2. Status Line
 
@@ -47,27 +50,28 @@ The AztecCraft window has no Status Line strip. The shelf row at src/app.rs:1209
 
 | Maya 2026 element | Source | AztecCraft status | Evidence | MCP | Priority | Proposed slice |
 | --- | --- | --- | --- | --- | --- | --- |
-| Menu set drop-down | [statusline] | Missing | src/app.rs:1209 static label only | none | P2 | S1 Status Line strip |
-| File buttons: new, open, save | [statusline] | Missing | File menu only, src/app.rs:1102 | `new_scene`, `open_scene`, `save_scene` | P2 | S1 Status Line strip |
-| Selection mode menu (presets) | [statusline] | Missing | absent | none | P1 | S1 Status Line strip |
-| Hierarchy mode button | [statusline] | Missing | absent; no hierarchy-level pick mode | none | P1 | S1 Status Line strip |
-| Object mode button | [statusline] | Missing | no button; mode is set by Select menu src/app.rs:1182 and F8 :1577 | `set_selection_mode` | P1 | S1 Status Line strip |
-| Component mode button | [statusline] | Missing | no button; Face mode is set by Select menu src/app.rs:1188 and F11 :1577 | `set_selection_mode` | P1 | S1 Status Line strip |
-| Selection mask buttons (per object or component type) | [statusline] | Missing | absent; only Face via menu | none | P1 | S3 Component modes |
-| Lock/unlock current selection | [statusline] | Missing | absent | none | P3 | S1 Status Line strip |
-| Highlight Selection mode | [statusline] | Missing | absent | none | P3 | S1 Status Line strip |
-| Snap buttons: grids, curves, points, Projected Center, view planes | [statusline] | Missing | absent from any strip; only a single Tool Box 'Snap' placeholder exists at src/app.rs:1630 | none | P1 | S2 Transform tools |
-| Make Live and live-surface field | [statusline] | Missing | absent | none | P3 | S2 Transform tools |
-| Symmetry setting | [statusline] | Missing | absent | none | P2 | S2 Transform tools |
-| Construction history Inputs/Outputs menus and toggle | [statusline] | Missing | absent from the strip; a disabled Inputs entry exists in the Channel Box | none | P2 | S4 Attribute Editor and Channel Box |
-| Render buttons: Render View, render, IPR, render settings | [statusline] | Missing | absent | none | P3 | S6 Menu content |
-| Hypershade button | [statusline] | Missing | absent | none | P3 | S6 Menu content |
-| Input box (Absolute, Relative, Rename, Select by name) | [statusline] | Missing | absent; the Channel Box has per-field edits instead | `edit_node`, `rename_node` | P2 | S1 Status Line strip |
-| Sidebar toggle: Modeling Toolkit | [statusline] | Missing | absent | none | P2 | S1 Status Line strip |
-| Sidebar toggle: HumanIK | [statusline] | Missing | absent | none | P3 | S1 Status Line strip |
-| Sidebar toggle: Attribute Editor | [statusline] | Missing | absent | none | P1 | S1 Status Line strip |
-| Sidebar toggle: Tool Settings | [statusline] | Missing | absent | none | P2 | S1 Status Line strip |
-| Sidebar toggle: Channel Box / Layer Editor | [statusline] | Missing | panel is always shown, src/app.rs:1636; no toggle | none | P1 | S1 Status Line strip |
+| Menu set drop-down | [statusline] | Missing | src/app.rs:1209 static label only | none | P2 | S1 Status Line strip (#59) |
+| File buttons: new, open, save | [statusline] | Missing | File menu only, src/app.rs:1102 | `new_scene`, `open_scene`, `save_scene` | P2 | S1 Status Line strip (#59) |
+| Selection mode menu (presets) | [statusline] | Missing | absent | none | P1 | S1 Status Line strip (#59) |
+| Hierarchy mode button | [statusline] | Missing | absent; no hierarchy-level pick mode | none | P1 | S1 Status Line strip (#59) |
+| Object mode button | [statusline] | Missing | no button; mode is set by Select menu src/app.rs:1182 and F8 :1577 | `set_selection_mode` | P1 | S1 Status Line strip (#59) |
+| Component mode button | [statusline] | Missing | no button; Face mode is set by Select menu src/app.rs:1188 and F11 :1577 | `set_selection_mode` | P1 | S1 Status Line strip (#59) |
+| Selection mask buttons (per object or component type) | [statusline] | Missing | absent; only Face via menu | none | P1 | S3 Component modes (#29) |
+| Lock/unlock current selection | [statusline] | Missing | absent | none | P3 | S1 Status Line strip (#59) |
+| Highlight Selection mode | [statusline] | Missing | absent | none | P3 | S1 Status Line strip (#59) |
+| Snap buttons: grids, curves, points, Projected Center, view planes | [statusline] | Missing | absent from any strip; only a single Tool Box 'Snap' placeholder exists at src/app.rs:1630 | none | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| Make Live and live-surface field | [statusline] | Missing | absent | none | P3 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| Symmetry setting | [statusline] | Missing | absent | none | P2 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| Construction history Inputs/Outputs menus and toggle | [statusline] | Missing | absent from the strip; a disabled Inputs entry exists in the Channel Box | none | P2 | S4 Attribute Editor and Channel Box (#60) |
+| Render buttons: Render View, render, IPR, render settings | [statusline] | Missing | absent | none | P3 | S6 Menu content (#66) |
+| Hypershade button | [statusline] | Missing | absent | none | P3 | S6 Menu content (#66) |
+| Input box (Absolute, Relative, Rename, Select by name) | [statusline] | Missing | absent; the Channel Box has per-field edits instead | `edit_node`, `rename_node` | P2 | S1 Status Line strip (#59) |
+| Workspace selector | [overview] | Missing | absent from the window; checked the menu and shelf rows at src/app.rs:1209 | none | P2 | S14 Docking and workspaces (#67) |
+| Sidebar toggle: Modeling Toolkit | [statusline] | Missing | absent | none | P2 | S1 Status Line strip (#59) |
+| Sidebar toggle: HumanIK | [statusline] | Missing | absent | none | P3 | S1 Status Line strip (#59) |
+| Sidebar toggle: Attribute Editor | [statusline] | Missing | absent | none | P1 | S1 Status Line strip (#59) |
+| Sidebar toggle: Tool Settings | [statusline] | Missing | absent | none | P2 | S1 Status Line strip (#59) |
+| Sidebar toggle: Channel Box / Layer Editor | [statusline] | Missing | panel is always shown, src/app.rs:1636; no toggle | none | P1 | S1 Status Line strip (#59) |
 
 ## 3. Shelf
 
@@ -75,38 +79,38 @@ One fixed shelf row exists under the menu bar. Tab order and the Poly Modeling t
 
 | Maya 2026 element | Source | AztecCraft status | Evidence | MCP | Priority | Proposed slice |
 | --- | --- | --- | --- | --- | --- | --- |
-| Shelf strip under the Status Line | [shelf] | Supported | src/app.rs:1209-1257 "Modeling" (one fixed row labelled Modeling) | none | P1 | S7 Shelf |
-| Shelf tabs and tab drop-down | [shelf] | Missing | absent; single hard-coded row | none | P2 | S7 Shelf |
-| Poly Modeling tab: primitive creation icons (cube) | [shelf] UNCONFIRMED contents | Supported | src/app.rs:1211 "Cube" | `create_primitive` | P1 | S7 Shelf |
-| Poly Modeling tab: primitive creation icons (plane) | [shelf] UNCONFIRMED contents | Supported | src/app.rs:1215 "Plane" | `create_primitive` | P1 | S7 Shelf |
-| Other primitive icons (sphere, cylinder and others) | [shelf] UNCONFIRMED contents | Visible-unsupported | src/app.rs:1179 "Other primitives" (menu placeholder only; source-verified) | none | P2 | S7 Shelf |
-| Poly Modeling tab: Extrude icon | [shelf] UNCONFIRMED contents | Visible-unsupported | MCP ahead of native UI; native control deliberately disabled (known-issues.md, src/app.rs:1252 "Extrude") | `extrude_face` | P1 | S7 Shelf |
-| Poly Modeling tab: Bevel icon | [shelf] UNCONFIRMED contents | Visible-unsupported | src/app.rs:1256 "Bevel" (disabled) | none | P2 | S7 Shelf |
-| Materials icon | [shelf] UNCONFIRMED contents | Visible-unsupported | src/app.rs:1257 "Materials" (disabled) | none | P3 | S7 Shelf |
-| Undo and redo buttons: AztecCraft-native shelf buttons; not documented on the Maya Status Line (Maya has Edit > Undo and Redo) | [menus] | Supported | src/app.rs:1223 "Undo", :1233 "Redo" | `undo`, `redo` | P1 | S7 Shelf |
-| Content Browser icon on Sculpting and Poly Modeling shelves | [content-browser-2024] FALLBACK 2024 | Missing | absent | none | P3 | S7 Shelf |
-| Other default tabs: Curves/Surfaces, Sculpting, Rigging, Animation, Rendering, FX and more | [shelf] UNCONFIRMED list | Missing | absent | none | P3 | S7 Shelf |
-| Shelf Editor (Shelves, Command, Double Click Command, Popup Menu Items) | [shelf-editor] | Missing | absent | none | P3 | S7 Shelf |
+| Shelf strip under the Status Line | [shelf] | Supported | src/app.rs:1209-1257 "Modeling" (one fixed row labelled Modeling) | none | P1 | S7 Shelf (#65) |
+| Shelf tabs and tab drop-down | [shelf] | Missing | absent; single hard-coded row | none | P2 | S7 Shelf (#65) |
+| Poly Modeling tab: primitive creation icons (cube) | [shelf] UNCONFIRMED contents | Supported | src/app.rs:1211 "Cube"; current main also disables these for read-only curve scenes (after ef86b64) | `create_primitive` | P1 | S7 Shelf (#65) |
+| Poly Modeling tab: primitive creation icons (plane) | [shelf] UNCONFIRMED contents | Supported | src/app.rs:1215 "Plane"; current main also disables these for read-only curve scenes (after ef86b64) | `create_primitive` | P1 | S7 Shelf (#65) |
+| Other primitive icons (sphere, cylinder and others) | [shelf] UNCONFIRMED contents | Visible-unsupported | src/app.rs:1179 "Other primitives" (menu placeholder only; source-verified) | none | P2 | S7 Shelf (#65) |
+| Poly Modeling tab: Extrude icon | [shelf] UNCONFIRMED contents | Visible-unsupported | MCP ahead of native UI; native control deliberately disabled (known-issues.md, src/app.rs:1252 "Extrude") | `extrude_face` | P1 | S7 Shelf (#65) |
+| Poly Modeling tab: Bevel icon | [shelf] UNCONFIRMED contents | Visible-unsupported | src/app.rs:1256 "Bevel" (disabled) | none | P2 | S7 Shelf (#65) |
+| Materials icon | [shelf] UNCONFIRMED contents | Visible-unsupported | src/app.rs:1257 "Materials" (disabled) | none | P3 | S7 Shelf (#65) |
+| Undo and redo buttons: AztecCraft-native shelf buttons; not documented on the Maya Status Line (Maya has Edit > Undo and Redo) | [menus] | Supported | src/app.rs:1223 "Undo", :1233 "Redo" | `undo`, `redo` | P1 | S7 Shelf (#65) |
+| Content Browser icon on Sculpting and Poly Modeling shelves | [content-browser-2024] FALLBACK 2024 | Missing | absent | none | P3 | S7 Shelf (#65) |
+| Other default tabs: Curves/Surfaces, Sculpting, Rigging, Animation, Rendering, FX and more | [shelf] UNCONFIRMED list | Missing | absent | none | P3 | S7 Shelf (#65) |
+| Shelf Editor (Shelves, Command, Double Click Command, Popup Menu Items) | [shelf-editor] | Missing | absent | none | P3 | S7 Shelf (#65) |
 
 ## 4. Tool Box and quick layouts
 
-Move, Rotate and Scale are disabled on this SHA. The in-flight world-axis Move branch is not in this SHA.
+Move, Rotate and Scale are disabled on this SHA. PR #77 (Move) is not in this SHA.
 
 | Maya 2026 element | Source | AztecCraft status | Evidence | MCP | Priority | Proposed slice |
 | --- | --- | --- | --- | --- | --- | --- |
-| Select tool (Q; Q-click Selection Mask marking menu) | [toolbox] | Partial | src/app.rs:1621 "select_indicator" and src/tool_icons.rs:32 "select_indicator" (non-interactive indicator; click picking works; no Q key, no marking menu) | `select_node` | P1 | S2 Transform tools |
-| Lasso tool | [toolbox] | Missing | absent | none | P2 | S2 Transform tools |
-| Paint Selection tool | [toolbox] | Missing | absent | none | P3 | S2 Transform tools |
-| Move tool (W) | [toolbox] | Visible-unsupported | src/app.rs:1623-1628 "Move" (disabled) | none | P1 | S2 Transform tools |
-| Rotate tool (E) | [toolbox] | Visible-unsupported | src/app.rs:1623-1628 "Rotate" (disabled) | none | P1 | S2 Transform tools |
-| Scale tool (R) | [toolbox] | Visible-unsupported | src/app.rs:1623-1628 "Scale" (disabled) | none | P1 | S2 Transform tools |
-| Last Used tool (Y) | [toolbox] | Missing | absent | none | P2 | S2 Transform tools |
-| Show Manipulators (T) | [overview] | Missing | absent | none | P2 | S2 Transform tools |
-| Quick Layout: single pane | [quicklayout] | Missing | absent; fixed layout at src/app.rs:1594-1643 | none | P2 | S8 Panels and quick layouts |
-| Quick Layout: four panes | [quicklayout] | Missing | absent | none | P2 | S8 Panels and quick layouts |
-| Quick Layout: two panes side by side | [quicklayout] | Missing | absent | none | P3 | S8 Panels and quick layouts |
-| Quick Layout: Outliner button | [quicklayout] | Missing | Outliner is always docked at src/app.rs:1632; no button | none | P3 | S8 Panels and quick layouts |
-| Restore Tool Box (Windows > UI Elements) | [toolbox] | Missing | absent | none | P3 | S8 Panels and quick layouts |
+| Select tool (Q; Q-click Selection Mask marking menu) | [toolbox] | Partial | src/app.rs:1621 "select_indicator" and src/tool_icons.rs:32 "select_indicator" (non-interactive indicator; click picking works; no Q key, no marking menu) | `select_node` | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| Lasso tool | [toolbox] | Missing | absent | none | P2 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| Paint Selection tool | [toolbox] | Missing | absent | none | P3 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| Move tool (W) | [toolbox] | Visible-unsupported | src/app.rs:1623-1628 "Move" (disabled) | none | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| Rotate tool (E) | [toolbox] | Visible-unsupported | src/app.rs:1623-1628 "Rotate" (disabled) | none | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| Scale tool (R) | [toolbox] | Visible-unsupported | src/app.rs:1623-1628 "Scale" (disabled) | none | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| Last Used tool (Y) | [toolbox] | Missing | absent | none | P2 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| Show Manipulators (T) | [overview] | Missing | absent | none | P2 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| Quick Layout: single pane | [quicklayout] | Missing | absent; fixed layout at src/app.rs:1594-1643 | none | P2 | S8 Panels and quick layouts (#48 / #69) |
+| Quick Layout: four panes | [quicklayout] | Missing | absent | none | P2 | S8 Panels and quick layouts (#48 / #69) |
+| Quick Layout: two panes side by side | [quicklayout] | Missing | absent | none | P3 | S8 Panels and quick layouts (#48 / #69) |
+| Quick Layout: Outliner button | [quicklayout] | Missing | Outliner is always docked at src/app.rs:1632; no button | none | P3 | S8 Panels and quick layouts (#48 / #69) |
+| Restore Tool Box (Windows > UI Elements) | [toolbox] | Missing | absent | none | P3 | S8 Panels and quick layouts (#48 / #69) |
 
 ## 5. Viewport panel menus and Panel Toolbar
 
@@ -114,23 +118,25 @@ The viewport header at src/app.rs:1668-1684 shows the camera name, the selection
 
 | Maya 2026 element | Source | AztecCraft status | Evidence | MCP | Priority | Proposed slice |
 | --- | --- | --- | --- | --- | --- | --- |
-| Panel menu: View | [panelmenus] contents UNCONFIRMED | Missing | absent | none | P1 | S8 Panels and quick layouts |
-| Panel menu: Shading | [panelmenus] contents UNCONFIRMED | Missing | absent | none | P1 | S8 Panels and quick layouts |
-| Panel menu: Lighting | [panelmenus] contents UNCONFIRMED | Missing | absent | none | P2 | S8 Panels and quick layouts |
-| Panel menu: Show | [panelmenus] contents UNCONFIRMED | Missing | absent | none | P2 | S8 Panels and quick layouts |
-| Panel menu: Renderer | [panelmenus] contents UNCONFIRMED | Missing | absent | none | P3 | S8 Panels and quick layouts |
-| Panel menu: Panels | [panelmenus] contents UNCONFIRMED | Missing | absent | none | P2 | S8 Panels and quick layouts |
-| Panel menu: Stereo | [panelmenus] contents UNCONFIRMED | Missing | absent | none | P3 | S8 Panels and quick layouts |
-| Panel Toolbar group: View (Select Camera, Lock Camera, Bookmarks, Image Plane, 2D Pan/Zoom, Blue Pencil) | [paneltoolbar] | Missing | only the camera name label at src/app.rs:1670 | `orbit_camera`, `pan_camera`, `dolly_camera`, `frame_selected` | P2 | S8 Panels and quick layouts |
-| Panel Toolbar group: Camera Settings, Grid | [paneltoolbar] | Supported | src/app.rs:1676-1681 "Grid" (Grid toggle) | `set_grid_visibility` | P1 | S8 Panels and quick layouts |
-| Panel Toolbar group: Camera Settings, others (Film Gate, Resolution Gate, Gate Mask, Field Chart, Safe Action, Safe Title) | [paneltoolbar] | Missing | absent | none | P3 | S8 Panels and quick layouts |
-| Panel Toolbar group: Shading (Wireframe, Smooth Shade All, Default Material, Wireframe on Shaded, Textured) | [paneltoolbar] | Missing | absent | none | P1 | S8 Panels and quick layouts |
-| Panel Toolbar group: Lighting (Use All Lights, Shadows) | [paneltoolbar] | Missing | absent | none | P3 | S8 Panels and quick layouts |
-| Panel Toolbar group: Isolate Select | [paneltoolbar] | Missing | absent | none | P2 | S8 Panels and quick layouts |
-| Panel Toolbar group: Viewport 2.0 effects (SSAO, Motion blur, MSAA, Depth of field) | [paneltoolbar] | Missing | absent | none | P3 | S8 Panels and quick layouts |
-| Panel Toolbar group: X-Ray (X-Ray, X-Ray Active Components, X-Ray Joints) | [paneltoolbar] | Missing | absent | none | P2 | S8 Panels and quick layouts |
-| Panel Toolbar group: Color Management (Exposure, Gamma, View Transform) | [paneltoolbar] | Missing | absent | none | P3 | S8 Panels and quick layouts |
-| Toggle panel menus (Shift+M) and Panel Toolbar (Ctrl+Shift+M) | [panelvis] | Missing | absent | none | P3 | S5 Hotkeys |
+| ViewCube | source not yet researched | Missing | absent from the viewport header at src/app.rs:1668-1684 | none | P2 | S8 Panels and quick layouts (#48 / #69) |
+| Heads-up display | source not yet researched | Missing | absent from the viewport header at src/app.rs:1668-1684 | none | P3 | S8 Panels and quick layouts (#48 / #69) |
+| Panel menu: View | [panelmenus] contents UNCONFIRMED | Missing | absent | none | P1 | S8 Panels and quick layouts (#48 / #69) |
+| Panel menu: Shading | [panelmenus] contents UNCONFIRMED | Missing | absent | none | P1 | S8 Panels and quick layouts (#48 / #69) |
+| Panel menu: Lighting | [panelmenus] contents UNCONFIRMED | Missing | absent | none | P2 | S8 Panels and quick layouts (#48 / #69) |
+| Panel menu: Show | [panelmenus] contents UNCONFIRMED | Missing | absent | none | P2 | S8 Panels and quick layouts (#48 / #69) |
+| Panel menu: Renderer | [panelmenus] contents UNCONFIRMED | Missing | absent | none | P3 | S8 Panels and quick layouts (#48 / #69) |
+| Panel menu: Panels | [panelmenus] contents UNCONFIRMED | Missing | absent | none | P2 | S8 Panels and quick layouts (#48 / #69) |
+| Panel menu: Stereo | [panelmenus] contents UNCONFIRMED | Missing | absent | none | P3 | S8 Panels and quick layouts (#48 / #69) |
+| Panel Toolbar group: View (Select Camera, Lock Camera, Bookmarks, Image Plane, 2D Pan/Zoom, Blue Pencil) | [paneltoolbar] | Missing | only the camera name label at src/app.rs:1670 | `orbit_camera`, `pan_camera`, `dolly_camera`, `frame_selected` | P2 | S8 Panels and quick layouts (#48 / #69) |
+| Panel Toolbar group: Camera Settings, Grid | [paneltoolbar] | Supported | src/app.rs:1676-1681 "Grid" (Grid toggle) | `set_grid_visibility` | P1 | S8 Panels and quick layouts (#48 / #69) |
+| Panel Toolbar group: Camera Settings, others (Film Gate, Resolution Gate, Gate Mask, Field Chart, Safe Action, Safe Title) | [paneltoolbar] | Missing | absent | none | P3 | S8 Panels and quick layouts (#48 / #69) |
+| Panel Toolbar group: Shading (Wireframe, Smooth Shade All, Default Material, Wireframe on Shaded, Textured) | [paneltoolbar] | Missing | absent | none | P1 | S8 Panels and quick layouts (#48 / #69) |
+| Panel Toolbar group: Lighting (Use All Lights, Shadows) | [paneltoolbar] | Missing | absent | none | P3 | S8 Panels and quick layouts (#48 / #69) |
+| Panel Toolbar group: Isolate Select | [paneltoolbar] | Missing | absent | none | P2 | S8 Panels and quick layouts (#48 / #69) |
+| Panel Toolbar group: Viewport 2.0 effects (SSAO, Motion blur, MSAA, Depth of field) | [paneltoolbar] | Missing | absent | none | P3 | S8 Panels and quick layouts (#48 / #69) |
+| Panel Toolbar group: X-Ray (X-Ray, X-Ray Active Components, X-Ray Joints) | [paneltoolbar] | Missing | absent | none | P2 | S8 Panels and quick layouts (#48 / #69) |
+| Panel Toolbar group: Color Management (Exposure, Gamma, View Transform) | [paneltoolbar] | Missing | absent | none | P3 | S8 Panels and quick layouts (#48 / #69) |
+| Toggle panel menus (Shift+M) and Panel Toolbar (Ctrl+Shift+M) | [panelvis] | Missing | absent | none | P3 | S5 Hotkeys (#32) |
 
 ## 6. Channel Box and Layer Editor
 
@@ -138,15 +144,15 @@ The Channel Box panel docks right at src/app.rs:1636 and draws from Editor::chan
 
 | Maya 2026 element | Source | AztecCraft status | Evidence | MCP | Priority | Proposed slice |
 | --- | --- | --- | --- | --- | --- | --- |
-| Channel Box panel, right side | [channelbox] | Supported | src/app.rs:1636-1642 "channels", :1363 "channels" | `inspect_scene` | P1 | S4 Attribute Editor and Channel Box |
-| Object name field | [channelbox] | Supported | src/app.rs:1371 "Object name" | `rename_node`, `edit_node` | P1 | S4 Attribute Editor and Channel Box |
-| Transform channels (Translate, Rotate, Scale X/Y/Z) | [channelbox] | Supported | src/app.rs:1381-1389 "Translate X" | `set_transform`, `edit_node` | P1 | S4 Attribute Editor and Channel Box |
-| Visibility channel | [channelbox] | Missing | absent from the channel list at src/app.rs:1380 | none | P1 | S4 Attribute Editor and Channel Box |
-| SHAPES section | [channelbox] | Missing | no shape channels; the nearby src/app.rs:1434-1500 is the Materials block with Diffuse | `set_material_diffuse` | P2 | S4 Attribute Editor and Channel Box |
-| INPUTS section | [channelbox] | Visible-unsupported | src/app.rs:1428-1429 "construction history" (disabled; source-verified) | none | P2 | S4 Attribute Editor and Channel Box |
-| OUTPUTS section | [channelbox] | Missing | absent | none | P3 | S4 Attribute Editor and Channel Box |
-| Layer Editor: Display Layers tab | [layers] | Missing | absent | none | P2 | S9 Layer Editor |
-| Layer Editor: Animation Layers tab | [layers] | Missing | absent | none | P3 | S9 Layer Editor |
+| Channel Box panel, right side | [channelbox] | Supported | src/app.rs:1636-1642 "channels", :1363 "channels" | `inspect_scene` | P1 | S4 Attribute Editor and Channel Box (#60) |
+| Object name field | [channelbox] | Supported | src/app.rs:1371 "Object name" | `rename_node`, `edit_node` | P1 | S4 Attribute Editor and Channel Box (#60) |
+| Transform channels (Translate, Rotate, Scale X/Y/Z) | [channelbox] | Supported | src/app.rs:1381-1389 "Translate X" | `set_transform`, `edit_node` | P1 | S4 Attribute Editor and Channel Box (#60) |
+| Visibility channel | [channelbox] | Missing | absent from the channel list at src/app.rs:1380 | none | P1 | S4 Attribute Editor and Channel Box (#60) |
+| SHAPES section | [channelbox] | Missing | no shape channels; the nearby src/app.rs:1434-1500 is the Materials block with Diffuse | `set_material_diffuse` | P2 | S4 Attribute Editor and Channel Box (#60) |
+| INPUTS section | [channelbox] | Visible-unsupported | src/app.rs:1428-1429 "construction history" (disabled; source-verified) | none | P2 | S4 Attribute Editor and Channel Box (#60) |
+| OUTPUTS section | [channelbox] | Missing | absent | none | P3 | S4 Attribute Editor and Channel Box (#60) |
+| Layer Editor: Display Layers tab | [layers] | Missing | absent | none | P2 | S9 Layer Editor (#61) |
+| Layer Editor: Animation Layers tab | [layers] | Missing | absent | none | P3 | S9 Layer Editor (#61) |
 
 ## 7. Attribute Editor
 
@@ -154,12 +160,12 @@ No Attribute Editor exists. The Channel Box carries the transform and diffuse ed
 
 | Maya 2026 element | Source | AztecCraft status | Evidence | MCP | Priority | Proposed slice |
 | --- | --- | --- | --- | --- | --- | --- |
-| Attribute Editor panel (Ctrl+A toggles with Channel Box) | [attr] | Missing | absent | none | P1 | S4 Attribute Editor and Channel Box |
-| Node tabs across the top | [attr] | Missing | absent | none | P1 | S4 Attribute Editor and Channel Box |
-| Attribute list | [attr] | Missing | absent; only Translate/Rotate/Scale and Diffuse are editable | `edit_node`, `set_material_diffuse` | P1 | S4 Attribute Editor and Channel Box |
-| Pin Tab icon | [attr] | Missing | absent | none | P3 | S4 Attribute Editor and Channel Box |
-| Default dock position (not stated for 2026) | [attr] UNCONFIRMED; [rearrange-2016] FALLBACK 2016 | Missing | absent | none | P3 | S4 Attribute Editor and Channel Box |
-| Tool Settings panel (default position UNCONFIRMED for 2026) | [rearrange-2016] FALLBACK 2016; UNCONFIRMED | Missing | absent | none | P2 | S2 Transform tools |
+| Attribute Editor panel (Ctrl+A toggles with Channel Box) | [attr] | Missing | absent | none | P1 | S4 Attribute Editor and Channel Box (#60) |
+| Node tabs across the top | [attr] | Missing | absent | none | P1 | S4 Attribute Editor and Channel Box (#60) |
+| Attribute list | [attr] | Missing | absent; only Translate/Rotate/Scale and Diffuse are editable | `edit_node`, `set_material_diffuse` | P1 | S4 Attribute Editor and Channel Box (#60) |
+| Pin Tab icon | [attr] | Missing | absent | none | P3 | S4 Attribute Editor and Channel Box (#60) |
+| Default dock position (not stated for 2026) | [attr] UNCONFIRMED; [rearrange-2016] FALLBACK 2016 | Missing | absent | none | P3 | S4 Attribute Editor and Channel Box (#60) |
+| Tool Settings panel (default position UNCONFIRMED for 2026) | [rearrange-2016] FALLBACK 2016; UNCONFIRMED | Missing | absent | none | P2 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
 
 ## 8. Outliner
 
@@ -167,20 +173,20 @@ The Outliner is a fixed left panel at src/app.rs:1632 drawing Editor::outliner a
 
 | Maya 2026 element | Source | AztecCraft status | Evidence | MCP | Priority | Proposed slice |
 | --- | --- | --- | --- | --- | --- | --- |
-| Outliner panel | [outliner] | Supported | src/app.rs:1632-1635 "outliner", :1261 "outliner" | `inspect_scene` | P1 | S10 Outliner |
-| Hierarchy list with click selection | [outliner] | Supported | src/app.rs:1263-1300 "selectable_label" | `select_node` | P1 | S10 Outliner |
-| Open from Windows > Outliner, Panels or Quick Layout | [outliner] | Missing | always docked; no open or close | none | P3 | S8 Panels and quick layouts |
-| Display menu | [outliner] | Missing | absent | none | P2 | S10 Outliner |
-| Show menu | [outliner] | Missing | absent | none | P2 | S10 Outliner |
-| Render Setup filter | [outliner] | Missing | absent | none | P3 | S10 Outliner |
-| Search field | [outliner] | Missing | absent | none | P2 | S10 Outliner |
-| Groups | [outliner] | Missing | absent | none | P2 | S10 Outliner |
-| Materials | [outliner] | Missing | absent | none | P3 | S10 Outliner |
-| Hidden objects | [outliner] | Missing | absent | none | P2 | S10 Outliner |
-| Sets | [outliner] | Missing | absent | none | P3 | S10 Outliner |
-| Assets | [outliner] | Missing | absent | none | P3 | S10 Outliner |
-| References | [outliner] | Missing | absent | none | P3 | S10 Outliner |
-| Scene Assembly | [outliner] | Missing | absent | none | P3 | S10 Outliner |
+| Outliner panel | [outliner] | Supported | src/app.rs:1632-1635 "outliner", :1261 "outliner" | `inspect_scene` | P1 | S10 Outliner (#68) |
+| Hierarchy list with click selection | [outliner] | Supported | src/app.rs:1263-1300 "selectable_label" | `select_node` | P1 | S10 Outliner (#68) |
+| Open from Windows > Outliner, Panels or Quick Layout | [outliner] | Missing | always docked; no open or close | none | P3 | S8 Panels and quick layouts (#48 / #69) |
+| Display menu | [outliner] | Missing | absent | none | P2 | S10 Outliner (#68) |
+| Show menu | [outliner] | Missing | absent | none | P2 | S10 Outliner (#68) |
+| Render Setup filter | [outliner] | Missing | absent | none | P3 | S10 Outliner (#68) |
+| Search field | [outliner] | Missing | absent | none | P2 | S10 Outliner (#68) |
+| Groups | [outliner] | Missing | absent | none | P2 | S10 Outliner (#68) |
+| Materials | [outliner] | Missing | absent | none | P3 | S10 Outliner (#68) |
+| Hidden objects | [outliner] | Missing | absent | none | P2 | S10 Outliner (#68) |
+| Sets | [outliner] | Missing | absent | none | P3 | S10 Outliner (#68) |
+| Assets | [outliner] | Missing | absent | none | P3 | S10 Outliner (#68) |
+| References | [outliner] | Missing | absent | none | P3 | S10 Outliner (#68) |
+| Scene Assembly | [outliner] | Missing | absent | none | P3 | S10 Outliner (#68) |
 
 ## 9. Time Slider, Range Slider and playback
 
@@ -188,30 +194,30 @@ The bottom panel at src/app.rs:1597-1613 shows disabled labels and a status mess
 
 | Maya 2026 element | Source | AztecCraft status | Evidence | MCP | Priority | Proposed slice |
 | --- | --- | --- | --- | --- | --- | --- |
-| Time Slider (ruler, key ticks, waveform, cache stripes) | [timeslider] | Visible-unsupported | src/app.rs:1599 "Time slider", :1603 "Animation not implemented" (source-verified) | none | P2 | S11 Timeline |
-| Current time field | [timeslider] | Missing | absent | none | P2 | S11 Timeline |
-| Time Slider bookmarks | [timeslider] | Missing | absent | none | P3 | S11 Timeline |
-| Go To Start | [playback] | Visible-unsupported | src/app.rs:1600-1601 "\|<" (disabled) | none | P2 | S11 Timeline |
-| Step buttons '<' '>' (frame or key unspecified) | [playback] | Visible-unsupported | src/app.rs:1600-1601 "\|<" (disabled '<' and '>') | none | P2 | S11 Timeline |
-| Step Back Frame (Alt/Opt+,) | [playback] | Missing | no separate control | none | P2 | S11 Timeline |
-| Step Back Key (,) | [playback] | Missing | absent | none | P3 | S11 Timeline |
-| Play Backwards | [playback] | Missing | absent | none | P3 | S11 Timeline |
-| Play Forwards (Alt/Opt+V); Stop (Esc) | [playback] | Visible-unsupported | src/app.rs:1600-1601 "Play" (disabled) | none | P2 | S11 Timeline |
-| Step Forward Key (.) | [playback] | Missing | absent | none | P3 | S11 Timeline |
-| Step Forward Frame (Alt/Opt+.) | [playback] | Missing | no separate control | none | P2 | S11 Timeline |
-| Go To End | [playback] | Visible-unsupported | src/app.rs:1600-1601 ">\|" (disabled) | none | P2 | S11 Timeline |
-| Range Slider: Animation Start and End | [range] | Missing | absent | none | P2 | S11 Timeline |
-| Range Slider: Playback Start, End and range bar | [range] | Missing | absent | none | P2 | S11 Timeline |
-| Range Slider: Bookmark icon | [range] | Missing | absent | none | P3 | S11 Timeline |
-| Range Slider: Character Set menu | [range] | Missing | absent | none | P3 | S11 Timeline |
-| Range Slider: Animation Layer menu | [range] | Missing | absent | none | P3 | S11 Timeline |
-| Playback option: Framerate | [playopts] | Missing | absent | none | P3 | S11 Timeline |
-| Playback option: Loop | [playopts] | Missing | absent | none | P3 | S11 Timeline |
-| Playback option: Cached Playback | [playopts] | Missing | absent | none | P3 | S11 Timeline |
-| Playback option: Context View / Cut Slider | [playopts] | Missing | absent | none | P3 | S11 Timeline |
-| Playback option: Volume | [playopts] | Missing | absent | none | P3 | S11 Timeline |
-| Playback option: Auto Key | [playopts] | Missing | absent | none | P3 | S11 Timeline |
-| Playback option: Animation Preferences | [playopts] | Missing | absent | none | P3 | S11 Timeline |
+| Time Slider (ruler, key ticks, waveform, cache stripes) | [timeslider] | Visible-unsupported | src/app.rs:1599 "Time slider", :1603 "Animation not implemented" (source-verified) | none | P2 | S11 Timeline (#62) |
+| Current time field | [timeslider] | Missing | absent | none | P2 | S11 Timeline (#62) |
+| Time Slider bookmarks | [timeslider] | Missing | absent | none | P3 | S11 Timeline (#62) |
+| Go To Start | [playback] | Visible-unsupported | src/app.rs:1600-1601 "\|<" (disabled) | none | P2 | S11 Timeline (#62) |
+| Step buttons '<' '>' (frame or key unspecified) | [playback] | Visible-unsupported | src/app.rs:1600-1601 "\|<" (disabled '<' and '>') | none | P2 | S11 Timeline (#62) |
+| Step Back Frame (Alt/Opt+,) | [playback] | Missing | no separate control | none | P2 | S11 Timeline (#62) |
+| Step Back Key (,) | [playback] | Missing | absent | none | P3 | S11 Timeline (#62) |
+| Play Backwards | [playback] | Missing | absent | none | P3 | S11 Timeline (#62) |
+| Play Forwards (Alt/Opt+V); Stop (Esc) | [playback] | Visible-unsupported | src/app.rs:1600-1601 "Play" (disabled) | none | P2 | S11 Timeline (#62) |
+| Step Forward Key (.) | [playback] | Missing | absent | none | P3 | S11 Timeline (#62) |
+| Step Forward Frame (Alt/Opt+.) | [playback] | Missing | no separate control | none | P2 | S11 Timeline (#62) |
+| Go To End | [playback] | Visible-unsupported | src/app.rs:1600-1601 ">\|" (disabled) | none | P2 | S11 Timeline (#62) |
+| Range Slider: Animation Start and End | [range] | Missing | absent | none | P2 | S11 Timeline (#62) |
+| Range Slider: Playback Start, End and range bar | [range] | Missing | absent | none | P2 | S11 Timeline (#62) |
+| Range Slider: Bookmark icon | [range] | Missing | absent | none | P3 | S11 Timeline (#62) |
+| Range Slider: Character Set menu | [range] | Missing | absent | none | P3 | S11 Timeline (#62) |
+| Range Slider: Animation Layer menu | [range] | Missing | absent | none | P3 | S11 Timeline (#62) |
+| Playback option: Framerate | [playopts] | Missing | absent | none | P3 | S11 Timeline (#62) |
+| Playback option: Loop | [playopts] | Missing | absent | none | P3 | S11 Timeline (#62) |
+| Playback option: Cached Playback | [playopts] | Missing | absent | none | P3 | S11 Timeline (#62) |
+| Playback option: Context View / Cut Slider | [playopts] | Missing | absent | none | P3 | S11 Timeline (#62) |
+| Playback option: Volume | [playopts] | Missing | absent | none | P3 | S11 Timeline (#62) |
+| Playback option: Auto Key | [playopts] | Missing | absent | none | P3 | S11 Timeline (#62) |
+| Playback option: Animation Preferences | [playopts] | Missing | absent | none | P3 | S11 Timeline (#62) |
 
 ## 10. Command Line and Help Line
 
@@ -219,10 +225,10 @@ The bottom message at src/app.rs:1606-1612 is an operation status line. Row orde
 
 | Maya 2026 element | Source | AztecCraft status | Evidence | MCP | Priority | Proposed slice |
 | --- | --- | --- | --- | --- | --- | --- |
-| Command Line input with MEL/Python toggle | [cmdline] | Missing | absent; no scripting | none | P2 | S12 Command and Help Line |
-| Command Line result box and draggable divider | [cmdline] | Missing | absent | none | P3 | S12 Command and Help Line |
-| Script Editor button | [cmdline] | Missing | absent | none | P3 | S12 Command and Help Line |
-| Help Line along the bottom left | [helpline] | Missing | no tool-hint line; the nearest neighbour is the operation status line at src/app.rs:1606-1612 | none | P2 | S12 Command and Help Line |
+| Command Line input with MEL/Python toggle | [cmdline] | Missing | absent; no scripting | none | P2 | S12 Command and Help Line (#63) |
+| Command Line result box and draggable divider | [cmdline] | Missing | absent | none | P3 | S12 Command and Help Line (#63) |
+| Script Editor button | [cmdline] | Missing | absent | none | P3 | S12 Command and Help Line (#63) |
+| Help Line along the bottom left | [helpline] | Missing | no tool-hint line; the nearest neighbour is the operation status line at src/app.rs:1606-1612 | none | P2 | S12 Command and Help Line (#63) |
 
 ## 11. Modeling Toolkit
 
@@ -230,16 +236,16 @@ No Modeling Toolkit panel exists. Default dock is UNCONFIRMED for 2026.
 
 | Maya 2026 element | Source | AztecCraft status | Evidence | MCP | Priority | Proposed slice |
 | --- | --- | --- | --- | --- | --- | --- |
-| Modeling Toolkit panel | [toolkit] | Missing | absent | none | P2 | S1 Status Line strip |
-| Section: menus | [toolkit] | Missing | absent | none | P3 | S13 Modeling Toolkit |
-| Section: Selection modes | [toolkit] | Missing | absent; Object and Face modes exist in the Select menu only | `set_selection_mode` | P2 | S13 Modeling Toolkit |
-| Section: Selection options | [toolkit] | Missing | absent | none | P3 | S13 Modeling Toolkit |
-| Section: Selection constraints | [toolkit] | Missing | absent | none | P3 | S13 Modeling Toolkit |
-| Section: Transform constraints | [toolkit] | Missing | absent | none | P3 | S13 Modeling Toolkit |
-| Section: Commands and tools | [toolkit] | Missing | absent; Extrude is disabled at src/app.rs:1252 | `extrude_face` | P2 | S13 Modeling Toolkit |
-| Section: Transform tool settings | [toolkit] | Missing | absent | none | P3 | S13 Modeling Toolkit |
-| Section: Custom shelf | [toolkit] | Missing | absent | none | P3 | S13 Modeling Toolkit |
-| Section: Hotkeys | [toolkit] | Missing | absent | none | P3 | S13 Modeling Toolkit |
+| Modeling Toolkit panel | [toolkit] | Missing | absent | none | P2 | S13 Modeling Toolkit (#64) |
+| Section: menus | [toolkit] | Missing | absent | none | P3 | S13 Modeling Toolkit (#64) |
+| Section: Selection modes | [toolkit] | Missing | absent; Object and Face modes exist in the Select menu only | `set_selection_mode` | P2 | S13 Modeling Toolkit (#64) |
+| Section: Selection options | [toolkit] | Missing | absent | none | P3 | S13 Modeling Toolkit (#64) |
+| Section: Selection constraints | [toolkit] | Missing | absent | none | P3 | S13 Modeling Toolkit (#64) |
+| Section: Transform constraints | [toolkit] | Missing | absent | none | P3 | S13 Modeling Toolkit (#64) |
+| Section: Commands and tools | [toolkit] | Missing | absent; Extrude is disabled at src/app.rs:1252 | `extrude_face` | P2 | S13 Modeling Toolkit (#64) |
+| Section: Transform tool settings | [toolkit] | Missing | absent | none | P3 | S13 Modeling Toolkit (#64) |
+| Section: Custom shelf | [toolkit] | Missing | absent | none | P3 | S13 Modeling Toolkit (#64) |
+| Section: Hotkeys | [toolkit] | Missing | absent | none | P3 | S13 Modeling Toolkit (#64) |
 
 ## 12. Hotkeys
 
@@ -247,73 +253,81 @@ Editor::shortcuts at src/app.rs:953 handles Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z, F, Cmd
 
 | Maya 2026 element | Source | AztecCraft status | Evidence | MCP | Priority | Proposed slice |
 | --- | --- | --- | --- | --- | --- | --- |
-| Q Select | [toolbox] | Missing | no key handler | none | P1 | S5 Hotkeys |
-| W Move | [toolbox] | Missing | no key handler; tool disabled | none | P1 | S2 Transform tools |
-| E Rotate | [toolbox] | Missing | no key handler; tool disabled | none | P1 | S2 Transform tools |
-| R Scale | [toolbox] | Missing | no key handler; tool disabled | none | P1 | S2 Transform tools |
-| T Show Manipulators | [overview] | Missing | no key handler | none | P2 | S5 Hotkeys |
-| Y Last Used tool | [toolbox] | Missing | no key handler | none | P2 | S5 Hotkeys |
-| F8 toggle Object/Component | [select] | Partial | src/app.rs:1577 "Key::F8" (toggles Object and Face only) | `set_selection_mode` | P1 | S1 Status Line strip |
-| B soft selection | [select] | Missing | no key handler | none | P2 | S3 Component modes |
-| F9 Vertex | [select-2025] FALLBACK 2025; UNCONFIRMED for 2026 | Missing | no key handler | none | P1 | S3 Component modes |
-| F10 Edge | [select-2025] FALLBACK 2025; UNCONFIRMED for 2026 | Missing | no key handler | none | P1 | S3 Component modes |
-| F11 Face | [select-2025] FALLBACK 2025; UNCONFIRMED for 2026 | Supported | src/app.rs:1577 "Key::F11" | `set_selection_mode`, `select_face` | P1 | S3 Component modes |
-| Alt+F9 Vertex Face | [select-2025] FALLBACK 2025; UNCONFIRMED for 2026 | Missing | no key handler | none | P2 | S3 Component modes |
-| F12 UV | [select-2025] FALLBACK 2025; UNCONFIRMED for 2026 | Missing | no key handler | none | P2 | S3 Component modes |
-| F7 multi-component | [select-2025] FALLBACK 2025; UNCONFIRMED for 2026 | Missing | no key handler | none | P3 | S3 Component modes |
-| F Frame Selected | [hotkeys-2025] FALLBACK 2025 | Supported | src/app.rs:962 "Key::F" | `frame_selected` | P1 | S5 Hotkeys |
-| Shift+F Frame Selected in all views | [hotkeys-2025] FALLBACK 2025 | Missing | single view only | none | P3 | S5 Hotkeys |
-| A Frame All | [hotkeys-2025] FALLBACK 2025 | Missing | no key handler | none | P2 | S5 Hotkeys |
-| Shift+A Frame All in all views | [hotkeys-2025] FALLBACK 2025 | Missing | single view only | none | P3 | S5 Hotkeys |
-| Shift+M panel menus; Ctrl+Shift+M Panel Toolbar | [panelvis] | Missing | no key handler | none | P3 | S5 Hotkeys |
-| Tap Space single/multi-pane; Ctrl+Space full-screen | [hotkeys-2025] FALLBACK 2025 | Missing | no key handler | none | P3 | S8 Panels and quick layouts |
-| Ctrl+A Attribute Editor / Channel Box | [attr] | Missing | no key handler | none | P1 | S4 Attribute Editor and Channel Box |
-| Space-hold hotbox; Alt+M hotbox style | [hotkeys-2025] FALLBACK 2025 | Missing | no hotbox | none | P3 | S5 Hotkeys |
-| Undo, Redo, Save, Save As, Delete shortcuts (Maya key map UNCONFIRMED in the report) | UNCONFIRMED | Supported | src/app.rs:960-964 "Key::Z", :1577 "Key::Delete" | `undo`, `redo`, `save_scene`, `save_scene_as`, `delete_node` | P1 | S5 Hotkeys |
+| Q Select | [toolbox] | Missing | no key handler | none | P1 | S5 Hotkeys (#32) |
+| W Move | [toolbox] | Missing | no key handler; tool disabled | none | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| E Rotate | [toolbox] | Missing | no key handler; tool disabled | none | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| R Scale | [toolbox] | Missing | no key handler; tool disabled | none | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| T Show Manipulators | [overview] | Missing | no key handler | none | P2 | S5 Hotkeys (#32) |
+| Y Last Used tool | [toolbox] | Missing | no key handler | none | P2 | S5 Hotkeys (#32) |
+| F8 toggle Object/Component | [select] | Partial | src/app.rs:1577 "Key::F8" (toggles Object and Face only) | `set_selection_mode` | P1 | S1 Status Line strip (#59) |
+| B soft selection | [select] | Missing | no key handler | none | P2 | S3 Component modes (#29) |
+| F9 Vertex | [select-2025] FALLBACK 2025; UNCONFIRMED for 2026 | Missing | no key handler | none | P1 | S3 Component modes (#29) |
+| F10 Edge | [select-2025] FALLBACK 2025; UNCONFIRMED for 2026 | Missing | no key handler | none | P1 | S3 Component modes (#29) |
+| F11 Face | [select-2025] FALLBACK 2025; UNCONFIRMED for 2026 | Supported | src/app.rs:1577 "Key::F11" | `set_selection_mode`, `select_face` | P1 | S3 Component modes (#29) |
+| Alt+F9 Vertex Face | [select-2025] FALLBACK 2025; UNCONFIRMED for 2026 | Missing | no key handler | none | P2 | S3 Component modes (#29) |
+| F12 UV | [select-2025] FALLBACK 2025; UNCONFIRMED for 2026 | Missing | no key handler | none | P2 | S3 Component modes (#29) |
+| F7 multi-component | [select-2025] FALLBACK 2025; UNCONFIRMED for 2026 | Missing | no key handler | none | P3 | S3 Component modes (#29) |
+| F Frame Selected | [hotkeys-2025] FALLBACK 2025 | Supported | src/app.rs:962 "Key::F" | `frame_selected` | P1 | S5 Hotkeys (#32) |
+| Shift+F Frame Selected in all views | [hotkeys-2025] FALLBACK 2025 | Missing | single view only | none | P3 | S5 Hotkeys (#32) |
+| A Frame All | [hotkeys-2025] FALLBACK 2025 | Missing | no key handler | none | P2 | S5 Hotkeys (#32) |
+| Shift+A Frame All in all views | [hotkeys-2025] FALLBACK 2025 | Missing | single view only | none | P3 | S5 Hotkeys (#32) |
+| Shift+M panel menus; Ctrl+Shift+M Panel Toolbar | [panelvis] | Missing | no key handler | none | P3 | S5 Hotkeys (#32) |
+| Tap Space single/multi-pane; Ctrl+Space full-screen | [hotkeys-2025] FALLBACK 2025 | Missing | no key handler | none | P3 | S8 Panels and quick layouts (#48 / #69) |
+| Ctrl+A Attribute Editor / Channel Box | [attr] | Missing | no key handler | none | P1 | S4 Attribute Editor and Channel Box (#60) |
+| Space-hold hotbox; Alt+M hotbox style | [hotkeys-2025] FALLBACK 2025 | Missing | no hotbox | none | P3 | S5 Hotkeys (#32) |
+| Undo, Redo, Save, Save As, Delete shortcuts (Maya key map UNCONFIRMED in the report) | UNCONFIRMED | Supported | src/app.rs:960-964 "Key::Z", :1577 "Key::Delete" | `undo`, `redo`, `save_scene`, `save_scene_as`, `delete_node` | P1 | S5 Hotkeys (#32) |
 
 ## Prioritized backlog
 
 Each item names the candidate slice. Rows above carry the same slice label.
 
+Slice map: S1 #59, S2 PR #77 (Move) and #34, #35, #36, S3 #29, S4 #60, S5 #32, S6 #66, S7 #65, S8 #48 / #69, S9 #61, S10 #68, S11 #62, S12 #63, S13 #64, S14 #67, S15 #70. Umbrella: #71.
+
 ### P1
 
-1. **S1 Status Line strip**: menu-set selector (Modeling only active), selection mode Hierarchy/Object/Component, sidebar toggles, MCP state exposure. Covers the Status Line selection modes, the Attribute Editor and Channel Box toggles, and the F8 binding.
-2. **S2 Transform tools**: enable Move, Rotate and Scale (W, E, R) with Q for Select, then the Snap buttons. Depends on the in-flight world-axis Move branch.
-3. **S3 Component modes**: Vertex and Edge modes with F9 and F10, selection mask buttons, and the Select > Components entries. Face (F11) exists today.
-4. **S4 Attribute Editor and Channel Box**: Attribute Editor panel with node tabs and attribute list, Ctrl+A, and the Visibility channel in the Channel Box.
-5. **S5 Hotkeys**: one key map module for Q, W, E, R, A and the existing bindings, with MCP parity for each action.
-6. **S6 Menu content**: Modify menu content and a Display menu. Edit already has Undo, Redo and Delete.
-7. **S7 Shelf**: a native Extrude control wired to the existing `extrude_face` operation, so UI and MCP match.
-8. **S8 Panels and quick layouts**: View and Shading panel menus and the Shading group of the Panel Toolbar (Wireframe, Smooth Shade All).
+1. **S1 Status Line strip** (#59): menu-set selector (Modeling only active), selection mode Hierarchy/Object/Component, sidebar toggles, MCP state exposure. Covers the Status Line selection modes, the Attribute Editor and Channel Box toggles, and the F8 binding.
+2. **S2 Transform tools** (PR #77 (Move), #34, #35, #36): enable Move, Rotate and Scale (W, E, R) with Q for Select, then the Snap buttons. Depends on PR #77 (Move).
+3. **S3 Component modes** (#29): Vertex and Edge modes with F9 and F10, selection mask buttons, and the Select > Components entries. Face (F11) exists today.
+4. **S4 Attribute Editor and Channel Box** (#60): Attribute Editor panel with node tabs and attribute list, Ctrl+A, and the Visibility channel in the Channel Box.
+5. **S5 Hotkeys** (#32): one key map module for Q, W, E, R, A and the existing bindings, with MCP parity for each action.
+6. **S6 Menu content** (#66): Modify menu content and a Display menu. Edit already has Undo, Redo and Delete.
+7. **S7 Shelf** (#65): a native Extrude control wired to the existing `extrude_face` operation, so UI and MCP match.
+8. **S8 Panels and quick layouts** (#48 / #69): View and Shading panel menus and the Shading group of the Panel Toolbar (Wireframe, Smooth Shade All).
 
 ### P2
 
-1. S1 Status Line strip: file buttons, input box, Symmetry, Tool Settings and Modeling Toolkit toggles.
-2. S2 Transform tools: Last Used (Y), Show Manipulators (T), Lasso, Symmetry.
-3. S3 Component modes: Alt+F9, F12 UV, soft selection (B).
-4. S4 Attribute Editor and Channel Box: SHAPES and INPUTS sections, construction history entries.
-5. S6 Menu content: Display and Windows menus, per-set menu lists.
-6. S7 Shelf: tabs and drop-down, Bevel, other primitives.
-7. S8 Panels and quick layouts: Lighting, Show and Panels menus, Isolate Select, X-Ray, four-pane layout, Frame All (A).
-8. S9 Layer Editor: Display Layers.
-9. S10 Outliner: search, Display and Show menus, Groups, Hidden objects.
-10. S11 Timeline: Time Slider, current time, Go To Start/End, Play, Step Frame, Range Slider.
-11. S12 Command and Help Line: Command Line input with MEL/Python toggle, tool hints.
-12. S13 Modeling Toolkit: panel, Selection modes, Commands and tools.
+1. S1 Status Line strip (#59): file buttons, input box, Symmetry, Tool Settings and Modeling Toolkit toggles.
+2. S2 Transform tools (PR #77 (Move), #34, #35, #36): Last Used (Y), Show Manipulators (T), Lasso, Symmetry.
+3. S3 Component modes (#29): Alt+F9, F12 UV, soft selection (B).
+4. S4 Attribute Editor and Channel Box (#60): SHAPES and INPUTS sections, construction history entries.
+5. S6 Menu content (#66): Display and Windows menus, per-set menu lists.
+6. S7 Shelf (#65): tabs and drop-down, Bevel, other primitives.
+7. S8 Panels and quick layouts (#48 / #69): Lighting, Show and Panels menus, Isolate Select, X-Ray, four-pane layout, Frame All (A).
+8. S9 Layer Editor (#61): Display Layers.
+9. S10 Outliner (#68): search, Display and Show menus, Groups, Hidden objects.
+10. S11 Timeline (#62): Time Slider, current time, Go To Start/End, Play, Step Frame, Range Slider.
+11. S12 Command and Help Line (#63): Command Line input with MEL/Python toggle, tool hints.
+12. S13 Modeling Toolkit (#64): panel, Selection modes, Commands and tools.
+
+### Cross-cutting
+
+- S14 Docking, workspaces and layout persistence (#67): Workspace selector, dockable panels and saved layouts.
+- S15 Original icon set (#70): original icons for every drawn control, with licence records.
 
 ### P3
 
-1. S1 Status Line strip: Lock selection, Highlight Selection mode.
-2. S2 Transform tools: Paint Selection, Make Live.
-3. S5 Hotkeys: hotbox, Shift+F and Shift+A variants, panel toggles.
-4. S6 Menu content: Rigging, Animation, FX and Rendering sets, F2 to F6, Menu Set Editor, Render and Hypershade buttons, Application Home.
-5. S7 Shelf: other default tabs, Shelf Editor, Content Browser icon, Materials.
-6. S8 Panels and quick layouts: Renderer and Stereo menus, Lighting, effects and Color Management groups, remaining Camera Settings, Outliner button and Windows > UI Elements.
-7. S9 Layer Editor: Animation Layers.
-8. S10 Outliner: Render Setup filter, Materials, Sets, Assets, References, Scene Assembly.
-9. S11 Timeline: step by key, play backwards, bookmarks, Character Set and Animation Layer menus, playback options.
-10. S12 Command and Help Line: result box, Script Editor button.
-11. S13 Modeling Toolkit: remaining sections.
+1. S1 Status Line strip (#59): Lock selection, Highlight Selection mode.
+2. S2 Transform tools (PR #77 (Move), #34, #35, #36): Paint Selection, Make Live.
+3. S5 Hotkeys (#32): hotbox, Shift+F and Shift+A variants, panel toggles.
+4. S6 Menu content (#66): Rigging, Animation, FX and Rendering sets, F2 to F6, Menu Set Editor, Render and Hypershade buttons, Application Home.
+5. S7 Shelf (#65): other default tabs, Shelf Editor, Content Browser icon, Materials.
+6. S8 Panels and quick layouts (#48 / #69): Renderer and Stereo menus, Lighting, effects and Color Management groups, remaining Camera Settings, Outliner button and Windows > UI Elements.
+7. S9 Layer Editor (#61): Animation Layers.
+8. S10 Outliner (#68): Render Setup filter, Materials, Sets, Assets, References, Scene Assembly.
+9. S11 Timeline (#62): step by key, play backwards, bookmarks, Character Set and Animation Layer menus, playback options.
+10. S12 Command and Help Line (#63): result box, Script Editor button.
+11. S13 Modeling Toolkit (#64): remaining sections.
+12. S8 Panels and quick layouts (#48 / #69): Heads-up display.
 
 
 ## Link references
@@ -343,5 +357,6 @@ Each item names the candidate slice. Rows above carry the same slice label.
 [cmdline]: https://help.autodesk.com/cloudhelp/2026/ENU/Maya-Basics/files/GUID-4981A0A5-9418-4274-918C-561E33B0102D.htm
 [helpline]: https://help.autodesk.com/cloudhelp/2026/ENU/Maya-Basics/files/GUID-AD137576-F1CF-4A62-A7DA-E0ECF6524D11.htm
 [select]: https://help.autodesk.com/cloudhelp/2026/ENU/Maya-Basics/files/GUID-5C5F2B9B-BE16-4C49-B72B-70EA7CB4C688.htm
+<!-- select-2025: UNCONFIRMED. This is a JavaScript viewer URL, not a static help page. -->
 [select-2025]: https://help.autodesk.com/view/MAYAUL/2025/ENU/?guid=GUID-5C5F2B9B-BE16-4C49-B72B-70EA7CB4C688
 [hotkeys-2025]: https://help.autodesk.com/cloudhelp/2025/ENU/Maya-KeyboardShortcuts/files/GUID-F5379746-7A11-48C0-AFBA-D4B333D3B63A.htm
