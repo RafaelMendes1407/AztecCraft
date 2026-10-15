@@ -1,6 +1,6 @@
 # Native editor MCP
 
-The optional MCP server controls the new native Editor window launched by its client. Tools use that window's canonical native scene, history, selection and camera. It cannot attach to an already running instance. This prototype exposes sixteen tools; it does not establish Maya scripting, plug-in or full-functionality compatibility.
+The optional MCP server controls the new native Editor window launched by its client. Tools use that window's canonical native scene, history, selection and camera. It cannot attach to an already running instance. This prototype exposes seventeen tools; it does not establish Maya scripting, plug-in or full-functionality compatibility.
 
 ## Build and launch
 
@@ -40,6 +40,7 @@ Call `inspect_scene` first. Every other tool requires `scene_token`, a UUID stri
 | `select_node` | Optional `node_id` and `instance_path`, at most 256 decimal NativeId strings | Full root-to-transform prefix; ambiguous objects require a path. Null or omitted node clears selection and cannot include a path |
 | `rename_node` | `node_id`, `name` | Changed or unchanged authoring state |
 | `set_transform` | `node_id`, `translation`, `rotation_degrees`, `scale`, each an array of three finite f64 numbers | Translation in declared scene units, rotation in degrees, dimensionless scale |
+| `edit_node` | `node_id`; optional `name`, `translation`, `rotation_degrees`, `scale` | One undo entry for the supplied name and individual channels; selection stays unchanged |
 | `delete_node` | `node_id` | Changed authoring state |
 | `undo` | None | Changed or unchanged history state |
 | `redo` | None | Changed or unchanged history state |
@@ -53,6 +54,19 @@ Call `inspect_scene` first. Every other tool requires `scene_token`, a UUID stri
 | `request_close` | None | Native close guard; dirty documents require confirmation, and approved remote closure waits for its own successful response flush |
 
 Transforms use the [existing coordinate conventions](development.md). The `rotation_degrees` input and normalized transform inspection always use degrees; `authoring_transform.rotation` retains the document's declared angular units, reported in `units`. Translation retains declared linear units. Camera navigation uses centimeter view space. Inspection exposes shape counts and smoothing capability, without mesh arrays, source bytes or private file paths. This is bounded metadata inspection, not a geometry dump.
+
+`edit_node` uses the Channel Box's sparse native History command. Each supplied
+channel array has exactly three finite numbers or nulls. An omitted array or a
+null component leaves that channel untouched; a null whole array is invalid.
+Omitted `name` or `name: null` leaves the name untouched; an empty string attempts
+a name change and follows normal validation. Only supplied rotations convert
+from degrees to the document's declared angular unit, preserving untouched raw
+radian words. `set_transform` remains a deliberate replacement of all nine
+channels. Name and channel changes validate atomically, including unsupported
+imported renames. An empty edit validates the node and returns unchanged after
+the normal guards, without creating history or synchronizing fields. Identical
+values preserve redo. These operations retain the document token, file binding,
+camera and full instance selection.
 
 Successful tool results provide `structuredContent` and equivalent text content. Authoring outcomes are `scene`, `created`, `changed` or `unchanged`; file lifecycle outcomes are `document_applied`, `pending_confirmation`, `cancelled` and `close_requested`. A scene result nests fields under `inspection`; a created result includes `node_id`. Authoring mutations share native undo history. Selection and camera operations do not create authoring undo entries or mark the document dirty. Navigation arguments use camera units, not pointer pixels. Invalid resulting camera ranges return `camera_error` without changing the camera; finite JSON numbers outside the camera's f32 range are also rejected by camera validation.
 

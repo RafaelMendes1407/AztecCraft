@@ -510,6 +510,51 @@ impl Editor {
                 Command::Create { primitive, name }
             }
             Operation::Rename { id, name } => Command::Rename { id, name },
+            #[cfg(any(test, feature = "mcp"))]
+            Operation::EditNode {
+                id,
+                name,
+                translation,
+                rotation_degrees,
+                scale,
+            } => {
+                if name.is_none()
+                    && translation
+                        .iter()
+                        .chain(&rotation_degrees)
+                        .chain(&scale)
+                        .all(Option::is_none)
+                {
+                    self.history
+                        .scene()
+                        .node(id)
+                        .map_err(OperationError::Scene)?;
+                    return Ok(OperationReply::Unchanged);
+                }
+                let mut channels = [None; 9];
+                channels[..3].copy_from_slice(&translation);
+                channels[6..].copy_from_slice(&scale);
+                for (index, value) in rotation_degrees.into_iter().enumerate() {
+                    if let Some(value) = value {
+                        let value = match self.history.scene().units().angular {
+                            AngularUnit::Degree => value,
+                            AngularUnit::Radian => value.to_radians(),
+                            AngularUnit::Unsupported(_) => {
+                                return Err(OperationError::InvalidInput(
+                                    "Declared angular unit is unsupported".into(),
+                                ));
+                            }
+                        };
+                        if !value.is_finite() {
+                            return Err(OperationError::InvalidInput(
+                                "Rotation must be finite".into(),
+                            ));
+                        }
+                        channels[index + 3] = Some(value);
+                    }
+                }
+                Command::EditNode { id, name, channels }
+            }
             Operation::SetTransform { id, transform } => {
                 let rotation = match self.history.scene().units().angular {
                     AngularUnit::Degree => transform.rotation_degrees,
@@ -1300,9 +1345,47 @@ mod tests {
     }
 
     #[test]
+    fn sparse_nonfinite_intents_preserve_scene_fields_and_redo() {
+        let mut editor = Editor::default();
+        editor.create(Primitive::Cube);
+        let id = editor.selected.unwrap();
+        let before = editor.history.scene().clone();
+        remote(
+            &mut editor,
+            Operation::Rename {
+                id,
+                name: "temporary".into(),
+            },
+        )
+        .unwrap();
+        remote(&mut editor, Operation::Undo).unwrap();
+        let fields = (editor.name.clone(), editor.channels.clone());
+        for group in 0..3 {
+            let mut components = [[None; 3]; 3];
+            components[group][0] = Some(f64::NAN);
+            assert!(
+                remote(
+                    &mut editor,
+                    Operation::EditNode {
+                        id,
+                        name: Some("must_not_apply".into()),
+                        translation: components[0],
+                        rotation_degrees: components[1],
+                        scale: components[2]
+                    }
+                )
+                .is_err()
+            );
+            assert_eq!(editor.history.scene(), &before);
+            assert_eq!((&editor.name, &editor.channels), (&fields.0, &fields.1));
+            assert!(editor.history.can_redo());
+        }
+    }
+
+    #[test]
     fn remote_operations_share_native_scene_selection_history_and_camera() {
         let mut editor = Editor::default();
-        assert_eq!(crate::editor_operations::TOOL_NAMES.len(), 16);
+        assert_eq!(crate::editor_operations::TOOL_NAMES.len(), 17);
         let OperationReply::Created { node_id } = remote(
             &mut editor,
             Operation::Create {

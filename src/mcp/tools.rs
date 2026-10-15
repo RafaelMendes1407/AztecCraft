@@ -87,6 +87,20 @@ struct TransformArgs {
 
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+struct EditNodeArgs {
+    scene_token: String,
+    node_id: String,
+    name: Option<String>,
+    #[serde(default)]
+    translation: [Option<f64>; 3],
+    #[serde(default)]
+    rotation_degrees: [Option<f64>; 3],
+    #[serde(default)]
+    scale: [Option<f64>; 3],
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct OpenArgs {
     scene_token: String,
     #[schemars(length(min = 1, max = 4096))]
@@ -251,6 +265,32 @@ fn parse_request(name: &str, arguments: JsonObject) -> Result<RemoteRequest, Err
                 },
             )
         }
+        "edit_node" => {
+            let args: EditNodeArgs = decode(arguments)?;
+            if args
+                .translation
+                .iter()
+                .chain(&args.rotation_degrees)
+                .chain(&args.scale)
+                .flatten()
+                .any(|value| !value.is_finite())
+            {
+                return Err(ErrorData::invalid_params(
+                    "Channel values must be finite",
+                    None,
+                ));
+            }
+            (
+                token(&args.scene_token)?,
+                Operation::EditNode {
+                    id: node_id(&args.node_id)?,
+                    name: args.name,
+                    translation: args.translation,
+                    rotation_degrees: args.rotation_degrees,
+                    scale: args.scale,
+                },
+            )
+        }
         "delete_node" => {
             let args: NodeArgs = decode(arguments)?;
             (
@@ -375,6 +415,10 @@ fn catalog() -> Vec<Tool> {
                 "set_transform" => (
                     "Set f64 translation in declared scene units, rotation in XYZ degrees, and scale",
                     schema::<TransformArgs>(),
+                ),
+                "edit_node" => (
+                    "Edit optional name and individual f64 channels in one undo entry. Omitted arrays and null components are untouched; translation uses declared scene units and supplied rotations use degrees. Does not change selection",
+                    schema::<EditNodeArgs>(),
                 ),
                 "delete_node" => (
                     "Delete an object through editor undo history",
@@ -597,6 +641,7 @@ mod tests {
                 "create_primitive" => json!({"scene_token":token,"primitive":"cube"}),
                 "select_node" => json!({"scene_token":token,"node_id":null}),
                 "rename_node" => json!({"scene_token":token,"node_id":"1","name":"cube"}),
+                "edit_node" => json!({"scene_token":token,"node_id":"1"}),
                 "set_transform" => {
                     json!({"scene_token":token,"node_id":"1","translation":[0,0,0],"rotation_degrees":[0,0,0],"scale":[1,1,1]})
                 }
@@ -678,6 +723,69 @@ mod tests {
         };
         assert_eq!(transform.translation[0], 16777217.125);
         assert_eq!(transform.rotation_degrees[0], 90.0);
+    }
+
+    #[test]
+    fn sparse_node_schema_and_decoder_preserve_component_omissions() {
+        let token = Uuid::new_v4().to_string();
+        let tool = catalog()
+            .into_iter()
+            .find(|tool| tool.name == "edit_node")
+            .unwrap();
+        for field in ["translation", "rotation_degrees", "scale"] {
+            let field = &tool.input_schema["properties"][field];
+            assert_eq!(field["type"], "array");
+            assert_eq!(field["minItems"], 3);
+            assert_eq!(field["maxItems"], 3);
+        }
+        let args = json!({"scene_token":token,"node_id":"1","name":null,"translation":[16777217.125,null,null]});
+        let request = parse_request("edit_node", args.as_object().unwrap().clone()).unwrap();
+        let Operation::EditNode {
+            name,
+            translation,
+            rotation_degrees,
+            scale,
+            ..
+        } = request.operation
+        else {
+            panic!("expected sparse edit")
+        };
+        assert!(name.is_none());
+        assert_eq!(translation, [Some(16777217.125), None, None]);
+        assert_eq!(rotation_degrees, [None; 3]);
+        assert_eq!(scale, [None; 3]);
+        for field in ["translation", "rotation_degrees", "scale"] {
+            for invalid in [
+                json!(null),
+                json!([]),
+                json!([1, 2]),
+                json!([1, 2, 3, 4]),
+                json!([false, null, null]),
+                json!(["1", null, null]),
+            ] {
+                let mut args = json!({"scene_token":token,"node_id":"1"});
+                args[field] = invalid;
+                assert!(parse_request("edit_node", args.as_object().unwrap().clone()).is_err());
+            }
+        }
+        for fields in [
+            json!({"unknown":true}),
+            json!({"node_id":1}),
+            json!({"node_id":"+1"}),
+            json!({"name":"x".repeat(MAX_NAME_BYTES + 1)}),
+        ] {
+            let mut args = json!({"scene_token":token,"node_id":"1"});
+            args.as_object_mut()
+                .unwrap()
+                .extend(fields.as_object().unwrap().clone());
+            assert!(parse_request("edit_node", args.as_object().unwrap().clone()).is_err());
+        }
+        assert!(
+            serde_json::from_str::<JsonObject>(&format!(
+                r#"{{"scene_token":"{token}","node_id":"1","translation":[1e400,null,null]}}"#
+            ))
+            .is_err()
+        );
     }
 
     #[test]

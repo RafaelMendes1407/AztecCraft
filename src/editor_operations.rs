@@ -38,12 +38,13 @@ pub const MAX_NAME_BYTES: usize = 4096;
 pub const MAX_RESULT_BYTES: usize = 512 * 1024;
 
 #[cfg(any(test, feature = "mcp"))]
-pub const TOOL_NAMES: [&str; 16] = [
+pub const TOOL_NAMES: [&str; 17] = [
     "inspect_scene",
     "create_primitive",
     "select_node",
     "rename_node",
     "set_transform",
+    "edit_node",
     "delete_node",
     "undo",
     "redo",
@@ -84,6 +85,14 @@ pub enum Operation {
     SetTransform {
         id: NodeId,
         transform: TransformInput,
+    },
+    #[cfg(any(test, feature = "mcp"))]
+    EditNode {
+        id: NodeId,
+        name: Option<String>,
+        translation: [Option<f64>; 3],
+        rotation_degrees: [Option<f64>; 3],
+        scale: [Option<f64>; 3],
     },
     ExtrudeFace {
         shape: NativeId,
