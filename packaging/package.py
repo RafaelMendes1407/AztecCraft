@@ -12,8 +12,9 @@ import struct
 import tarfile
 import tomllib
 import zipfile
-from pathlib import Path
-from typing import Literal
+from collections.abc import Iterable
+from pathlib import Path, PurePath
+from typing import Literal, TypeVar
 
 Platform = Literal["macos", "windows", "linux"]
 ATOMIC_NOTICES = ("LICENSE-MIT", "LICENSE-APACHE", "NOTICE", "ATTRIBUTION.md")
@@ -24,6 +25,7 @@ FONT_NOTICES = (
     "UFL.txt",
     "emoji-icon-font-mit-license.txt",
 )
+P = TypeVar("P", bound=PurePath)
 NOTICE_LIMIT = 64 * 1024
 
 
@@ -88,6 +90,11 @@ def binary_architecture(binary: Path, target: Platform) -> str:
 def sha256(path: Path) -> str:
     with path.open("rb") as source:
         return hashlib.file_digest(source, "sha256").hexdigest()
+
+
+def archive_order(paths: Iterable[P], root: PurePath) -> list[P]:
+    # Path ordering is case-insensitive on Windows; sort by a case-sensitive POSIX key instead.
+    return sorted(paths, key=lambda path: path.relative_to(root).as_posix())
 
 
 def archive_metadata(info: tarfile.TarInfo) -> tarfile.TarInfo:
@@ -167,7 +174,7 @@ def package(binary: Path, manifest: Path, output: Path, target: Platform) -> Pat
     else:
         archive = output / f"{basename}.zip"
         with zipfile.ZipFile(archive, "x", compression=zipfile.ZIP_DEFLATED) as zip_file:
-            for path in sorted(bundle.rglob("*")):
+            for path in archive_order(bundle.rglob("*"), output):
                 info = zipfile.ZipInfo.from_file(path, str(path.relative_to(output)))
                 info.create_system = 3
                 info.compress_type = zipfile.ZIP_DEFLATED

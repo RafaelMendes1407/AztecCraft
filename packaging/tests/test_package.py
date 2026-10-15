@@ -7,7 +7,7 @@ import stat
 import struct
 import tarfile
 import zipfile
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,6 +17,7 @@ from package import (
     NOTICE_LIMIT,
     PROJECT_NOTICES,
     Platform,
+    archive_order,
     capture_atomic_notices,
     package,
 )
@@ -315,3 +316,15 @@ def test_project_notice_symlink_error_names_the_notice(tmp_path: Path) -> None:
         pytest.skip("host cannot create symlinks")
     with pytest.raises(ValueError, match=r"license notice NOTICE must be a regular file"):
         package(binary, manifest, tmp_path / "artifacts", "linux")
+
+
+def test_archive_order_is_case_sensitive_on_every_host() -> None:
+    root = PureWindowsPath("out")
+    names = ["licenses/craft-atomic", "licenses/NOTICE", "licenses/Hack.txt", "licenses/emoji.txt"]
+    ordered = archive_order([root / name for name in names], root)
+    assert [path.relative_to(root).as_posix() for path in ordered] == [
+        "licenses/Hack.txt",
+        "licenses/NOTICE",
+        "licenses/craft-atomic",
+        "licenses/emoji.txt",
+    ]
