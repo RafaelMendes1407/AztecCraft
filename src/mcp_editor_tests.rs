@@ -975,6 +975,142 @@ mod official_client {
             "/tests/support/maya_binary.rs"
         ));
     }
+    mod appearance_fixture {
+        use super::binary_fixture as wire;
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/support/maya_appearance.rs"
+        ));
+    }
+
+    #[tokio::test]
+    async fn checked_appearance_open_inspection_and_document_replacement_share_live_state() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("synthetic-appearance.mb");
+        std::fs::write(&path, appearance_fixture::appearance_specimen()).unwrap();
+        let context = egui::Context::default();
+        let (mut editor, client, server) = start(&context).await;
+        let token = editor.scene_token.to_string();
+        let opened = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "open_scene",
+            json!({"scene_token":token,"path":path.to_str().unwrap()}),
+        )
+        .await;
+        assert_eq!(
+            opened.structured_content.unwrap()["outcome"],
+            "document_applied"
+        );
+        let expected = editor.history.scene().appearance_readiness();
+        assert_eq!(expected.checked_source_bindings, 1);
+        let inspected = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "inspect_scene",
+            json!({}),
+        )
+        .await
+        .structured_content
+        .unwrap();
+        assert_eq!(
+            inspected["inspection"]["source_appearance"],
+            serde_json::to_value(expected).unwrap()
+        );
+        assert_eq!(
+            inspected["inspection"]["shapes"][0]["source_appearance"],
+            serde_json::to_value(expected).unwrap()
+        );
+        assert_eq!(
+            editor.appearance_scope().unwrap(),
+            ("Scene totals", expected)
+        );
+        let token = editor.scene_token.to_string();
+        let id = inspected["inspection"]["nodes"][0]["id"].clone();
+        let edited = call(&mut editor, &context, client.peer(), "set_transform", json!({"scene_token":token,"node_id":id,"translation":[4.0,2.0,3.0],"rotation_degrees":[0.0,0.0,0.0],"scale":[1.0,1.0,1.0]})).await;
+        assert_ne!(edited.is_error, Some(true));
+        let edited_scene = editor.history.scene().clone();
+        assert_eq!(edited_scene.appearance_readiness(), expected);
+        let pending = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "open_scene",
+            json!({"scene_token":token,"path":path.to_str().unwrap()}),
+        )
+        .await
+        .structured_content
+        .unwrap();
+        assert_eq!(pending["outcome"], "pending_confirmation");
+        let cancelled = call(&mut editor, &context, client.peer(), "resolve_file_action", json!({"scene_token":token,"pending_action_id":pending["pending_action_id"],"decision":"cancel"})).await.structured_content.unwrap();
+        assert_eq!(cancelled["outcome"], "cancelled");
+        assert_eq!(editor.history.scene(), &edited_scene);
+        call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "undo",
+            json!({"scene_token":token}),
+        )
+        .await;
+        assert_eq!(editor.history.scene().appearance_readiness(), expected);
+        call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "redo",
+            json!({"scene_token":token}),
+        )
+        .await;
+        assert_eq!(editor.history.scene(), &edited_scene);
+        call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "undo",
+            json!({"scene_token":token}),
+        )
+        .await;
+        let before = editor.history.scene().clone();
+        let token = editor.scene_token.to_string();
+        std::fs::write(&path, b"malformed").unwrap();
+        let failed = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "open_scene",
+            json!({"scene_token":token,"path":path.to_str().unwrap()}),
+        )
+        .await;
+        assert_eq!(failed.is_error, Some(true));
+        assert_eq!(editor.history.scene(), &before);
+        assert_eq!(editor.scene_token.to_string(), token);
+        let fresh = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "new_scene",
+            json!({"scene_token":token}),
+        )
+        .await;
+        assert_eq!(
+            fresh.structured_content.unwrap()["outcome"],
+            "document_applied"
+        );
+        assert_eq!(editor.history.scene().appearance_readiness().shapes, 0);
+        assert_eq!(
+            editor.history.scene().appearance_readiness().state,
+            azteccraft::native_scene::AppearanceState::Unbound
+        );
+        client.cancel().await.unwrap();
+        drop(editor);
+        tokio::time::timeout(Duration::from_secs(2), server)
+            .await
+            .unwrap()
+            .unwrap();
+    }
 
     #[tokio::test]
     async fn remote_close_and_discard_close_flush_their_own_reply_before_hidden_exit() {

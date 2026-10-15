@@ -12,11 +12,8 @@ pub(crate) struct Mesh {
     pub normals: Words,
     #[cfg(test)]
     pub uv_header: Span,
-    #[cfg(test)]
     pub uv_name: Span,
-    #[cfg(test)]
     pub uv_points: Words,
-    #[cfg(test)]
     pub uv_ids: Words,
     #[cfg(test)]
     pub trailer: Span,
@@ -99,11 +96,8 @@ pub(crate) fn decode_mesh(cursor: &mut Cursor<'_>) -> Result<Mesh, BinaryError> 
         normals: _normals,
         #[cfg(test)]
         uv_header: _uv_header,
-        #[cfg(test)]
         uv_name: _uv_name,
-        #[cfg(test)]
         uv_points,
-        #[cfg(test)]
         uv_ids,
         #[cfg(test)]
         trailer,

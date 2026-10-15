@@ -5,11 +5,18 @@ pub(super) mod wire_fixture {
         "/tests/support/maya_binary.rs"
     ));
 }
+pub(super) mod appearance_fixture {
+    use super::wire_fixture as wire;
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/support/maya_appearance.rs"
+    ));
+}
 use crate::view_scene::ViewScene;
 use std::{fs::File, io::Read, path::Path};
 use wire_fixture::{chunk, creation, group, mesh_payload, scene, triple};
 
-fn read(path: &Path) -> Vec<u8> {
+pub(super) fn read(path: &Path) -> Vec<u8> {
     let mut data = Vec::new();
     File::open(path)
         .expect("explicit private input must exist")
@@ -637,6 +644,14 @@ fn private_native_candidates_and_views_match_independent_counts() {
             continue;
         }
         let scene = result.unwrap();
+        let appearance = scene.appearance_readiness();
+        assert_eq!(appearance.shapes, meshes[index]);
+        if index == 0 {
+            assert_eq!(
+                appearance.checked_source_bindings, 3,
+                "viewer source readiness: {appearance:?}"
+            );
+        }
         assert_eq!(scene.nodes().len(), nodes[index]);
         assert_eq!(scene.shapes().len(), meshes[index]);
         assert_eq!(

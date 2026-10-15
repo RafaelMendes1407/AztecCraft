@@ -37,6 +37,10 @@ pub(crate) fn counted(bytes: &mut Vec<u8>, words: &[u32]) {
 }
 
 pub(crate) fn mesh_payload(corners: &[u32]) -> Vec<u8> {
+    mesh_payload_with_uv(corners, &[0, 0, 1f32.to_bits(), 0, 0, 1f32.to_bits()], &[0, 1, 2])
+}
+
+pub(crate) fn mesh_payload_with_uv(corners: &[u32], uv: &[u32], ids: &[u32]) -> Vec<u8> {
     let mut bytes = b"o\0\x20".to_vec();
     counted(
         &mut bytes,
@@ -49,8 +53,8 @@ pub(crate) fn mesh_payload(corners: &[u32]) -> Vec<u8> {
         bytes.extend(word.to_be_bytes());
     }
     bytes.extend(b"uv\0");
-    counted(&mut bytes, &[0, 0, 1f32.to_bits(), 0, 0, 1f32.to_bits()]);
-    counted(&mut bytes, &[0, 1, 2]);
+    counted(&mut bytes, uv);
+    counted(&mut bytes, ids);
     bytes.extend([0; 20]);
     bytes
 }

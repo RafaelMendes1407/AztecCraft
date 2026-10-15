@@ -1,13 +1,5 @@
 use super::*;
 
-fn absolute_name(name: &[u8], offset: usize) -> Result<&[u8], BinaryError> {
-    let name = name.strip_prefix(b":").unwrap_or(name);
-    if name.split(|byte| *byte == b':').any(|part| part.is_empty()) || name.contains(&b'|') {
-        return Err(fail(ErrorKind::Unsupported, offset));
-    }
-    Ok(name)
-}
-
 fn key<'a>(
     container: &'a Container,
     chunk: &crate::maya_binary::container::Chunk,
@@ -66,43 +58,10 @@ pub(super) fn inspect(
     facts: &WireFacts<'_>,
     bindings: &[Binding],
     names: &[usize],
+    owners: &Owners,
     budget: &mut Budget,
 ) -> Result<usize, BinaryError> {
     let definitions = custom::Definitions::inspect(container, bindings, budget)?;
-    let mut created = budget.vector(
-        facts
-            .records
-            .iter()
-            .filter(|record| matches!(record.data, Data::Create(_)))
-            .count(),
-    )?;
-    created.extend(
-        facts
-            .records
-            .iter()
-            .enumerate()
-            .filter_map(|(index, record)| matches!(record.data, Data::Create(_)).then_some(index)),
-    );
-    let created_name = |index: usize| {
-        let Data::Create(create) = &facts.records[index].data else {
-            unreachable!()
-        };
-        let name = &container.source()[create.name.clone()];
-        name.strip_prefix(b":").unwrap_or(name)
-    };
-    for index in &created {
-        let Data::Create(create) = &facts.records[*index].data else {
-            unreachable!()
-        };
-        absolute_name(&container.source()[create.name.clone()], create.name.start)?;
-    }
-    created.sort_unstable_by(|a, b| created_name(*a).cmp(created_name(*b)));
-    if created
-        .windows(2)
-        .any(|pair| created_name(pair[0]) == created_name(pair[1]))
-    {
-        return Err(fail(ErrorKind::Unsupported, 0));
-    }
     let mut offset_count = 0usize;
     for binding in bindings {
         let mut hint = None;
@@ -211,24 +170,8 @@ pub(super) fn inspect(
             continue;
         };
         let resolve = |range: &Range<usize>| -> Result<(Option<usize>, &[u8]), BinaryError> {
-            let endpoint = &container.source()[range.clone()];
-            let Some(dot) = endpoint.iter().position(|byte| *byte == b'.') else {
-                return Err(fail(ErrorKind::Unsupported, range.start));
-            };
-            let raw_owner = &endpoint[..dot];
-            let owner = absolute_name(raw_owner, range.start)?;
-            let attribute = &endpoint[dot + 1..];
-            if owner.is_empty() || attribute.is_empty() || owner.contains(&b'|') {
-                return Err(fail(ErrorKind::Unsupported, range.start));
-            }
-            let index = created
-                .binary_search_by(|index| created_name(*index).cmp(owner))
-                .ok()
-                .map(|i| created[i]);
-            if index.is_none() && !raw_owner.starts_with(b":") {
-                return Err(fail(ErrorKind::Unsupported, range.start));
-            }
-            Ok((index, attribute))
+            let (index, attribute) = owners.resolve(facts, range)?;
+            Ok((index, &container.source()[attribute]))
         };
         let source = resolve(&connection.source)?;
         let destination = resolve(&connection.destination)?;

@@ -224,6 +224,20 @@ smoothing and authored normal assignments remain unresolved; appearance is
 incomplete. Custom definitions are retained inert and admitted only with the
 supported framing, owner/type matching and checked appearance connections.
 
+Binary candidates also retain immutable checked appearance associations over
+the same source bytes. Supported bindings preserve full face coverage, GPID and
+shading-group links, unique instance ownership, explicit and packed UV words,
+source-corner UV indices and the Phong/file/place2d input graph. Message and
+partition associations are retained without treating them as value drivers.
+Saved inputs and documented compound defaults have distinct provenance.
+Unsupported appearance leaves geometry available with fixed diagnostic issues;
+malformed recognized framing and resource exhaustion refuse the candidate.
+The additional metadata and temporary graph tables have an 8 MiB policy inside
+the existing decoder budget and one million checked association-work steps.
+Native Channel Box and MCP inspection read bounded summaries without reparsing
+or texture IO. Numeric edits, History snapshots and encoder revalidation retain
+these associations; no material, sampler or color processor is implemented.
+
 The decoder applies a 128 MiB accounted-buffer policy and a checked 50 million
 validation-work-unit policy before canonical construction. These are operational
 limits, not a process heap guarantee, timing promise or Maya format limits.

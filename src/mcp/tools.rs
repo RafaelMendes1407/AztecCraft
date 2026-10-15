@@ -435,7 +435,7 @@ fn catalog() -> Vec<Tool> {
         .map(|name| {
             let (description, input_schema) = match name {
                 "inspect_scene" => (
-                    "Inspect committed editor state and report pending human edits",
+                    "Inspect committed editor state, pending human edits and bounded scene/shape source-appearance readiness. Checked source associations do not imply evaluated or rendered materials",
                     schema::<InspectArgs>(),
                 ),
                 "create_primitive" => (

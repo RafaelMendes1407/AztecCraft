@@ -1,3 +1,4 @@
+use super::super::tests::appearance_fixture;
 use super::super::tests::wire_fixture::{self, creation, group, scene, triple};
 use super::*;
 use crate::{
@@ -9,6 +10,50 @@ fn fixture() -> (Arc<[u8]>, NativeScene) {
     let bytes: Arc<[u8]> = wire_fixture::specimen().into();
     let scene = super::super::decode(bytes.clone()).unwrap();
     (bytes, scene)
+}
+
+#[test]
+fn appearance_metadata_survives_clone_and_single_authorized_word_patch() {
+    let bytes: Arc<[u8]> = appearance_fixture::appearance_specimen().into();
+    let mut candidate = super::super::decode(bytes.clone()).unwrap();
+    assert_eq!(encode(&candidate).unwrap(), bytes.as_ref());
+    let cloned = candidate.clone();
+    assert!(Arc::ptr_eq(
+        candidate
+            .source
+            .as_ref()
+            .unwrap()
+            .appearance
+            .as_ref()
+            .unwrap(),
+        cloned.source.as_ref().unwrap().appearance.as_ref().unwrap()
+    ));
+    let id = candidate.nodes()[0].id();
+    candidate
+        .set_channel(id, Channel::TranslateX, 4.25)
+        .unwrap();
+    let output = encode(&candidate).unwrap();
+    assert_only_word(&bytes, &output, numeric(&bytes, b"t"), 4.25);
+    let reopened = super::super::decode(output.into()).unwrap();
+    check_appearance_metadata(&candidate, &reopened).unwrap();
+    assert_eq!(
+        candidate.appearance_readiness(),
+        reopened.appearance_readiness()
+    );
+    let before = candidate.clone();
+    assert!(candidate.rename(id, "refused").is_err());
+    assert_eq!(candidate, before);
+}
+
+#[test]
+fn postdecode_appearance_guard_rejects_otherwise_valid_mismatching_metadata() {
+    let expected = super::super::decode(appearance_fixture::appearance_specimen().into()).unwrap();
+    let mut actual = expected.clone();
+    let source = actual.source.as_mut().unwrap();
+    let appearance = Arc::make_mut(source.appearance.as_mut().unwrap());
+    appearance.materials[0].message_links.pop();
+    actual.validate().unwrap();
+    assert!(check_appearance_metadata(&expected, &actual).is_err());
 }
 
 fn numeric(bytes: &[u8], key: &[u8]) -> usize {
@@ -216,7 +261,7 @@ fn refuses_sourcefree_absent_origin_invalid_origin_and_structural_changes() {
 fn retained_reparse_buffers_have_an_exact_boundary_and_checked_overflow() {
     let (bytes, _) = fixture();
     assert_eq!(
-        super::super::decode_with_retained_bytes(bytes.clone(), 128 * 1024 * 1024 - bytes.len())
+        super::super::decode_with_retained_bytes(bytes.clone(), 128 * 1024 * 1024 - bytes.len(), 0)
             .unwrap_err()
             .kind(),
         ErrorKind::ResourceLimit
@@ -225,21 +270,21 @@ fn retained_reparse_buffers_have_an_exact_boundary_and_checked_overflow() {
     let mut high = 128 * 1024 * 1024;
     while high - low > 1 {
         let mid = low + (high - low) / 2;
-        if super::super::decode_with_retained_bytes(bytes.clone(), mid).is_ok() {
+        if super::super::decode_with_retained_bytes(bytes.clone(), mid, 0).is_ok() {
             low = mid;
         } else {
             high = mid;
         }
     }
-    assert!(super::super::decode_with_retained_bytes(bytes.clone(), low).is_ok());
+    assert!(super::super::decode_with_retained_bytes(bytes.clone(), low, 0).is_ok());
     assert_eq!(
-        super::super::decode_with_retained_bytes(bytes.clone(), high)
+        super::super::decode_with_retained_bytes(bytes.clone(), high, 0)
             .unwrap_err()
             .kind(),
         ErrorKind::ResourceLimit
     );
     assert_eq!(
-        super::super::decode_with_retained_bytes(bytes, usize::MAX)
+        super::super::decode_with_retained_bytes(bytes, usize::MAX, 0)
             .unwrap_err()
             .kind(),
         ErrorKind::ResourceLimit

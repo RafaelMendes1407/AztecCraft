@@ -1,4 +1,5 @@
 mod admission;
+mod appearance;
 mod binding;
 mod encode;
 pub use encode::encode;
@@ -101,20 +102,27 @@ impl From<semantic::BinaryError> for BinaryError {
 }
 
 pub fn decode(source: Arc<[u8]>) -> Result<NativeScene, BinaryError> {
-    decode_with_retained_bytes(source, 0)
+    decode_with_retained_bytes(source, 0, 0)
 }
 
 fn decode_with_retained_bytes(
     source: Arc<[u8]>,
     retained_bytes: usize,
+    retained_appearance_bytes: usize,
 ) -> Result<NativeScene, BinaryError> {
     admission::Budget::new(
         source
             .len()
             .checked_add(retained_bytes)
+            .and_then(|bytes| bytes.checked_add(retained_appearance_bytes))
             .ok_or_else(resource)?,
     )?;
     let container = container::inspect(source)?;
     let facts = semantic::decode_records(&container)?;
-    binding::construct(&container, &facts, retained_bytes)
+    binding::construct(
+        &container,
+        &facts,
+        retained_bytes,
+        retained_appearance_bytes,
+    )
 }

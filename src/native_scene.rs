@@ -1,6 +1,8 @@
+mod appearance;
 pub mod binary;
 mod mesh;
 mod source;
+pub use appearance::{AppearanceIssue, AppearanceIssues, AppearanceState, AppearanceSummary};
 pub use mesh::{DirectedEdge, NativeEdge, NativeFace, NativeMesh, Points};
 use source::{ScalarOrigin, SourceFormat, SourceRetention, TransformField};
 
@@ -1145,6 +1147,9 @@ impl NativeScene {
         self.validate_dag(&native_ids)?;
         if let Some(source) = &self.source {
             source.validate()?;
+            if let Some(appearance) = &source.appearance {
+                appearance.validate(self, source)?;
+            }
             for (index, leaf) in source.leaves.iter().enumerate() {
                 let node = self
                     .nodes

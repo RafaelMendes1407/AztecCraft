@@ -160,6 +160,7 @@ pub struct SceneInspection {
     pub depth_complete: bool,
     pub clipping_complete: bool,
     pub appearance_incomplete: bool,
+    pub source_appearance: azteccraft::native_scene::AppearanceSummary,
     pub pending_action: Option<PendingInspection>,
     pub selected_node: Option<String>,
     pub selected_instance_path: Vec<String>,
@@ -218,6 +219,7 @@ pub struct ShapeInspection {
     pub edges: usize,
     pub faces: usize,
     pub smoothing_known: bool,
+    pub source_appearance: azteccraft::native_scene::AppearanceSummary,
 }
 #[derive(Debug, Serialize)]
 #[cfg(any(test, feature = "mcp"))]
@@ -284,11 +286,14 @@ pub struct RemoteRequest {
 }
 
 #[cfg(any(test, feature = "mcp"))]
+const APPEARANCE_SUMMARY_MAX_BYTES: usize = 1024;
+
+#[cfg(any(test, feature = "mcp"))]
 pub fn check_inspection_size(
     scene: &azteccraft::native_scene::NativeScene,
 ) -> Result<(), OperationError> {
     let limit = MAX_RESULT_BYTES / 2;
-    let mut estimated_bytes = 0_usize;
+    let mut estimated_bytes = APPEARANCE_SUMMARY_MAX_BYTES;
     for node in scene.nodes() {
         estimated_bytes = estimated_bytes
             .saturating_add(1024)
@@ -301,6 +306,7 @@ pub fn check_inspection_size(
     for shape in scene.shapes() {
         estimated_bytes = estimated_bytes
             .saturating_add(512)
+            .saturating_add(APPEARANCE_SUMMARY_MAX_BYTES)
             .saturating_add(shape.name().len().saturating_mul(6));
         if estimated_bytes > limit {
             return Err(OperationError::TooLarge);
@@ -317,6 +323,20 @@ pub fn check_inspection_size(
 mod tests {
     use super::*;
     use azteccraft::{native_scene::NativeScene, scene::Scene};
+
+    #[test]
+    fn appearance_summary_preflight_bounds_the_largest_fixed_dto() {
+        use azteccraft::native_scene::{AppearanceIssues, AppearanceState, AppearanceSummary};
+        let summary = AppearanceSummary {
+            state: AppearanceState::CheckedViewerSource,
+            shapes: usize::MAX,
+            checked_source_bindings: usize::MAX,
+            unavailable: usize::MAX,
+            unbound: usize::MAX,
+            issues: AppearanceIssues::default(),
+        };
+        assert!(serde_json::to_vec(&summary).unwrap().len() <= APPEARANCE_SUMMARY_MAX_BYTES);
+    }
 
     #[test]
     fn inspection_preflight_accounts_for_escaped_legacy_names_before_cloning() {

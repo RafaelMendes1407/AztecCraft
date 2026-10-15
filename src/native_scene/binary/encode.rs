@@ -40,6 +40,24 @@ fn same_structure(a: &NativeScene, b: &NativeScene) -> bool {
             .all(|(a, b)| same_node_structure(a, b))
 }
 
+fn check_appearance_metadata(
+    expected: &NativeScene,
+    actual: &NativeScene,
+) -> Result<(), BinaryError> {
+    let expected = expected
+        .source
+        .as_ref()
+        .and_then(|source| source.appearance.as_deref());
+    let actual = actual
+        .source
+        .as_ref()
+        .and_then(|source| source.appearance.as_deref());
+    if expected != actual {
+        return Err(unsupported());
+    }
+    Ok(())
+}
+
 pub fn encode(scene: &NativeScene) -> Result<Vec<u8>, BinaryError> {
     let source = scene
         .source
@@ -47,7 +65,14 @@ pub fn encode(scene: &NativeScene) -> Result<Vec<u8>, BinaryError> {
         .filter(|s| s.format == SourceFormat::Binary)
         .ok_or_else(unsupported)?;
     {
-        let original = super::decode(source.bytes.clone())?;
+        let retained_appearance = source
+            .appearance
+            .as_ref()
+            .map(|appearance| appearance.metadata_bytes())
+            .transpose()
+            .map_err(|error| canonical(error, None))?
+            .unwrap_or(0);
+        let original = decode_with_retained_bytes(source.bytes.clone(), 0, retained_appearance)?;
         if !same_structure(scene, &original) || original.source.as_ref() != Some(source) {
             return Err(unsupported());
         }
@@ -107,10 +132,19 @@ pub fn encode(scene: &NativeScene) -> Result<Vec<u8>, BinaryError> {
     }
     // Reparse while retaining both the live source and the returned output buffer.
     budget.charge(output.len())?;
-    let parsed = decode_with_retained_bytes(Arc::from(output.as_slice()), retained)?;
+    let retained_appearance = source
+        .appearance
+        .as_ref()
+        .map(|appearance| appearance.metadata_bytes())
+        .transpose()
+        .map_err(|error| canonical(error, None))?
+        .unwrap_or(0);
+    let parsed =
+        decode_with_retained_bytes(Arc::from(output.as_slice()), retained, retained_appearance)?;
     if !same_structure(scene, &parsed) {
         return Err(unsupported());
     }
+    check_appearance_metadata(scene, &parsed)?;
     for (node, decoded) in scene.nodes.iter().zip(&parsed.nodes) {
         for field in FIELDS {
             for (component, (value, after)) in node

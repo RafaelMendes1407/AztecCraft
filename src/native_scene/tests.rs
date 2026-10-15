@@ -71,6 +71,7 @@ fn retain(scene: &mut NativeScene, bytes: &[u8], records: Vec<Range<usize>>) {
         format: SourceFormat::Ascii,
         records,
         leaves: Vec::new(),
+        appearance: None,
     });
     scene.validate().unwrap();
 }
@@ -252,6 +253,7 @@ fn retained_ranges_and_exhausted_allocators_are_checked() {
         format: SourceFormat::Ascii,
         records: vec![0..3, 2..4],
         leaves: Vec::new(),
+        appearance: None,
     });
     assert_eq!(scene.validate(), Err(NativeError::InvalidRetention));
     scene.source = Some(SourceRetention {
@@ -259,6 +261,7 @@ fn retained_ranges_and_exhausted_allocators_are_checked() {
         format: SourceFormat::Ascii,
         records: std::iter::once(0..5).collect(),
         leaves: Vec::new(),
+        appearance: None,
     });
     assert_eq!(scene.validate(), Err(NativeError::InvalidRetention));
     scene.source = None;
@@ -822,6 +825,7 @@ fn binary_candidate_finishes_once_preserving_source_and_runtime_identity() {
         format: SourceFormat::Binary,
         records: std::iter::once(0..24).collect(),
         leaves: Vec::new(),
+        appearance: None,
     });
     let bytes = candidate.source.as_ref().unwrap().bytes.clone();
     candidate.next_id = u64::MAX;

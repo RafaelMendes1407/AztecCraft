@@ -62,6 +62,7 @@ fn binary(fields: &[(TransformField, [f64; 3])]) -> (NativeScene, NodeId) {
         format: SourceFormat::Binary,
         records,
         leaves,
+        appearance: None,
     });
     scene.validate().unwrap();
     (scene, id)

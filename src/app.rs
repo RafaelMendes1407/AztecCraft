@@ -327,19 +327,26 @@ impl Editor {
                 .scene()
                 .shapes()
                 .iter()
-                .map(|shape| ShapeInspection {
-                    id: shape.id().to_decimal(),
-                    name: shape.name().into(),
-                    points: shape.mesh().point_count(),
-                    edges: shape.mesh().edges().len(),
-                    faces: shape.mesh().faces().len(),
-                    smoothing_known: shape
-                        .mesh()
-                        .edges()
-                        .iter()
-                        .all(|edge| edge.smooth().is_some()),
+                .map(|shape| {
+                    Ok(ShapeInspection {
+                        id: shape.id().to_decimal(),
+                        name: shape.name().into(),
+                        points: shape.mesh().point_count(),
+                        edges: shape.mesh().edges().len(),
+                        faces: shape.mesh().faces().len(),
+                        smoothing_known: shape
+                            .mesh()
+                            .edges()
+                            .iter()
+                            .all(|edge| edge.smooth().is_some()),
+                        source_appearance: self
+                            .history
+                            .scene()
+                            .shape_appearance_readiness(shape.id())
+                            .map_err(OperationError::Scene)?,
+                    })
                 })
-                .collect(),
+                .collect::<Result<Vec<_>, OperationError>>()?,
             units: UnitsInspection {
                 linear: linear.into(),
                 angular: angular.into(),
@@ -356,6 +363,7 @@ impl Editor {
             depth_complete: gpu_healthy,
             clipping_complete: gpu_healthy,
             appearance_incomplete: self.history.scene().appearance_incomplete(),
+            source_appearance: self.history.scene().appearance_readiness(),
             pending_action: self.files.pending_inspection(),
             selected_node: self.selected.map(NodeId::to_decimal),
             selected_instance_path: self
@@ -939,8 +947,69 @@ impl Editor {
         }
     }
 
+    fn appearance_scope(
+        &self,
+    ) -> Result<
+        (&'static str, azteccraft::native_scene::AppearanceSummary),
+        azteccraft::native_scene::NativeError,
+    > {
+        if let Some(id) = self.selected
+            && let Some(summary) = self.history.scene().transform_appearance_readiness(id)?
+        {
+            return Ok(("Direct shapes", summary));
+        }
+        Ok(("Scene totals", self.history.scene().appearance_readiness()))
+    }
+
+    fn appearance_summary(&self, ui: &mut egui::Ui) {
+        let Ok((scope, summary)) = self.appearance_scope() else {
+            ui.weak("Appearance source state unavailable");
+            return;
+        };
+        ui.label(egui::RichText::new(format!("{scope} ({})", summary.shapes)).small());
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(format!(
+                    "Source bindings: {} checked, {} unavailable, {} unbound",
+                    summary.checked_source_bindings, summary.unavailable, summary.unbound
+                ))
+                .small(),
+            )
+            .wrap(),
+        );
+        let issues = summary.issues;
+        let reasons = [
+            (issues.missing_membership, "missing membership"),
+            (issues.overlapping_membership, "overlapping membership"),
+            (issues.unsupported_shader, "unsupported shader"),
+            (issues.unsupported_graph, "unsupported graph"),
+            (issues.ambiguous_instance, "ambiguous instance"),
+            (issues.unsupported_settings, "unsupported settings"),
+            (issues.uv_mismatch, "UV mismatch"),
+            (issues.malformed_data, "malformed data"),
+        ]
+        .into_iter()
+        .filter_map(|(present, label)| present.then_some(label))
+        .collect::<Vec<_>>()
+        .join(", ");
+        if !reasons.is_empty() {
+            ui.add(egui::Label::new(egui::RichText::new(reasons).small()).wrap());
+        }
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(
+                    "Evaluation unavailable; filtering unproved; no color processor.",
+                )
+                .weak()
+                .small(),
+            )
+            .wrap(),
+        );
+    }
+
     fn channels(&mut self, ui: &mut egui::Ui) {
         ui.label(RichText::new("Channel Box").strong());
+        self.appearance_summary(ui);
         ui.separator();
         let Some(id) = self.selected else {
             ui.weak("Select an object to edit its channels.");
@@ -1230,6 +1299,63 @@ fn channel_edit_id(index: usize) -> egui::Id {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn channel_box_appearance_summary_precedes_controls_and_preserves_human_state() {
+        for width in [240.0, 420.0] {
+            let context = egui::Context::default();
+            let mut editor = Editor::default();
+            editor.create(Primitive::Cube);
+            editor.name = "pending human draft".into();
+            context.memory_mut(|memory| memory.request_focus(name_edit_id()));
+            let scene = editor.history.scene().clone();
+            let selected = editor.selected;
+            let path = editor.selected_path.clone();
+            let token = editor.scene_token;
+            let mut output = None;
+            for _ in 0..2 {
+                let input = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(width, 720.0),
+                    )),
+                    ..Default::default()
+                };
+                let mut frame = context.run_ui(input, |ui| editor.channels(ui));
+                frame.textures_delta.clear();
+                output = Some(frame);
+            }
+            let output = output.unwrap();
+            let labels: Vec<_> = output
+                .shapes
+                .iter()
+                .filter_map(|shape| match &shape.shape {
+                    egui::Shape::Text(text) => Some((text.galley.job.text.as_str(), text.pos.y)),
+                    _ => None,
+                })
+                .collect();
+            let summary = labels
+                .iter()
+                .find(|(text, _)| *text == "Direct shapes (1)")
+                .unwrap();
+            let controls = labels
+                .iter()
+                .find(|(text, _)| *text == "Object name")
+                .unwrap();
+            assert!(summary.1 < controls.1);
+            assert!(
+                labels
+                    .iter()
+                    .any(|(text, _)| text.contains("Evaluation unavailable"))
+            );
+            assert_eq!(editor.history.scene(), &scene);
+            assert_eq!(editor.selected, selected);
+            assert_eq!(editor.selected_path, path);
+            assert_eq!(editor.scene_token, token);
+            assert_eq!(editor.name, "pending human draft");
+            assert!(context.memory(|memory| memory.has_focus(name_edit_id())));
+        }
+    }
 
     #[test]
     fn camera_nonfinite_operations_and_native_draft_failure_preserve_their_baselines() {

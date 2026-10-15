@@ -76,6 +76,7 @@ pub(super) struct SourceRetention {
     pub(super) format: SourceFormat,
     pub(super) records: Vec<Range<usize>>,
     pub(super) leaves: Vec<SourceLeaf>,
+    pub(super) appearance: Option<Arc<super::appearance::SourceAppearance>>,
 }
 
 impl fmt::Debug for SourceRetention {
@@ -100,6 +101,7 @@ impl SourceRetention {
         }
         if end != self.bytes.len()
             || (self.format == SourceFormat::Ascii && !self.leaves.is_empty())
+            || (self.format != SourceFormat::Binary && self.appearance.is_some())
         {
             return Err(NativeError::InvalidRetention);
         }

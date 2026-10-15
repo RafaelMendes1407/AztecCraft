@@ -17,14 +17,88 @@ mod custom;
 mod effects;
 mod geometry;
 
-struct Binding {
-    record: usize,
-    group: usize,
-    id: NativeId,
+pub(super) struct Binding {
+    pub(super) record: usize,
+    pub(super) group: usize,
+    pub(super) id: NativeId,
     transform: Option<usize>,
-    mesh: Option<usize>,
+    pub(super) mesh: Option<usize>,
     fields: [Option<usize>; 5],
     visible: bool,
+}
+
+pub(super) struct Owners {
+    indices: Vec<usize>,
+}
+
+impl Owners {
+    fn name<'a>(facts: &'a WireFacts<'_>, index: usize) -> &'a [u8] {
+        let Data::Create(create) = &facts.records[index].data else {
+            unreachable!()
+        };
+        let name = &facts.container.source()[create.name.clone()];
+        name.strip_prefix(b":").unwrap_or(name)
+    }
+
+    fn absolute_name(name: &[u8], offset: usize) -> Result<&[u8], BinaryError> {
+        let name = name.strip_prefix(b":").unwrap_or(name);
+        if name.split(|byte| *byte == b':').any(|part| part.is_empty()) || name.contains(&b'|') {
+            return Err(fail(ErrorKind::Unsupported, offset));
+        }
+        Ok(name)
+    }
+
+    fn new(facts: &WireFacts<'_>, budget: &mut Budget) -> Result<Self, BinaryError> {
+        let count = facts
+            .records
+            .iter()
+            .filter(|record| matches!(record.data, Data::Create(_)))
+            .count();
+        let mut indices = budget.vector(count)?;
+        for (index, record) in facts.records.iter().enumerate() {
+            if let Data::Create(create) = &record.data {
+                Self::absolute_name(
+                    &facts.container.source()[create.name.clone()],
+                    create.name.start,
+                )?;
+                indices.push(index);
+            }
+        }
+        indices.sort_unstable_by(|a, b| Self::name(facts, *a).cmp(Self::name(facts, *b)));
+        if indices
+            .windows(2)
+            .any(|pair| Self::name(facts, pair[0]) == Self::name(facts, pair[1]))
+        {
+            return Err(fail(ErrorKind::Unsupported, 0));
+        }
+        Ok(Self { indices })
+    }
+
+    pub(super) fn resolve(
+        &self,
+        facts: &WireFacts<'_>,
+        range: &Range<usize>,
+    ) -> Result<(Option<usize>, Range<usize>), BinaryError> {
+        let endpoint = &facts.container.source()[range.clone()];
+        let dot = endpoint
+            .iter()
+            .position(|byte| *byte == b'.')
+            .ok_or_else(|| fail(ErrorKind::Unsupported, range.start))?;
+        let raw_owner = &endpoint[..dot];
+        let owner = Self::absolute_name(raw_owner, range.start)?;
+        if owner.is_empty() || dot + 1 == endpoint.len() {
+            return Err(fail(ErrorKind::Unsupported, range.start));
+        }
+        let index = self
+            .indices
+            .binary_search_by(|index| Self::name(facts, *index).cmp(owner))
+            .ok()
+            .map(|index| self.indices[index]);
+        if index.is_none() && !raw_owner.starts_with(b":") {
+            return Err(fail(ErrorKind::Unsupported, range.start));
+        }
+        Ok((index, range.start + dot + 1..range.end))
+    }
 }
 
 const FIELDS: [TransformField; 5] = [
@@ -61,7 +135,7 @@ fn owner_index(bindings: &[Binding], group: usize) -> Option<usize> {
         .ok()
 }
 
-fn children(
+pub(super) fn children(
     container: &Container,
     group: usize,
 ) -> impl Iterator<Item = &crate::maya_binary::container::Chunk> {
@@ -155,6 +229,7 @@ pub(super) fn construct(
     container: &Container,
     facts: &WireFacts<'_>,
     retained_bytes: usize,
+    retained_appearance_bytes: usize,
 ) -> Result<NativeScene, BinaryError> {
     let initial = container
         .source()
@@ -162,6 +237,7 @@ pub(super) fn construct(
         .checked_add(container.metadata_bytes().ok_or_else(resource)?)
         .and_then(|n| n.checked_add(facts.metadata_bytes().ok()?))
         .and_then(|n| n.checked_add(retained_bytes))
+        .and_then(|n| n.checked_add(retained_appearance_bytes))
         .ok_or_else(resource)?;
     let mut budget = Budget::new(initial)?;
     let count = facts
@@ -324,7 +400,8 @@ pub(super) fn construct(
             }
         })
         .sum();
-    counts.offsets = effects::inspect(container, facts, &bindings, &names, &mut budget)?;
+    let owners = Owners::new(facts, &mut budget)?;
+    counts.offsets = effects::inspect(container, facts, &bindings, &names, &owners, &mut budget)?;
     counts.admit_work()?;
     let scratch = preflight_candidate(
         &budget,
@@ -350,6 +427,7 @@ pub(super) fn construct(
         format: SourceFormat::Binary,
         records: budget.vector(counts.atoms)?,
         leaves: budget.vector(counts.leaves)?,
+        appearance: None,
     };
     for chunk in container.chunks() {
         if chunk.form().is_some() {
@@ -461,6 +539,15 @@ pub(super) fn construct(
             });
         }
     }
+    source.appearance = Some(super::appearance::bind(
+        container,
+        facts,
+        &bindings,
+        &owners,
+        &scene,
+        &mut budget,
+        retained_appearance_bytes,
+    )?);
     scene.source = Some(source);
     NativeScene::from_binary_candidate(scene).map_err(|error| canonical(error, None))
 }

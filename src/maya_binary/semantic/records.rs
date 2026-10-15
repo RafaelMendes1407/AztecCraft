@@ -61,7 +61,6 @@ pub(crate) fn decode_double(cursor: &mut Cursor<'_>, triple: bool) -> Result<Dou
 
 #[derive(Debug)]
 pub(crate) struct Connection {
-    #[cfg(test)]
     pub mode: u8,
     pub source: Span,
     pub destination: Span,
@@ -76,7 +75,6 @@ pub(crate) fn decode_connection(cursor: &mut Cursor<'_>) -> Result<Connection, B
     let source = cursor.string()?;
     let destination = cursor.string()?;
     Ok(Connection {
-        #[cfg(test)]
         mode,
         source,
         destination,
