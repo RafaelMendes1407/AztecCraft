@@ -734,6 +734,8 @@ fn every_shape_contributes_ink() {
 /// deliberate gaps leave it below 1, an overlap pushes it above at every size and scale.
 #[test]
 fn regions_never_sum_above_full_coverage() {
+    // Calibrated to SIZES, SCALES and integer origins; at 1x with fractional origins the
+    // 0.6-unit gaps' feathers overlap (up to ~1.09), so re-measure before widening the grid.
     const SUM_LIMIT: f32 = 1.02;
     for &icon in ALL {
         for size in SIZES {
