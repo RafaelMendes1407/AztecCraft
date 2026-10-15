@@ -1197,7 +1197,9 @@ impl Editor {
     fn cancel_on_escape(&mut self, ctx: &egui::Context) {
         // egui clears text focus before this pass, so cancellation cannot rely on has_focus.
         if ctx.input(|i| i.key_pressed(Key::Escape)) {
-            if let Err(error) = self.cancel_move() {
+            let cancelled = self.cancel_move();
+            self.consume_pointer_sequence();
+            if let Err(error) = cancelled {
                 self.status = error.to_string();
                 self.error = true;
                 return;

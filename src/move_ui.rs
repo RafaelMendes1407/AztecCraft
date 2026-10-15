@@ -47,17 +47,33 @@ impl Editor {
         })
     }
 
-    pub(super) fn cancel_move(&mut self) -> Result<(), OperationError> {
-        if self.history.active_move().is_some() {
+    // Returns whether a Move was actually cancelled. Only then is the current pointer sequence
+    // consumed; an idle cancel must not swallow the next frame's input.
+    pub(super) fn cancel_move(&mut self) -> Result<bool, OperationError> {
+        let cancelled = self.history.active_move().is_some() || self.native_move.is_some();
+        let result = if self.history.active_move().is_some() {
             self.history
                 .cancel_active_move()
-                .map_err(OperationError::Move)?;
+                .map(|_| ())
+                .map_err(OperationError::Move)
+        } else {
+            Ok(())
+        };
+        self.native_move = None;
+        if cancelled {
+            self.move_consumed_frame = true;
+            self.move_suppress_primary = true;
+        }
+        result?;
+        if cancelled {
             self.sync_fields();
         }
-        self.native_move = None;
+        Ok(cancelled)
+    }
+
+    pub(super) fn consume_pointer_sequence(&mut self) {
         self.move_consumed_frame = true;
         self.move_suppress_primary = true;
-        Ok(())
     }
 
     pub(super) fn guard_move_dispatch(
@@ -75,7 +91,13 @@ impl Editor {
                     | Operation::RequestClose
             )
         {
-            return self.cancel_move();
+            let tool_change =
+                matches!(operation, Operation::SetActiveTool(tool) if *tool != self.active_tool);
+            let cancelled = self.cancel_move()?;
+            if tool_change && !cancelled {
+                self.consume_pointer_sequence();
+            }
+            return Ok(());
         }
         if self.history.active_move().is_none() {
             return Ok(());

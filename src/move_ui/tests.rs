@@ -1124,6 +1124,35 @@ fn idle_escape_or_tool_activation_consumes_same_frame_axis_press_and_terminal_re
 }
 
 #[test]
+fn idle_cancels_from_select_new_scene_and_tool_changes_do_not_swallow_the_next_press() {
+    let (mut editor, context, rect) = setup(1.0);
+    let id = editor.selected.unwrap();
+    assert!(!editor.cancel_move().unwrap());
+    assert!(!editor.move_consumed_frame && !editor.move_suppress_primary);
+    editor.native_operation(Operation::Select {
+        node: Some(id),
+        instance_path: Some(editor.selected_path[..editor.selected_path.len() - 1].to_vec()),
+    });
+    assert!(!editor.move_consumed_frame && !editor.move_suppress_primary);
+    press_x(&mut editor, &context, rect, 1.0);
+    assert!(editor.cancel_move().unwrap());
+    assert!(editor.move_consumed_frame && editor.move_suppress_primary);
+    frame(
+        &mut editor,
+        &context,
+        raw(
+            egui::vec2(1440.0, 900.0),
+            Pos2::ZERO,
+            1.0,
+            button(rect.center(), false),
+        ),
+    );
+    assert!(!editor.move_suppress_primary);
+    editor.native_operation(Operation::NewScene);
+    assert!(!editor.move_consumed_frame && !editor.move_suppress_primary);
+}
+
+#[test]
 fn hover_and_active_painter_states_use_the_same_actual_axis_hit() {
     let (mut editor, context, rect) = setup(1.0);
     let shaft_color = |output: &egui::FullOutput| {
