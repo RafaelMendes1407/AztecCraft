@@ -67,13 +67,19 @@ enum State {
     TextFocus,
     NativeInputPending,
     StaleToken,
+    StaleLocalMove,
+    StaleRemoteMove,
+    StaleClosing,
+    StaleModal,
+    StaleNameDraft,
+    StaleNativeInput,
     ReadOnlyAscii,
     BinaryDirty,
     NoInstall,
     NoInstallModal,
 }
 
-const STATES: [State; 15] = [
+const STATES: [State; 21] = [
     State::Idle,
     State::Closing,
     State::Modal,
@@ -85,6 +91,12 @@ const STATES: [State; 15] = [
     State::TextFocus,
     State::NativeInputPending,
     State::StaleToken,
+    State::StaleLocalMove,
+    State::StaleRemoteMove,
+    State::StaleClosing,
+    State::StaleModal,
+    State::StaleNameDraft,
+    State::StaleNativeInput,
     State::ReadOnlyAscii,
     State::BinaryDirty,
     State::NoInstall,
@@ -105,6 +117,12 @@ impl State {
             Self::TextFocus => "text_focus",
             Self::NativeInputPending => "native_input_pending",
             Self::StaleToken => "stale_token",
+            Self::StaleLocalMove => "stale_token+local_move",
+            Self::StaleRemoteMove => "stale_token+remote_move",
+            Self::StaleClosing => "stale_token+closing",
+            Self::StaleModal => "stale_token+modal",
+            Self::StaleNameDraft => "stale_token+name_draft",
+            Self::StaleNativeInput => "stale_token+native_input_pending",
             Self::ReadOnlyAscii => "read_only_ascii",
             Self::BinaryDirty => "binary_dirty",
             Self::NoInstall => "no_install",
@@ -112,12 +130,23 @@ impl State {
         }
     }
 
-    fn reachable(self, pipeline: Pipeline) -> bool {
-        !(self == Self::StaleToken && pipeline == Pipeline::Native)
+    /// The underlying state for the stale-token combinations, which test that the token check
+    /// runs before every other remote guard.
+    fn stale_over(self) -> Option<State> {
+        match self {
+            Self::StaleToken => Some(Self::Idle),
+            Self::StaleLocalMove => Some(Self::LocalMove),
+            Self::StaleRemoteMove => Some(Self::RemoteMove),
+            Self::StaleClosing => Some(Self::Closing),
+            Self::StaleModal => Some(Self::Modal),
+            Self::StaleNameDraft => Some(Self::NameDraft),
+            Self::StaleNativeInput => Some(Self::NativeInputPending),
+            _ => None,
+        }
     }
 
-    fn install_only(self) -> bool {
-        matches!(self, Self::NoInstall | Self::NoInstallModal)
+    fn reachable(self, pipeline: Pipeline) -> bool {
+        !(self.stale_over().is_some() && pipeline == Pipeline::Native)
     }
 }
 
@@ -126,12 +155,16 @@ impl State {
 enum Pre {
     None,
     FaceMode,
+    /// Adds a second node with different channels, reselects the first and enters Face mode.
+    SecondNodeFaceMode,
 }
 
 struct Sample {
     label: &'static str,
     pre: Pre,
     install_probe: bool,
+    /// Restricts the sample to these states; `None` means every reachable state.
+    only: Option<&'static [State]>,
     operation: Operation,
 }
 
@@ -140,6 +173,7 @@ fn sample(label: &'static str, operation: Operation) -> Sample {
         label,
         pre: Pre::None,
         install_probe: false,
+        only: None,
         operation,
     }
 }
@@ -157,6 +191,8 @@ struct Targets {
     node: azteccraft::scene::NodeId,
     path: Vec<NativeId>,
     shape: NativeId,
+    /// Second node and its shape when the scene has one; otherwise the first node's.
+    other: (azteccraft::scene::NodeId, Vec<NativeId>, NativeId),
     move_id: MoveId,
     pending_id: Uuid,
     ascii: std::path::PathBuf,
@@ -168,6 +204,18 @@ impl Targets {
         TransformTarget {
             node: self.node,
             path: self.path.clone(),
+        }
+    }
+
+    fn other_face(&self) -> FaceTarget {
+        let (node, path, shape) = self.other.clone();
+        let mut path = path;
+        path.push(shape);
+        FaceTarget {
+            transform: node,
+            shape,
+            path,
+            face_index: 0,
         }
     }
 
@@ -193,10 +241,15 @@ fn targets(rig: &Rig) -> Targets {
         .map(|shape| shape.id())
         .or_else(|| scene.curves().first().map(|curve| curve.id()))
         .expect("every state has a shape or curve");
+    let other = match (scene.nodes().get(1), scene.shapes().get(1)) {
+        (Some(node), Some(shape)) => (node.id(), vec![node.transform_id()], shape.id()),
+        _ => (node, editor.selected_path.clone(), shape),
+    };
     Targets {
         node,
         path: editor.selected_path.clone(),
         shape,
+        other,
         move_id: editor
             .history
             .active_move()
@@ -278,6 +331,12 @@ fn pending_confirmation(editor: &mut Editor, operation: Operation) {
 }
 
 fn build(state: State) -> Rig {
+    if let Some(inner) = state.stale_over() {
+        return Rig {
+            token: Some(Uuid::nil()),
+            ..build(inner)
+        };
+    }
     let directory = tempfile::tempdir().unwrap();
     std::fs::write(directory.path().join("curve.ma"), ascii_fixture::specimen()).unwrap();
     let context = egui::Context::default();
@@ -285,7 +344,7 @@ fn build(state: State) -> Rig {
         State::MaterialDraft => material_editor(),
         _ => cube_editor(),
     };
-    let mut token = None;
+    let token = None;
     let mut may_install = true;
     match state {
         State::Idle => {}
@@ -342,7 +401,13 @@ fn build(state: State) -> Rig {
             context.memory_mut(|memory| memory.request_focus(name_edit_id()));
         }
         State::NativeInputPending => editor.native_input_pending = true,
-        State::StaleToken => token = Some(Uuid::nil()),
+        State::StaleToken
+        | State::StaleLocalMove
+        | State::StaleRemoteMove
+        | State::StaleClosing
+        | State::StaleModal
+        | State::StaleNameDraft
+        | State::StaleNativeInput => unreachable!("built from the underlying state"),
         State::ReadOnlyAscii => {
             editor = Editor::default();
             editor
@@ -480,13 +545,25 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
                 Operation::SetActiveTool(ActiveTool::Select),
             ),
         ],
-        Operation::BeginMove { .. } => vec![sample(
-            "begin_move",
-            Operation::BeginMove {
-                target: t.transform_target(),
-                axis: WorldAxis::X,
+        Operation::BeginMove { .. } => vec![
+            sample(
+                "begin_move",
+                Operation::BeginMove {
+                    target: t.transform_target(),
+                    axis: WorldAxis::X,
+                },
+            ),
+            Sample {
+                pre: Pre::FaceMode,
+                ..sample(
+                    "begin_move(face_mode)",
+                    Operation::BeginMove {
+                        target: t.transform_target(),
+                        axis: WorldAxis::X,
+                    },
+                )
             },
-        )],
+        ],
         Operation::UpdateMove { .. } => vec![sample(
             "update_move",
             Operation::UpdateMove {
@@ -556,6 +633,16 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
                     "select_face(face_mode)",
                     Operation::SelectFace {
                         target: Some(t.face()),
+                    },
+                )
+            },
+            Sample {
+                pre: Pre::SecondNodeFaceMode,
+                only: Some(&[State::Idle]),
+                ..sample(
+                    "select_face(second_node)",
+                    Operation::SelectFace {
+                        target: Some(t.other_face()),
                     },
                 )
             },
@@ -645,6 +732,16 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
                 },
             ),
             sample(
+                "edit_node(empty_unknown_node)",
+                Operation::EditNode {
+                    id: azteccraft::scene::NodeId::from_decimal("999999").unwrap(),
+                    name: None,
+                    translation: [None; 3],
+                    rotation_degrees: [None; 3],
+                    scale: [None; 3],
+                },
+            ),
+            sample(
                 "edit_node(empty)",
                 Operation::EditNode {
                     id: t.node,
@@ -662,7 +759,13 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
                 distance: 0.5,
             },
         )],
-        Operation::Delete(_) => vec![sample("delete", Operation::Delete(t.node))],
+        Operation::Delete(_) => vec![
+            sample("delete", Operation::Delete(t.node)),
+            Sample {
+                pre: Pre::FaceMode,
+                ..sample("delete(face_mode)", Operation::Delete(t.node))
+            },
+        ],
         Operation::Undo => vec![sample("undo", Operation::Undo)],
         Operation::Redo => vec![sample("redo", Operation::Redo)],
         Operation::FrameSelected => vec![sample("frame_selected", Operation::FrameSelected)],
@@ -797,16 +900,51 @@ fn describe(result: &Result<OperationReply, OperationError>, roots: &[&std::path
     }
 }
 
+fn add_second_node(editor: &mut Editor) {
+    let first = editor.selected.unwrap();
+    let first_path = editor.selected_path.clone();
+    editor
+        .apply_operation(Operation::Create {
+            primitive: Primitive::Plane,
+            name: None,
+        })
+        .unwrap();
+    let plane = editor.selected.unwrap();
+    editor
+        .apply_operation(Operation::SetTransform {
+            id: plane,
+            transform: TransformInput {
+                translation: [4.0, 5.0, 6.0],
+                rotation_degrees: [0.0; 3],
+                scale: [2.0; 3],
+            },
+        })
+        .unwrap();
+    editor
+        .apply_operation(Operation::Select {
+            node: Some(first),
+            instance_path: Some(first_path),
+        })
+        .unwrap();
+}
+
 fn run_cell(state: State, pipeline: Pipeline, index: usize) -> (String, String) {
     let mut rig = build(state);
     let roots = [rig.directory.path()];
     let roots: Vec<std::path::PathBuf> = roots.iter().map(|path| path.to_path_buf()).collect();
     let root_refs: Vec<&std::path::Path> = roots.iter().map(|path| path.as_path()).collect();
+    let pre = samples(&rig).swap_remove(index).pre;
+    match pre {
+        Pre::None => {}
+        Pre::FaceMode => rig.editor.selection_mode = SelectionMode::Face,
+        Pre::SecondNodeFaceMode => {
+            add_second_node(&mut rig.editor);
+            rig.editor.selection_mode = SelectionMode::Face;
+        }
+    }
+    // Rebuilt after the pre-step so targets can name nodes it created.
     let mut chosen = samples(&rig).swap_remove(index);
     let label = chosen.label;
-    if matches!(chosen.pre, Pre::FaceMode) {
-        rig.editor.selection_mode = SelectionMode::Face;
-    }
     let before = observe(&rig.editor, &root_refs);
     let may_install = rig.may_install;
     let operation = std::mem::replace(&mut chosen.operation, Operation::Inspect);
@@ -882,12 +1020,23 @@ fn baseline_text(state: State) -> String {
         .join("\n")
 }
 
-fn matrix() -> (String, usize) {
+/// `file_writing` selects the cells that run the native writer (Save, Save As, Resolve(save)),
+/// which is supported on Unix only; every other cell is checked on all platforms.
+fn matrix(file_writing: bool) -> (String, usize) {
     let mut text = String::new();
     text.push_str(
-        "# Guard matrix (generated by guard_matrix_tests.rs; regenerate with UPDATE_SNAPSHOTS=1)\n\
+        &"# Guard matrix (generated by guard_matrix_tests.rs; regenerate with UPDATE_SNAPSHOTS=1)\n\
+         # section: {}\n\
          # cell: operation => result | effects relative to the state's baseline\n\
-         # native = apply_operation_guarded(Native), remote = remote_operation_guarded\n",
+         # native = apply_operation_guarded(Native), remote = remote_operation_guarded\n"
+            .replace(
+                "{}",
+                if file_writing {
+                    "cells that write files (Unix only)"
+                } else {
+                    "all other cells (every platform)"
+                },
+            ),
     );
     let mut cells = 0;
     for state in STATES {
@@ -900,10 +1049,16 @@ fn matrix() -> (String, usize) {
             let selected: Vec<usize> = all
                 .iter()
                 .enumerate()
-                .filter(|(_, sample)| !state.install_only() || sample.install_probe)
+                .filter(|(_, sample)| {
+                    sample.install_probe == file_writing
+                        && sample.only.is_none_or(|only| only.contains(&state))
+                })
                 .map(|(index, _)| index)
                 .collect();
             drop(rig);
+            if selected.is_empty() {
+                continue;
+            }
             write!(
                 text,
                 "\n## {} / {}\n  baseline:\n{}\n",
@@ -925,16 +1080,45 @@ fn matrix() -> (String, usize) {
 
 #[test]
 fn guard_matrix_matches_committed_snapshot() {
-    // Save cells depend on the native writer, which is supported on Unix only.
-    if !cfg!(unix) {
-        return;
-    }
-    let (text, cells) = matrix();
+    let (text, cells) = matrix(false);
     assert!(cells > 500, "matrix unexpectedly small: {cells}");
     super::snapshots::assert_snapshot("guard_matrix.txt", &text);
 }
 
 #[test]
+fn guard_matrix_file_writing_cells_match_committed_snapshot() {
+    // Save cells depend on the native writer, which is supported on Unix only.
+    if !cfg!(unix) {
+        return;
+    }
+    let (text, cells) = matrix(true);
+    assert!(
+        cells > 10,
+        "file-writing matrix unexpectedly small: {cells}"
+    );
+    super::snapshots::assert_snapshot("guard_matrix_file_writing_unix.txt", &text);
+}
+
+#[test]
 fn guard_matrix_is_deterministic() {
-    assert_eq!(matrix().0, matrix().0);
+    for file_writing in [false, true] {
+        assert_eq!(matrix(file_writing).0, matrix(file_writing).0);
+    }
+}
+
+/// Native UI actions go through `native_operation`, which refuses Face-mode Delete above the
+/// pipeline; the matrix cannot show that because it calls the pipeline directly.
+#[test]
+fn native_operation_refuses_face_mode_delete_before_the_pipeline() {
+    let mut editor = cube_editor();
+    let id = editor.selected.unwrap();
+    editor.selection_mode = SelectionMode::Face;
+    let scene = editor.history.scene().clone();
+    editor.native_operation(Operation::Delete(id));
+    assert_eq!(editor.history.scene(), &scene);
+    assert!(editor.error);
+    assert_eq!(
+        editor.status,
+        "Face deletion is unsupported; switch to Object selection"
+    );
 }
