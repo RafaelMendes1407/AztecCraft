@@ -131,6 +131,20 @@ available. This field does not mean the backend is initialized or healthy, that
 GPU submission/framebuffer rendering succeeded, or that Maya fidelity is proven.
 The separate viewport health fields retain their existing meaning.
 
+Scoped local tests exercised the genuine legacy 2016 reference through the
+official SDK's actual Editor Open/inspection/selection/framing path, including
+strict catalog discovery and read-only edit refusals. Synthetic tests cover
+dirty failed-Open baselines, input/token/focus/modal/close guards and the actual
+Editor GPU callback. The Save/material-parent union also exercises ASCII Save
+and Save As refusals and Save acknowledgements before queued ASCII source
+revalidation. A separate earlier diagnostic native preview observed genuine
+Open, Outliner selection, visible curve geometry and disabled controls; it did
+not exercise a native text commit. Earlier matrix and isolated mutation evidence
+do not verify every later source composition. The twenty-four-tool count describes
+the catalog at the Face-selection integration parent; curves add no tools, and a later
+integration parent must use its own count. [Development notes](development.md#read-only-static-cubic-maya-ascii)
+record explicit fixture identity and consumer commands.
+
 `edit_node` uses the Channel Box's sparse native History command. Each supplied
 channel array has exactly three finite numbers or nulls. An omitted array or a
 null component leaves that channel untouched; a null whole array is invalid.
