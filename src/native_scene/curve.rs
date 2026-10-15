@@ -3,7 +3,8 @@ use glam::DVec3;
 use std::{fmt, ops::Range};
 use uuid::Uuid;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CurveForm {
     Open,
 }

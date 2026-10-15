@@ -904,14 +904,24 @@ impl NativeScene {
         Ok(())
     }
     fn authoring_preflight(&self) -> Result<(), NativeError> {
-        if self
-            .source
-            .as_ref()
-            .is_some_and(|source| source.format == SourceFormat::Ascii)
-        {
-            return Err(NativeError::ReadOnlyFormat);
+        if let Some(reason) = self.authoring_read_only_reason() {
+            return Err(reason);
         }
         Ok(())
+    }
+    pub fn authoring_read_only_reason(&self) -> Option<NativeError> {
+        self.source
+            .as_ref()
+            .is_some_and(|source| source.format == SourceFormat::Ascii)
+            .then_some(NativeError::ReadOnlyFormat)
+    }
+    pub fn retained_source_bytes(&self) -> usize {
+        self.source.as_ref().map_or(0, |source| source.bytes.len())
+    }
+    pub fn retained_source_records(&self) -> usize {
+        self.source
+            .as_ref()
+            .map_or(0, |source| source.records.len())
     }
     fn check_effects(&self, target: NativeId) -> Result<(), NativeError> {
         let mut descendants = vec![target];

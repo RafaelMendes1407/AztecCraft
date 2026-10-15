@@ -8,7 +8,7 @@
 - [Development](development.md): pinned Rust toolchain, local checks and scene conventions.
 - [Build checks and packaging](builds.md): prepared CI, coverage/security checks, local hooks, packaging boundaries and Craft workflow references.
 - [Native verification](native-verification.md): recorded macOS packaged-debug editing/file workflow, evidence method and remaining platform/reference checks.
-- [Native editor MCP](mcp.md): optional new-window stdio tools, scene tokens, human-edit guards, protocol limits, shutdown and capability synchronization.
+- [Native editor MCP](mcp.md): optional stdio tools, read-only ASCII curve metadata/Open, scene tokens, human-edit guards, protocol limits and capability synchronization.
 - [Native MCP verification](mcp-native-verification.md): scoped macOS window/protocol evidence, combined icons and selection, and unresolved idle responsiveness.
 - [Contribution guidance](../CONTRIBUTING.md): local workflow, review evidence and publication restrictions.
 - [Known limitations](../known-issues.md): missing reference/denominator, desktop verification and compatibility evidence.
