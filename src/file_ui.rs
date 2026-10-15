@@ -1,11 +1,16 @@
 use super::Editor;
 #[cfg(any(test, feature = "mcp"))]
+use crate::editor_operations::DocumentOrigin;
+#[cfg(any(test, feature = "mcp"))]
 use crate::editor_operations::PendingInspection;
 use crate::editor_operations::{
-    FileActionKind, FileDecision, Operation, OperationError, OperationReply,
+    FileActionKind, FileDecision, Operation, OperationError, OperationReply, PendingActionStatus,
 };
 use azteccraft::{
-    document::{self, NativeDocument, NativeOrigin},
+    document::{
+        self, NativeDocument, NativeOrigin, NativeSaveError, SaveDestination, SaveOutcome,
+        SaveReceipt,
+    },
     history::History,
     native_scene::NativeScene,
     view_scene::ViewScene,
@@ -15,6 +20,11 @@ use eframe::egui::{self, Key};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
+#[cfg(all(test, unix))]
+mod binary_fixture {
+    include!("../tests/support/maya_binary.rs");
+}
+
 #[derive(Default)]
 pub(super) struct FileState {
     path: Option<PathBuf>,
@@ -23,10 +33,18 @@ pub(super) struct FileState {
     pending: Option<PendingAction>,
     close_approved: bool,
     close_sent: bool,
+    uncertain: Option<UncertainSave>,
+}
+struct UncertainSave {
+    scene_token: Uuid,
+    written: NativeScene,
+    receipt: SaveReceipt,
+    cause: NativeSaveError,
 }
 struct PendingAction {
     id: Uuid,
     action: FileAction,
+    source_changed: bool,
 }
 enum FileAction {
     New,
@@ -48,6 +66,28 @@ impl FileAction {
     }
 }
 impl FileState {
+    pub(super) fn save_available(&self) -> bool {
+        self.uncertain.is_some() || self.origin.active_save_available()
+    }
+    pub(super) fn save_as_available(&self) -> bool {
+        self.uncertain.is_some() || self.origin.save_as_available()
+    }
+    #[cfg(any(test, feature = "mcp"))]
+    pub(super) fn reconciliation_required(&self) -> bool {
+        self.uncertain.is_some()
+    }
+    #[cfg(any(test, feature = "mcp"))]
+    pub(super) fn has_file(&self) -> bool {
+        self.path.is_some()
+    }
+    #[cfg(any(test, feature = "mcp"))]
+    pub(super) fn document_origin(&self) -> DocumentOrigin {
+        match self.origin {
+            NativeOrigin::Untitled => DocumentOrigin::Untitled,
+            NativeOrigin::Binary(_) => DocumentOrigin::MayaBinary,
+            NativeOrigin::Legacy(_) => DocumentOrigin::LegacyAztec,
+        }
+    }
     pub(super) fn is_closing(&self) -> bool {
         self.close_approved
     }
@@ -59,6 +99,7 @@ impl FileState {
         self.pending.as_ref().map(|p| PendingInspection {
             id: p.id.to_string(),
             kind: p.action.kind(),
+            source_changed: p.source_changed,
         })
     }
 }
@@ -77,7 +118,81 @@ impl Editor {
         )
     }
     pub(super) fn is_dirty(&self) -> bool {
-        self.history.scene() != &self.files.saved || self.has_draft()
+        self.files.uncertain.is_some()
+            || self.history.scene() != &self.files.saved
+            || self.has_draft()
+    }
+    pub(super) fn save_document(
+        &mut self,
+        destination: SaveDestination<'_>,
+        may_install: &dyn Fn() -> bool,
+    ) -> Result<OperationReply, OperationError> {
+        if !self.commit_pending() {
+            return Err(OperationError::InvalidInput(self.status.clone()));
+        }
+        if let Some(uncertain) = &self.files.uncertain {
+            if uncertain.scene_token != self.scene_token {
+                return Err(OperationError::InvalidInput(
+                    "Save receipt belongs to another document".into(),
+                ));
+            }
+            let (origin, path) = uncertain
+                .receipt
+                .reconcile()
+                .map_err(OperationError::NativeSave)?;
+            self.files.saved = uncertain.written.clone();
+            self.files.origin = origin;
+            self.files.path = Some(path);
+            self.files.uncertain = None;
+            self.status = "Save reconciled".into();
+            self.error = false;
+            return Ok(OperationReply::SaveReconciled {
+                scene_token: self.scene_token.to_string(),
+                dirty: self.is_dirty(),
+                pending_action_status: self.pending_save_status(),
+            });
+        }
+        let scene_token = self.scene_token;
+        let written = self.history.scene().clone();
+        match document::save_native(&self.files.origin, &written, destination, may_install)
+            .map_err(OperationError::NativeSave)?
+        {
+            SaveOutcome::Saved { origin, path } => {
+                self.files.saved = written;
+                self.files.origin = origin;
+                self.files.path = Some(path);
+                self.status = "Scene saved".into();
+                self.error = false;
+                Ok(OperationReply::Saved {
+                    scene_token: scene_token.to_string(),
+                    dirty: self.is_dirty(),
+                    pending_action_status: self.pending_save_status(),
+                })
+            }
+            SaveOutcome::Uncertain { receipt, cause } => {
+                self.files.uncertain = Some(UncertainSave {
+                    scene_token,
+                    written,
+                    receipt,
+                    cause,
+                });
+                self.status = format!("Save installed but requires reconciliation: {cause}");
+                self.error = true;
+                Ok(OperationReply::SaveUncertain {
+                    scene_token: scene_token.to_string(),
+                    dirty: self.is_dirty(),
+                    pending_action_status: self.pending_save_status(),
+                    message: cause.to_string(),
+                })
+            }
+        }
+    }
+    fn pending_save_status(&self) -> PendingActionStatus {
+        match &self.files.pending {
+            None => PendingActionStatus::None,
+            Some(pending) if pending.source_changed => PendingActionStatus::SourceChanged,
+            Some(_) => PendingActionStatus::Retained,
+        }
     }
     fn request_file_action(
         &mut self,
@@ -93,6 +208,7 @@ impl Editor {
             let pending = PendingAction {
                 id: Uuid::new_v4(),
                 action,
+                source_changed: false,
             };
             let reply = OperationReply::PendingConfirmation {
                 scene_token: self.scene_token.to_string(),
@@ -128,6 +244,18 @@ impl Editor {
             .pick_file()
         {
             self.open_path(&path);
+        }
+    }
+    pub(super) fn save_as_dialog(&mut self) {
+        if self.files.is_modal() || !self.files.save_as_available() {
+            return;
+        }
+        if let Some(path) = rfd::FileDialog::new()
+            .set_title("Save Maya binary scene to a new file")
+            .add_filter("Maya binary scene", &["mb"])
+            .save_file()
+        {
+            self.native_operation(Operation::SaveSceneAs { path });
         }
     }
     fn open_path(&mut self, path: &Path) {
@@ -193,6 +321,7 @@ impl Editor {
         self.files.close_approved = false;
         self.files.close_sent = false;
         self.files.path = path;
+        self.files.uncertain = None;
         self.history = History::new(scene);
         self.selected = None;
         self.selected_path.clear();
@@ -204,15 +333,67 @@ impl Editor {
         self.status = "Scene ready".into();
         self.error = false;
     }
+    #[cfg(test)]
     pub(super) fn resolve_file_action(
         &mut self,
         id: Uuid,
         decision: FileDecision,
     ) -> Result<OperationReply, OperationError> {
+        self.resolve_file_action_guarded(id, decision, &|| true)
+    }
+    pub(super) fn resolve_file_action_guarded(
+        &mut self,
+        id: Uuid,
+        decision: FileDecision,
+        may_install: &dyn Fn() -> bool,
+    ) -> Result<OperationReply, OperationError> {
         if self.files.pending.as_ref().is_none_or(|p| p.id != id) {
             return Err(OperationError::StalePendingAction);
         }
-        if matches!(decision, FileDecision::Discard)
+        let mut saved_reply = None;
+        if !matches!(decision, FileDecision::Cancel)
+            && self
+                .files
+                .pending
+                .as_ref()
+                .is_some_and(|p| p.source_changed)
+        {
+            return Err(OperationError::NativeSave(NativeSaveError::SourceChanged));
+        }
+        if matches!(decision, FileDecision::Save) {
+            let mut reply = self.save_document(SaveDestination::Active, may_install)?;
+            if matches!(reply, OperationReply::SaveUncertain { .. }) {
+                return Ok(reply);
+            }
+            if let Some(PendingAction {
+                action: FileAction::Open { document, path, .. },
+                source_changed,
+                ..
+            }) = &mut self.files.pending
+                && document::verify_native_origin(path, &document.origin).is_err()
+            {
+                *source_changed = true;
+            }
+            let pending_status = self.pending_save_status();
+            match &mut reply {
+                OperationReply::Saved {
+                    pending_action_status,
+                    ..
+                }
+                | OperationReply::SaveReconciled {
+                    pending_action_status,
+                    ..
+                } => {
+                    *pending_action_status = pending_status;
+                }
+                _ => {}
+            }
+            if pending_status == PendingActionStatus::SourceChanged || self.is_dirty() {
+                return Ok(reply);
+            }
+            saved_reply = Some(reply);
+        }
+        if matches!(decision, FileDecision::Discard | FileDecision::Save)
             && let Some(PendingAction {
                 action:
                     FileAction::Open {
@@ -225,9 +406,17 @@ impl Editor {
             }) = &mut self.files.pending
             && *framed_aspect != self.aspect
         {
-            let reframed = camera_for_scene(&document.scene, self.aspect)?;
+            let reframed = match camera_for_scene(&document.scene, self.aspect) {
+                Ok(camera) => camera,
+                Err(error) => return saved_reply.map_or_else(|| Err(error), Ok),
+            };
             *camera = reframed;
             *framed_aspect = self.aspect;
+        }
+        if let Some(reply) = saved_reply
+            && !may_install()
+        {
+            return Ok(reply);
         }
         let pending = self
             .files
@@ -238,7 +427,7 @@ impl Editor {
             FileDecision::Cancel => Ok(OperationReply::Cancelled {
                 scene_token: self.scene_token.to_string(),
             }),
-            FileDecision::Discard => self.apply_file_action(pending.action),
+            FileDecision::Discard | FileDecision::Save => self.apply_file_action(pending.action),
         }
     }
     #[cfg(test)]
@@ -290,12 +479,41 @@ impl Editor {
             .then_some(FileDecision::Cancel);
         egui::Modal::new(egui::Id::new("unsaved_scene")).show(ctx, |ui| {
             ui.heading("Discard changes to this scene?");
-            ui.label("Native scene writing is not available yet.");
+            if let Some(uncertain) = &self.files.uncertain {
+                ui.label(format!(
+                    "A destination may already have been written: {}",
+                    uncertain.cause
+                ));
+                ui.label("Discard abandons reconciliation and the in-memory edits.");
+            }
+            if self
+                .files
+                .pending
+                .as_ref()
+                .is_some_and(|pending| pending.source_changed)
+            {
+                ui.label("The queued Open source changed. Cancel and reopen the file.");
+            }
             ui.label("Discarding changes cannot be undone.");
             ui.horizontal(|ui| {
-                ui.add_enabled(false, egui::Button::new("Save As..."))
-                    .on_hover_text("Native Maya writing is not implemented");
-                if ui.button("Discard").clicked() {
+                let source_changed = self
+                    .files
+                    .pending
+                    .as_ref()
+                    .is_some_and(|pending| pending.source_changed);
+                if ui
+                    .add_enabled(
+                        !source_changed && self.files.save_available(),
+                        egui::Button::new("Save"),
+                    )
+                    .clicked()
+                {
+                    decision = Some(FileDecision::Save);
+                }
+                if ui
+                    .add_enabled(!source_changed, egui::Button::new("Discard"))
+                    .clicked()
+                {
                     decision = Some(FileDecision::Discard);
                 }
                 if ui.button("Cancel").clicked() {
@@ -336,6 +554,793 @@ fn camera_for_scene(scene: &NativeScene, aspect: f32) -> Result<Camera, Operatio
 mod tests {
     use super::*;
     use azteccraft::scene::Primitive;
+
+    #[cfg(unix)]
+    fn relocate_completed_stage_once(
+        parent: &Path,
+        moved: &Path,
+        expected: &[u8],
+        relocated: &std::cell::Cell<bool>,
+    ) -> bool {
+        if !relocated.get()
+            && std::fs::read_dir(parent).unwrap().any(|entry| {
+                let entry = entry.unwrap();
+                entry.file_name().to_string_lossy().ends_with(".craft_tmp")
+                    && std::fs::read(entry.path()).ok().as_deref() == Some(expected)
+            })
+        {
+            std::fs::rename(parent, moved).unwrap();
+            relocated.set(true);
+        }
+        true
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn native_save_as_active_save_and_history_use_one_live_document() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("source.mb");
+        let destination = directory.path().join("saved.mb");
+        let original = binary_fixture::specimen();
+        std::fs::write(&source, &original).unwrap();
+        let mut editor = Editor::default();
+        editor
+            .apply_operation(Operation::OpenScene {
+                path: source.clone(),
+            })
+            .unwrap();
+        let token = editor.scene_token;
+        let camera = editor.camera.clone();
+        let id = editor.history.scene().nodes()[0].id();
+        let mut transform = editor
+            .transform_input(editor.history.scene().node(id).unwrap().transform())
+            .unwrap();
+        transform.translation[0] += 1.0;
+        editor
+            .apply_operation(Operation::SetTransform { id, transform })
+            .unwrap();
+        let first = editor.history.scene().clone();
+        assert!(matches!(
+            editor
+                .apply_operation(Operation::SaveSceneAs {
+                    path: destination.clone()
+                })
+                .unwrap(),
+            OperationReply::Saved {
+                dirty: false,
+                pending_action_status: PendingActionStatus::None,
+                ..
+            }
+        ));
+        assert_eq!(editor.scene_token, token);
+        assert_eq!(editor.camera, camera);
+        assert_eq!(editor.history.scene(), &first);
+        assert_eq!(
+            document::load_native(&destination)
+                .unwrap()
+                .scene
+                .node(id)
+                .unwrap()
+                .transform()
+                .translation,
+            transform.translation
+        );
+        transform.translation[0] += 0.5;
+        editor
+            .apply_operation(Operation::SetTransform { id, transform })
+            .unwrap();
+        let second = editor.history.scene().clone();
+        assert!(matches!(
+            editor.apply_operation(Operation::SaveScene).unwrap(),
+            OperationReply::Saved { dirty: false, .. }
+        ));
+        editor.apply_operation(Operation::Undo).unwrap();
+        assert_eq!(editor.history.scene(), &first);
+        assert!(editor.is_dirty());
+        editor.apply_operation(Operation::Redo).unwrap();
+        assert_eq!(editor.history.scene(), &second);
+        assert!(!editor.is_dirty());
+        let bytes = std::fs::read(&destination).unwrap();
+        editor.apply_operation(Operation::SaveScene).unwrap();
+        assert_eq!(std::fs::read(&destination).unwrap(), bytes);
+        assert_eq!(std::fs::read(&source).unwrap(), original);
+        assert_eq!(editor.scene_token, token);
+        assert_eq!(editor.camera, camera);
+        let inspection = editor.inspect(false).unwrap();
+        assert!(inspection.has_file && inspection.save_available && inspection.save_as_available);
+        assert!(!inspection.save_reconciliation_required);
+        assert_eq!(inspection.document_origin, DocumentOrigin::MayaBinary);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn uncertain_save_as_reconciles_original_destination_without_a_second_install() {
+        use std::{cell::Cell, os::unix::fs::MetadataExt};
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("original.mb");
+        let parent = directory.path().join("destination");
+        let moved = directory.path().join("moved");
+        std::fs::create_dir(&parent).unwrap();
+        let destination = parent.join("saved.mb");
+        let original = binary_fixture::specimen();
+        std::fs::write(&source, &original).unwrap();
+        let mut editor = Editor::default();
+        editor
+            .apply_operation(Operation::OpenScene {
+                path: source.clone(),
+            })
+            .unwrap();
+        let token = editor.scene_token;
+        let old_saved = editor.files.saved.clone();
+        let id = editor.history.scene().nodes()[0].id();
+        let mut transform = editor
+            .transform_input(editor.history.scene().node(id).unwrap().transform())
+            .unwrap();
+        transform.translation[0] += 1.0;
+        editor
+            .apply_operation(Operation::SetTransform { id, transform })
+            .unwrap();
+        let first = editor.history.scene().clone();
+        let expected = azteccraft::native_scene::binary::encode(&first).unwrap();
+        let relocated = Cell::new(false);
+        let guard = || relocate_completed_stage_once(&parent, &moved, &expected, &relocated);
+        assert!(matches!(
+            editor
+                .apply_operation_guarded(
+                    Operation::SaveSceneAs {
+                        path: destination.clone()
+                    },
+                    &guard
+                )
+                .unwrap(),
+            OperationReply::SaveUncertain { .. }
+        ));
+        assert!(relocated.get());
+        assert_eq!(editor.files.path.as_ref(), Some(&source));
+        assert_eq!(editor.files.saved, old_saved);
+        assert!(document::verify_native_origin(&source, &editor.files.origin).is_ok());
+        assert_eq!(std::fs::read(&source).unwrap(), original);
+        std::fs::rename(&moved, &parent).unwrap();
+        let inode = std::fs::metadata(&destination).unwrap().ino();
+        transform.translation[0] += 0.5;
+        editor
+            .apply_operation(Operation::SetTransform { id, transform })
+            .unwrap();
+        let second = editor.history.scene().clone();
+        let occupied = parent.join("occupied.mb");
+        std::fs::write(&occupied, b"keep").unwrap();
+        assert!(matches!(
+            editor
+                .apply_operation(Operation::SaveSceneAs {
+                    path: occupied.clone()
+                })
+                .unwrap(),
+            OperationReply::SaveReconciled { dirty: true, .. }
+        ));
+        assert_eq!(
+            editor.files.path.as_ref(),
+            Some(&destination.canonicalize().unwrap())
+        );
+        assert_eq!(editor.files.saved, first);
+        assert_eq!(editor.history.scene(), &second);
+        assert_eq!(editor.scene_token, token);
+        assert!(editor.files.uncertain.is_none() && editor.is_dirty());
+        assert_eq!(std::fs::read(&destination).unwrap(), expected);
+        assert_eq!(std::fs::metadata(&destination).unwrap().ino(), inode);
+        assert_eq!(std::fs::read(&occupied).unwrap(), b"keep");
+        assert_eq!(std::fs::read(&source).unwrap(), original);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dirty_reconciliation_verifies_queued_open_before_returning() {
+        let directory = tempfile::tempdir().unwrap();
+        let parent = directory.path().join("document");
+        let moved = directory.path().join("moved");
+        std::fs::create_dir(&parent).unwrap();
+        let source = parent.join("scene.mb");
+        std::fs::write(&source, binary_fixture::specimen()).unwrap();
+        let mut editor = Editor::default();
+        editor
+            .apply_operation(Operation::OpenScene {
+                path: source.clone(),
+            })
+            .unwrap();
+        let token = editor.scene_token;
+        let id = editor.history.scene().nodes()[0].id();
+        let mut transform = editor
+            .transform_input(editor.history.scene().node(id).unwrap().transform())
+            .unwrap();
+        transform.translation[0] += 1.0;
+        editor
+            .apply_operation(Operation::SetTransform { id, transform })
+            .unwrap();
+        let first = editor.history.scene().clone();
+        let expected = azteccraft::native_scene::binary::encode(&first).unwrap();
+        let relocated = std::cell::Cell::new(false);
+        let guard = || relocate_completed_stage_once(&parent, &moved, &expected, &relocated);
+        assert!(matches!(
+            editor
+                .apply_operation_guarded(Operation::SaveScene, &guard)
+                .unwrap(),
+            OperationReply::SaveUncertain { .. }
+        ));
+        std::fs::rename(&moved, &parent).unwrap();
+        transform.translation[0] += 0.5;
+        editor
+            .apply_operation(Operation::SetTransform { id, transform })
+            .unwrap();
+        let second = editor.history.scene().clone();
+        let candidate = directory.path().join("candidate.aztec");
+        write_legacy_cube(&candidate, 0.0);
+        let OperationReply::PendingConfirmation {
+            pending_action_id, ..
+        } = editor
+            .apply_operation(Operation::OpenScene {
+                path: candidate.clone(),
+            })
+            .unwrap()
+        else {
+            panic!("expected pending Open")
+        };
+        let pending = Uuid::parse_str(&pending_action_id).unwrap();
+        std::fs::write(&candidate, b"changed candidate").unwrap();
+        assert!(matches!(
+            editor
+                .apply_operation(Operation::ResolveFileAction {
+                    pending_id: pending,
+                    decision: FileDecision::Save
+                })
+                .unwrap(),
+            OperationReply::SaveReconciled {
+                dirty: true,
+                pending_action_status: PendingActionStatus::SourceChanged,
+                ..
+            }
+        ));
+        assert_eq!(editor.files.saved, first);
+        assert_eq!(editor.history.scene(), &second);
+        assert_eq!(editor.scene_token, token);
+        assert_eq!(editor.files.pending.as_ref().unwrap().id, pending);
+        assert!(editor.files.pending.as_ref().unwrap().source_changed);
+        assert!(matches!(
+            editor.apply_operation(Operation::ResolveFileAction {
+                pending_id: pending,
+                decision: FileDecision::Discard
+            }),
+            Err(OperationError::NativeSave(NativeSaveError::SourceChanged))
+        ));
+        assert_eq!(editor.history.scene(), &second);
+        assert_eq!(std::fs::read(&source).unwrap(), expected);
+    }
+
+    #[cfg(all(unix, feature = "mcp"))]
+    #[test]
+    fn envelope_guard_cancels_active_after_stage() {
+        check_envelope_install_guard(false, false);
+    }
+
+    #[cfg(all(unix, feature = "mcp"))]
+    #[test]
+    fn envelope_guard_expires_active_after_stage() {
+        check_envelope_install_guard(false, true);
+    }
+
+    #[cfg(all(unix, feature = "mcp"))]
+    #[test]
+    fn envelope_guard_cancels_save_as_after_stage() {
+        check_envelope_install_guard(true, false);
+    }
+
+    #[cfg(all(unix, feature = "mcp"))]
+    #[test]
+    fn envelope_guard_expires_save_as_after_stage() {
+        check_envelope_install_guard(true, true);
+    }
+
+    #[cfg(all(unix, feature = "mcp"))]
+    fn check_envelope_install_guard(save_as: bool, expire: bool) {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+        use std::time::{Duration, Instant};
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("scene.mb");
+        let destination = directory.path().join("saved.mb");
+        let original = binary_fixture::specimen();
+        std::fs::write(&source, &original).unwrap();
+        let mut editor = Editor::default();
+        editor
+            .apply_operation(Operation::OpenScene {
+                path: source.clone(),
+            })
+            .unwrap();
+        let token = editor.scene_token;
+        let saved = editor.files.saved.clone();
+        let id = editor.history.scene().nodes()[0].id();
+        let mut transform = editor
+            .transform_input(editor.history.scene().node(id).unwrap().transform())
+            .unwrap();
+        transform.translation[0] += 1.0;
+        editor
+            .apply_operation(Operation::SetTransform { id, transform })
+            .unwrap();
+        let before = editor.history.scene().clone();
+        let expected = azteccraft::native_scene::binary::encode(&before).unwrap();
+        let context = egui::Context::default();
+        let (mut bridge, ingress) = crate::mcp::test_bridge(context.clone());
+        let cancellation = tokio_util::sync::CancellationToken::new();
+        let cancelled = cancellation.clone();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        let observed = Arc::new(AtomicBool::new(false));
+        let seen = observed.clone();
+        let parent = directory.path().to_path_buf();
+        let probe = move || {
+            if !seen.load(Ordering::SeqCst)
+                && std::fs::read_dir(&parent).unwrap().any(|entry| {
+                    let entry = entry.unwrap();
+                    entry.file_name().to_string_lossy().ends_with(".craft_tmp")
+                        && std::fs::read(entry.path()).ok().as_deref() == Some(expected.as_slice())
+                })
+            {
+                seen.store(true, Ordering::SeqCst);
+                if expire {
+                    std::thread::sleep(deadline.saturating_duration_since(Instant::now()));
+                } else {
+                    cancelled.cancel();
+                }
+            }
+        };
+        let operation = if save_as {
+            Operation::SaveSceneAs {
+                path: destination.clone(),
+            }
+        } else {
+            Operation::SaveScene
+        };
+        let mut reply = ingress
+            .queue_with_save_probe(
+                crate::editor_operations::RemoteRequest {
+                    expected_scene_token: Some(token),
+                    operation,
+                },
+                cancellation,
+                deadline,
+                Some(Box::new(probe)),
+            )
+            .unwrap();
+        bridge.dispatch(&mut editor, &context);
+        assert!(observed.load(Ordering::SeqCst));
+        assert!(matches!(
+            reply.try_recv().unwrap(),
+            Err(OperationError::NativeSave(NativeSaveError::Cancelled))
+        ));
+        assert_eq!(std::fs::read(&source).unwrap(), original);
+        assert!(!destination.exists());
+        assert_eq!(editor.history.scene(), &before);
+        assert_eq!(editor.files.saved, saved);
+        assert_eq!(editor.files.path.as_ref(), Some(&source));
+        assert_eq!(editor.scene_token, token);
+        assert!(editor.files.uncertain.is_none() && editor.is_dirty());
+        assert!(!editor.files.close_approved);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn installed_save_uncertainty_reconciles_s1_without_reinstalling_or_replacing_s2() {
+        use std::{cell::Cell, os::unix::fs::MetadataExt};
+        for initial_delta in [0.0, 1.0] {
+            let directory = tempfile::tempdir().unwrap();
+            let parent = directory.path().join("document");
+            let moved = directory.path().join("moved");
+            std::fs::create_dir(&parent).unwrap();
+            let source = parent.join("scene.mb");
+            std::fs::write(&source, binary_fixture::specimen()).unwrap();
+            let mut editor = Editor::default();
+            editor
+                .apply_operation(Operation::OpenScene {
+                    path: source.clone(),
+                })
+                .unwrap();
+            let token = editor.scene_token;
+            let original_saved = editor.files.saved.clone();
+            let id = editor.history.scene().nodes()[0].id();
+            let mut transform = editor
+                .transform_input(editor.history.scene().node(id).unwrap().transform())
+                .unwrap();
+            transform.translation[0] += initial_delta;
+            editor
+                .apply_operation(Operation::SetTransform { id, transform })
+                .unwrap();
+            let first = editor.history.scene().clone();
+            let expected = azteccraft::native_scene::binary::encode(&first).unwrap();
+            let relocated = Cell::new(false);
+            let guard = || relocate_completed_stage_once(&parent, &moved, &expected, &relocated);
+            let reply = editor
+                .apply_operation_guarded(Operation::SaveScene, &guard)
+                .unwrap();
+            assert!(relocated.get());
+            assert!(matches!(
+                reply,
+                OperationReply::SaveUncertain { dirty: true, .. }
+            ));
+            assert_eq!(
+                editor.files.uncertain.as_ref().unwrap().cause,
+                NativeSaveError::SourceChanged
+            );
+            assert_eq!(editor.files.saved, original_saved);
+            assert_eq!(editor.history.scene(), &first);
+            assert_eq!(editor.scene_token, token);
+            let installed = moved.join("scene.mb");
+            assert_eq!(std::fs::read(&installed).unwrap(), expected);
+            let inode = std::fs::metadata(&installed).unwrap().ino();
+            assert!(
+                editor
+                    .apply_operation(Operation::OpenScene {
+                        path: source.clone()
+                    })
+                    .is_err()
+            );
+            assert!(editor.files.uncertain.is_some());
+            assert_eq!(editor.history.scene(), &first);
+            let OperationReply::PendingConfirmation {
+                pending_action_id, ..
+            } = editor.apply_operation(Operation::NewScene).unwrap()
+            else {
+                panic!("expected pending New");
+            };
+            editor
+                .apply_operation(Operation::ResolveFileAction {
+                    pending_id: Uuid::parse_str(&pending_action_id).unwrap(),
+                    decision: FileDecision::Cancel,
+                })
+                .unwrap();
+            assert!(editor.files.uncertain.is_some());
+            assert_eq!(editor.scene_token, token);
+            editor.files.uncertain.as_mut().unwrap().scene_token = Uuid::new_v4();
+            assert!(matches!(
+                editor.apply_operation(Operation::SaveScene),
+                Err(OperationError::InvalidInput(_))
+            ));
+            assert!(editor.files.uncertain.is_some());
+            editor.files.uncertain.as_mut().unwrap().scene_token = token;
+            std::fs::rename(&moved, &parent).unwrap();
+            transform.translation[0] += 0.5;
+            editor
+                .apply_operation(Operation::SetTransform { id, transform })
+                .unwrap();
+            let second = editor.history.scene().clone();
+            let occupied = parent.join("occupied.mb");
+            std::fs::write(&occupied, b"keep").unwrap();
+            let reply = if initial_delta == 1.0 {
+                let OperationReply::PendingConfirmation {
+                    pending_action_id, ..
+                } = editor.apply_operation(Operation::NewScene).unwrap()
+                else {
+                    panic!("expected pending New");
+                };
+                let pending = Uuid::parse_str(&pending_action_id).unwrap();
+                let reply = editor
+                    .apply_operation(Operation::ResolveFileAction {
+                        pending_id: pending,
+                        decision: FileDecision::Save,
+                    })
+                    .unwrap();
+                assert!(matches!(
+                    reply,
+                    OperationReply::SaveReconciled {
+                        dirty: true,
+                        pending_action_status: PendingActionStatus::Retained,
+                        ..
+                    }
+                ));
+                assert_eq!(editor.files.pending.as_ref().unwrap().id, pending);
+                assert_eq!(editor.scene_token, token);
+                editor
+                    .apply_operation(Operation::ResolveFileAction {
+                        pending_id: pending,
+                        decision: FileDecision::Cancel,
+                    })
+                    .unwrap();
+                reply
+            } else {
+                editor
+                    .apply_operation(Operation::SaveSceneAs {
+                        path: occupied.clone(),
+                    })
+                    .unwrap()
+            };
+            assert!(matches!(
+                reply,
+                OperationReply::SaveReconciled { dirty: true, .. }
+            ));
+            assert_eq!(std::fs::read(&occupied).unwrap(), b"keep");
+            assert_eq!(std::fs::read(&source).unwrap(), expected);
+            assert_eq!(std::fs::metadata(&source).unwrap().ino(), inode);
+            assert_eq!(editor.files.saved, first);
+            assert_eq!(editor.history.scene(), &second);
+            assert_eq!(editor.scene_token, token);
+            assert!(editor.files.uncertain.is_none() && editor.is_dirty());
+            assert!(matches!(
+                editor.apply_operation(Operation::SaveScene).unwrap(),
+                OperationReply::Saved { dirty: false, .. }
+            ));
+            assert_eq!(
+                document::load_native(&source).unwrap().scene.nodes()[0]
+                    .transform()
+                    .translation,
+                transform.translation
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_acknowledges_s1_but_blocks_the_same_file_queued_open_s0() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("scene.mb");
+        std::fs::write(&source, binary_fixture::specimen()).unwrap();
+        let mut editor = Editor::default();
+        editor
+            .apply_operation(Operation::OpenScene {
+                path: source.clone(),
+            })
+            .unwrap();
+        let token = editor.scene_token;
+        let id = editor.history.scene().nodes()[0].id();
+        let mut transform = editor
+            .transform_input(editor.history.scene().node(id).unwrap().transform())
+            .unwrap();
+        transform.translation[0] += 1.0;
+        editor
+            .apply_operation(Operation::SetTransform { id, transform })
+            .unwrap();
+        let first = editor.history.scene().clone();
+        let OperationReply::PendingConfirmation {
+            pending_action_id, ..
+        } = editor
+            .apply_operation(Operation::OpenScene {
+                path: source.clone(),
+            })
+            .unwrap()
+        else {
+            panic!("expected queued Open");
+        };
+        let pending = Uuid::parse_str(&pending_action_id).unwrap();
+        let reply = editor
+            .apply_operation(Operation::ResolveFileAction {
+                pending_id: pending,
+                decision: FileDecision::Save,
+            })
+            .unwrap();
+        assert!(matches!(
+            reply,
+            OperationReply::Saved {
+                dirty: false,
+                pending_action_status: PendingActionStatus::SourceChanged,
+                ..
+            }
+        ));
+        assert_eq!(editor.scene_token, token);
+        assert_eq!(editor.history.scene(), &first);
+        assert_eq!(editor.files.saved, first);
+        assert_eq!(editor.files.pending.as_ref().unwrap().id, pending);
+        assert!(editor.files.pending.as_ref().unwrap().source_changed);
+        assert!(matches!(
+            editor.apply_operation(Operation::ResolveFileAction {
+                pending_id: pending,
+                decision: FileDecision::Discard
+            }),
+            Err(OperationError::NativeSave(NativeSaveError::SourceChanged))
+        ));
+        assert_eq!(editor.scene_token, token);
+        assert_eq!(editor.history.scene(), &first);
+        editor
+            .apply_operation(Operation::ResolveFileAction {
+                pending_id: pending,
+                decision: FileDecision::Cancel,
+            })
+            .unwrap();
+        assert!(editor.files.pending.is_none());
+        assert!(!editor.is_dirty());
+        assert!(matches!(
+            editor
+                .apply_operation(Operation::OpenScene { path: source })
+                .unwrap(),
+            OperationReply::DocumentApplied { .. }
+        ));
+        assert_ne!(editor.scene_token, token);
+        assert_eq!(
+            editor.history.scene().nodes()[0].transform().translation,
+            transform.translation
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cancellation_after_install_acknowledges_save_without_consuming_pending_new() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("scene.mb");
+        std::fs::write(&source, binary_fixture::specimen()).unwrap();
+        let mut editor = Editor::default();
+        editor
+            .apply_operation(Operation::OpenScene {
+                path: source.clone(),
+            })
+            .unwrap();
+        let token = editor.scene_token;
+        let id = editor.history.scene().nodes()[0].id();
+        let mut transform = editor
+            .transform_input(editor.history.scene().node(id).unwrap().transform())
+            .unwrap();
+        transform.translation[0] += 1.0;
+        editor
+            .apply_operation(Operation::SetTransform { id, transform })
+            .unwrap();
+        let first = editor.history.scene().clone();
+        let expected = azteccraft::native_scene::binary::encode(&first).unwrap();
+        let OperationReply::PendingConfirmation {
+            pending_action_id, ..
+        } = editor.apply_operation(Operation::NewScene).unwrap()
+        else {
+            panic!("expected queued New");
+        };
+        let pending = Uuid::parse_str(&pending_action_id).unwrap();
+        let guard = || std::fs::read(&source).ok().as_deref() != Some(expected.as_slice());
+        let reply = editor
+            .apply_operation_guarded(
+                Operation::ResolveFileAction {
+                    pending_id: pending,
+                    decision: FileDecision::Save,
+                },
+                &guard,
+            )
+            .unwrap();
+        assert!(matches!(
+            reply,
+            OperationReply::Saved {
+                dirty: false,
+                pending_action_status: PendingActionStatus::Retained,
+                ..
+            }
+        ));
+        assert_eq!(std::fs::read(&source).unwrap(), expected);
+        assert_eq!(editor.files.saved, first);
+        assert_eq!(editor.history.scene(), &first);
+        assert_eq!(editor.scene_token, token);
+        assert_eq!(editor.files.pending.as_ref().unwrap().id, pending);
+        assert!(!editor.files.close_approved);
+        editor
+            .apply_operation(Operation::ResolveFileAction {
+                pending_id: pending,
+                decision: FileDecision::Cancel,
+            })
+            .unwrap();
+        assert_eq!(editor.history.scene(), &first);
+        assert!(!editor.is_dirty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn native_save_as_from_read_through_symlink_preserves_original_and_verifies_origin() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("original.mb");
+        let link = directory.path().join("link.mb");
+        let destination = directory.path().join("fresh.mb");
+        let original = binary_fixture::specimen();
+        std::fs::write(&source, &original).unwrap();
+        std::os::unix::fs::symlink(&source, &link).unwrap();
+        let mut editor = Editor::default();
+        editor
+            .apply_operation(Operation::OpenScene { path: link.clone() })
+            .unwrap();
+        let origin = editor.files.origin.clone();
+        assert!(!editor.files.save_available());
+        assert!(editor.files.save_as_available());
+        assert!(document::verify_native_origin(&link, &origin).is_ok());
+        assert!(matches!(
+            editor.apply_operation(Operation::SaveScene),
+            Err(OperationError::NativeSave(NativeSaveError::Unsupported))
+        ));
+        assert!(matches!(
+            editor
+                .apply_operation(Operation::SaveSceneAs {
+                    path: destination.clone()
+                })
+                .unwrap(),
+            OperationReply::Saved { dirty: false, .. }
+        ));
+        assert_eq!(std::fs::read(&source).unwrap(), original);
+        assert_eq!(std::fs::read(&destination).unwrap(), original);
+        assert!(editor.files.save_available());
+        assert!(document::verify_native_origin(&destination, &editor.files.origin).is_ok());
+        let mut changed = original.clone();
+        changed[0] ^= 1;
+        std::fs::write(&source, &changed).unwrap();
+        assert_eq!(
+            document::verify_native_origin(&link, &origin),
+            Err(NativeSaveError::SourceChanged)
+        );
+        assert_eq!(std::fs::read(&source).unwrap(), changed);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn uncertain_receipt_is_discarded_only_after_successful_new_or_open_replacement() {
+        for open in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let parent = directory.path().join("document");
+            let moved = directory.path().join("moved");
+            std::fs::create_dir(&parent).unwrap();
+            let source = parent.join("scene.mb");
+            std::fs::write(&source, binary_fixture::specimen()).unwrap();
+            let mut editor = Editor::default();
+            editor
+                .apply_operation(Operation::OpenScene {
+                    path: source.clone(),
+                })
+                .unwrap();
+            let token = editor.scene_token;
+            let before = editor.history.scene().clone();
+            let expected = azteccraft::native_scene::binary::encode(&before).unwrap();
+            let relocated = std::cell::Cell::new(false);
+            let guard = || relocate_completed_stage_once(&parent, &moved, &expected, &relocated);
+            assert!(matches!(
+                editor
+                    .apply_operation_guarded(Operation::SaveScene, &guard)
+                    .unwrap(),
+                OperationReply::SaveUncertain { dirty: true, .. }
+            ));
+            assert!(relocated.get());
+            assert_eq!(editor.history.scene(), &editor.files.saved);
+            assert!(editor.is_dirty());
+            std::fs::rename(&moved, &parent).unwrap();
+            let candidate = directory.path().join("candidate.aztec");
+            write_legacy_cube(&candidate, 0.0);
+            let action = if open {
+                Operation::OpenScene { path: candidate }
+            } else {
+                Operation::NewScene
+            };
+            let OperationReply::PendingConfirmation {
+                pending_action_id, ..
+            } = editor.apply_operation(action).unwrap()
+            else {
+                panic!("expected pending replacement");
+            };
+            let pending = Uuid::parse_str(&pending_action_id).unwrap();
+            if open {
+                editor.aspect = f32::NAN;
+                assert!(
+                    editor
+                        .apply_operation(Operation::ResolveFileAction {
+                            pending_id: pending,
+                            decision: FileDecision::Discard
+                        })
+                        .is_err()
+                );
+                assert!(editor.files.uncertain.is_some());
+                assert_eq!(editor.scene_token, token);
+                assert_eq!(editor.history.scene(), &before);
+                assert_eq!(editor.files.pending.as_ref().unwrap().id, pending);
+                editor.aspect = 1.0;
+            }
+            assert!(matches!(
+                editor
+                    .apply_operation(Operation::ResolveFileAction {
+                        pending_id: pending,
+                        decision: FileDecision::Discard
+                    })
+                    .unwrap(),
+                OperationReply::DocumentApplied { .. }
+            ));
+            assert!(editor.files.uncertain.is_none());
+            assert_ne!(editor.scene_token, token);
+            assert!(!editor.is_dirty());
+            assert_eq!(std::fs::read(&source).unwrap(), expected);
+        }
+    }
 
     fn write_legacy_cube(path: &Path, translation: f32) -> azteccraft::scene::NodeId {
         let mut scene = azteccraft::scene::Scene::default();

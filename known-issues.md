@@ -28,7 +28,16 @@ Maya binary scenes opened and displayed geometry, including orbit navigation.
 An acute CPU tessellation defect was reproduced and corrected; material, depth
 and clipping fidelity remain incomplete. Imported-scene GUI editing and the new
 native lifecycle still require final independent native evidence. Earlier JSON
-Save As verification does not establish native Maya writing, which is unavailable.
+Save As verification does not establish native Maya writing. The current
+Unix binary Save candidate uses the ordinary vendored atomic engine. Its
+document-layer repeat-save checks are separate from current application checks
+and pending native Save QA.
+
+One macOS abort was observed during an automation-intercepted Open panel. The
+initiating panic and trigger were not reproduced; the same binary subsequently
+passed hooked and unhooked Open/Cancel. The source uses nested default-mode
+pumping, but that observation does not establish the cause or a fix. Native
+verification must distinguish this observation from a confirmed diagnosis.
 
 ## Core authoring limits
 
@@ -41,7 +50,10 @@ instance hierarchy, f64 authoring channels and original source bytes. Triangle
 and quad derived views are supported; arbitrary loops/holes remain retained but
 unsupported for projection. Imported editing is limited to proved source-bound
 numeric changes; missing-record insertion and structural rewrites refuse safely.
-Native Maya Save/Save As, recovery, autosave and camera/history persistence remain
+The provisional Unix binary Save/Save As candidate preserves proved existing
+records and reconciles uncertain installations. It does not support Maya ASCII,
+Windows writing or structural rewrites, and still needs native Save QA.
+Recovery, autosave and camera/history persistence remain
 pending. Legacy JSON v1 and OBJ remain separate library utilities; their geometry
 tests don't establish native persistence. GUI Export remains disabled. Structural
 validation doesn't repair geometry or guarantee rendering fidelity.

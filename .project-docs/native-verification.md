@@ -41,3 +41,46 @@ complement the automated core and UI-event tests with native application evidenc
 - GUI OBJ Export is disabled, so the complete native export journey remains pending.
 - New icon work and subsequent modeling/MCP changes need verification against their own builds.
 - Maya reference comparison, the complete functionality denominator and the original 80–90% full-functionality target remain unfulfilled. Overall Maya coverage is unmeasured.
+
+## Native Maya binary Save integration scope
+
+The preceding JSON results remain historical evidence for `6c96345`. They do not
+verify the newer Maya binary writer, current native file lifecycle or current
+MCP catalog.
+
+The document adapter at `f7354a2` was checked with the ordinary vendored atomic
+engine. Its focused Unix tests passed, and five retained private Maya binary
+inputs each passed six working-copy save cycles: fresh Save As, edited Active
+Save, repeated Save, second fresh Save As, a further edited Active Save and
+another repeated Save. The checks compared the latest destination baseline,
+original parse Arc, reopened internal storage words and unchanged prior leaves.
+Original asset sizes and hashes matched before and after. Independent focused
+and private-corpus execution was performed before the appearance-parent rebase;
+the rebased runtime logs and original hashes were independently checked. This
+is document-layer evidence, without a native window or file picker.
+
+The application candidate composes that adapter with native Save/Save As,
+Save/Discard/Cancel and the same typed MCP operations. It retains the current
+appearance summaries and editing tools. Its current-branch Editor/official SDK
+checks, independent committed verification and native GUI verification remain
+pending. Device-free tests and controlled uncertain-write tests do not establish
+a GUI journey or promise disk-fault behavior on every platform.
+
+The all-five native acceptance journey is pending: open a working copy with
+visible geometry, edit an existing supported channel, Save As to a fresh leaf,
+edit and Active Save, repeat Save, verify Undo/Redo dirty state before reopening,
+then use a second Save As and Active Save destination. Original inputs must
+never be active write destinations. Queued New/Open/Close Save/Cancel/Discard,
+occupied destinations, source conflicts, failed Open and native picker Cancel
+also remain pending for this application candidate.
+
+The synchronous native picker still holds the UI loop. A queued remote request
+can time out during the panel; after Cancel, expired work must not mutate the
+document. Full interactive panel navigation remains a separate acceptance item.
+An observed macOS abort during an intercepted Open panel has no reproduced
+initiating trigger; subsequent hooked and unhooked Open/Cancel passed with the
+same binary. That observation supplies no confirmed cause or fix.
+
+Windows writing, Maya ASCII, structural source rewriting, complete appearance
+and Maya parity remain unsupported or unverified. No private paths, assets,
+captures or raw numeric source values are distributed with this record.

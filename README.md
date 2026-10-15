@@ -2,7 +2,7 @@
 
 AztecCraft is a Rust desktop 3D authoring project with the objective of reproducing Autodesk Maya 2026's interface and behavior, including modeling, animation, rigging, simulation, rendering, scripting and existing plug-in compatibility.
 
-The current prototype has a native desktop window for cube/plane creation, selection, numeric transforms, undo/redo and perspective navigation. Open stages Maya binary scenes or legacy JSON documents into the authoritative native model. Native writing is unavailable during this transition; Save As is disabled. Overall Maya coverage is unmeasured.
+The current prototype has a native desktop window for cube/plane creation, selection, numeric transforms, undo/redo and perspective navigation. Open stages Maya binary scenes or legacy JSON documents into the authoritative native model. This candidate adds Unix Maya binary Save/Save As for supported existing-record edits through the ordinary vendored writer; current application checks and native Save QA remain pending. Overall Maya coverage is unmeasured.
 
 [Current capabilities](#current-capabilities) · [Build and test](#build-and-test) · [Roadmap](#roadmap-and-publication) · [Project documentation](.project-docs/INDEX.md)
 
@@ -14,12 +14,12 @@ The current prototype has a native desktop window for cube/plane creation, selec
 | Transform math | Native f64 channels and pivots in declared units, with checked conversion to the derived viewport | [Native model](src/native_scene.rs) and view tests |
 | Invalid edits | Reject non-finite or unsupported edits atomically; finite native values outside viewport representation remain authoring data | Native model and history tests |
 | History | Undo/redo create, remove, rename, transform and single-face extrusion commands, with failed/no-op edits preserving history | [History workflow tests](tests/history_workflows.rs) |
-| Native scene files | Bounded Maya binary decoding with retained source bytes; legacy JSON reads retained; native writing unavailable | [Document loader](src/document.rs) and [binary decoder](src/native_scene/binary.rs) |
+| Native scene files | Bounded Maya binary decoding with retained source bytes; legacy JSON reads retained; provisional Unix existing-record binary writing | [Document adapter](src/document.rs) and [binary codec](src/native_scene/binary.rs); document-layer repeat-save checks are separate from pending native Save QA |
 | Camera math | Orbit/pan/dolly, perspective projection, rays, nearest-geometry picking and framing | [Viewport workflow tests](tests/viewport_workflows.rs) |
 | Desktop shell and viewport | Create/select cube or plane, edit name/transform channels, undo/redo, delete and frame selected, with depth-tested opaque geometry | [Native shell](src/app.rs) and [viewport UI](src/viewport_ui.rs) |
-| File actions in the window | New/Open, staged validation, unsaved-change Discard/Cancel and error presentation; Save As explicitly unavailable | [File integration tests](src/file_ui.rs); updated native Open verification and other platforms remain pending |
+| File actions in the window | New/Open and provisional eligible Save/Save As, unsaved-change Save/Discard/Cancel, source-change guards and uncertain-write reconciliation | [File integration tests](src/file_ui.rs); current integration and native Save verification pending |
 | OBJ export | Library API writes world-space polygon geometry to a new file | [OBJ workflow tests](tests/obj_workflows.rs), with GUI Export still disabled |
-| MCP | Optional stdio server controls eighteen tools in its newly launched native editor window | [Tool contract and limits](.project-docs/mcp.md), with real Editor/official SDK tests; native protocol/window verification remains separate |
+| MCP | Optional stdio server controls twenty tools, including Save/Save As, in its newly launched native editor window | [Tool contract and limits](.project-docs/mcp.md), with real Editor/official SDK tests; current integration and native Save verification remain pending |
 | Modeling | Core API extrudes one quad along its object-space normal, including signed/zero distances; native face UI and all-face extrusion pending | [Extrusion workflow tests](tests/extrusion_workflows.rs) |
 | UVs, animation and rigging | Full workflows pending | [Implementation plan](.project-docs/plan.md) |
 | Materials, simulation and rendering | Pending | Reference scenes and output comparisons required |
@@ -61,7 +61,7 @@ For MCP, build with `cargo build --release --locked --features mcp` and configur
 
 [src/native_scene.rs](src/native_scene.rs) owns native authoring state and retained source data. [src/history.rs](src/history.rs) applies commands to that model, while [src/document.rs](src/document.rs) stages file candidates before replacement. [src/view_scene.rs](src/view_scene.rs) derives bounded geometry for camera math and the wgpu geometry viewport. The legacy JSON and OBJ library utilities remain separate from native document writing.
 
-History is in-memory and unbounded. Imported edits require proved ownership and refuse unsupported source changes. Native Save and Save As remain unavailable until a genuine Maya writer can preserve the document. The opaque GPU geometry preview uses depth testing and hardware clipping; materials, transparency, normal shading, textures and document color management remain unsupported. It does not establish Maya rendering or navigation parity.
+History is in-memory and unbounded. Imported edits require proved ownership and refuse unsupported source changes. Provisional Unix binary Save preserves supported existing records and retains uncertain installations for reconciliation; it does not support Maya ASCII, structural rewriting or Windows writing. Native Save QA remains open. The opaque GPU geometry preview uses depth testing and hardware clipping; materials, transparency, normal shading, textures and document color management remain unsupported. It does not establish Maya rendering or navigation parity.
 
 Cross-platform desktop support and packaged launch behavior still need native evidence for macOS, Windows and Linux. The [CI matrix](.project-docs/builds.md) defines checks for those platforms, and a configured job doesn't establish a passing build. The eframe/egui UI remains provisional, with docking, focus, marking menus and Maya-style editing still to be compared against the reference.
 

@@ -43,8 +43,9 @@ The prototype provides menus/shelf, Outliner, Channel Box, projected mesh drawin
 selection, name/numeric edits, undo/redo, delete and framing. Alt-left drag orbits,
 middle drag pans, right drag/wheel dollies, and F frames the selected object when
 a text field isn't consuming keys. Ctrl/Cmd-Z undoes and Ctrl/Cmd-Shift-Z redoes.
-New/Open use the shared native document lifecycle. Save As is visibly disabled
-until genuine native writing is available; no derived JSON save is substituted.
+New/Open use the shared native document lifecycle. This candidate enables
+eligible Unix Maya binary Save/Save As through that same lifecycle and ordinary
+vendored writer; current integration and native Save QA remain pending. No derived JSON save is substituted.
 GUI Export and unfinished modeling/animation/material controls are disabled.
 Docking and full Maya interaction parity aren't implemented or verified.
 
@@ -112,14 +113,20 @@ bounded regular-file handle, retaining the exact parsed Arc and opened-file
 baseline. Unix reads use nonblocking open followed by a regular-handle check so
 special files cannot wait for a writer. No equivalent Windows deadline is claimed.
 The 16 MiB input limit is application policy. Legacy validation uses these same
-bytes rather than rereading the path. Maya ASCII and genuine Maya writing remain pending.
+bytes rather than rereading the path. Maya ASCII remains unsupported. The local
+Unix binary writer preserves supported existing-record edits; document-layer
+repeat-save checks do not establish the pending native Save journey.
 
 Open validates/prepares an off-document candidate and frames its visible geometry
 before replacement or an unsaved confirmation. Discard applies the exact staged
 bytes, even if the path changed; a modal resize reframes that candidate using the
 current aspect before consuming it. Failed decode/view/framing preserves the old
-document. New/Open/Close use explicit Discard/Cancel with a pending-action UUID;
-MCP also requires the current scene token. Save is unavailable and cannot discard.
+document. New/Open/Close use explicit eligible Save/Discard/Cancel with a
+pending-action UUID; MCP also requires the current scene token. A successful Save
+acknowledges its written snapshot before revalidating queued Open. A changed source
+blocks that pending Open until Cancel/reopen. Uncertain installations retain a
+receipt and keep the document dirty; reconciliation verifies the original write
+without reinstalling, while later edits remain dirty against that saved snapshot.
 UI and MCP use the same handlers; [the MCP contract](mcp.md) documents the response
 delivery barrier for remote Close. Full native file-dialog navigation, native
 editing of imported scenes and other-platform interaction need separate evidence.
@@ -127,7 +134,8 @@ editing of imported scenes and other-platform interaction need separate evidence
 The standalone legacy `document::load`/`save_new` utilities retain validated JSON
 v1 quad scenes and create-new/no-clobber writes via vendored `craft-atomic`.
 They are tested independently and aren't used to save native editor state.
-Overwrite-save, recovery, autosave, history and camera persistence remain pending.
+The local candidate's guarded active-file binary Save is provisional. General
+recovery, autosave, history and camera persistence remain pending.
 
 ## OBJ export
 
@@ -245,8 +253,10 @@ Errors expose only a fixed category and an optional source byte offset. The
 decoder performs no IO or live document replacement. The document/editor adapter
 uses this decoder for native and MCP Open into the same NativeScene/History;
 supported source-bound numeric edits preserve original bytes plus typed intent.
-Missing-record insertion, structural imported edits and genuine Maya Save remain
-unsupported. A decoder success alone doesn't prove appearance or Maya parity.
+Missing-record insertion and structural imported edits remain unsupported. The
+provisional binary writer supports only proved existing-record edits, with native
+Save QA pending. A codec success alone doesn't
+prove appearance or Maya parity.
 
 The ignored unit test
 `maya_binary::semantic::tests::private_wire_fixture_spans_and_mesh_trace_match_audit`

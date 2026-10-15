@@ -8,7 +8,12 @@ use crate::{
 use eframe::egui;
 use rmcp::ServiceExt;
 use rmcp::model::RequestId;
-use std::{io, sync::Arc, thread, time::Duration};
+use std::{
+    io,
+    sync::Arc,
+    thread,
+    time::{Duration, Instant},
+};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use transport::{BoundedTransport, Shared};
@@ -23,6 +28,9 @@ struct EditorEnvelope {
     reply: oneshot::Sender<Result<OperationReply, OperationError>>,
     cancellation: CancellationToken,
     request_id: RequestId,
+    deadline: Instant,
+    #[cfg(test)]
+    install_probe: Option<Box<dyn Fn() + Send>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -136,10 +144,21 @@ impl UiBridge {
             if envelope.reply.is_closed()
                 || envelope.cancellation.is_cancelled()
                 || !self.shared.alive()
+                || Instant::now() >= envelope.deadline
             {
                 continue;
             }
-            let result = editor.remote_operation(envelope.request, context);
+            let may_install = || {
+                #[cfg(test)]
+                if let Some(probe) = &envelope.install_probe {
+                    probe();
+                }
+                !envelope.reply.is_closed()
+                    && !envelope.cancellation.is_cancelled()
+                    && self.shared.alive()
+                    && Instant::now() < envelope.deadline
+            };
+            let result = editor.remote_operation_guarded(envelope.request, context, &may_install);
             let changed = matches!(
                 &result,
                 Ok(OperationReply::Created { .. }
@@ -148,6 +167,9 @@ impl UiBridge {
                     | OperationReply::PendingConfirmation { .. }
                     | OperationReply::Cancelled { .. }
                     | OperationReply::CloseRequested { .. })
+                    | Ok(OperationReply::Saved { .. }
+                        | OperationReply::SaveUncertain { .. }
+                        | OperationReply::SaveReconciled { .. })
             );
             if matches!(&result, Ok(OperationReply::CloseRequested { .. })) {
                 self.shared
@@ -191,13 +213,30 @@ impl TestIngress {
         &self,
         request: RemoteRequest,
     ) -> Result<oneshot::Receiver<Result<OperationReply, OperationError>>, ()> {
+        self.queue_with_save_probe(
+            request,
+            CancellationToken::new(),
+            Instant::now() + UI_REPLY_TIMEOUT,
+            None,
+        )
+    }
+
+    pub(crate) fn queue_with_save_probe(
+        &self,
+        request: RemoteRequest,
+        cancellation: CancellationToken,
+        deadline: Instant,
+        install_probe: Option<Box<dyn Fn() + Send>>,
+    ) -> Result<oneshot::Receiver<Result<OperationReply, OperationError>>, ()> {
         let (reply, receiver) = oneshot::channel();
         self.sender
             .try_send(EditorEnvelope {
                 request,
                 reply,
-                cancellation: CancellationToken::new(),
+                cancellation,
                 request_id: RequestId::Number(-1),
+                deadline,
+                install_probe,
             })
             .map_err(|_| ())?;
         Ok(receiver)
@@ -230,11 +269,111 @@ pub(crate) fn test_connection(
     tokio::io::DuplexStream,
     impl Future<Output = ()> + Send,
 ) {
+    test_connection_writer(context, |writer| writer)
+}
+
+#[cfg(all(test, feature = "mcp-test-client"))]
+pub(crate) struct TestFlushFailure {
+    armed: std::sync::atomic::AtomicBool,
+    failed: std::sync::atomic::AtomicBool,
+    accepted: std::sync::atomic::AtomicUsize,
+}
+
+#[cfg(all(test, feature = "mcp-test-client"))]
+impl TestFlushFailure {
+    pub(crate) fn arm(&self) {
+        use std::sync::atomic::Ordering;
+        self.accepted.store(0, Ordering::SeqCst);
+        self.armed.store(true, Ordering::SeqCst);
+    }
+    pub(crate) fn observed(&self) -> bool {
+        use std::sync::atomic::Ordering;
+        self.failed.load(Ordering::SeqCst) && self.accepted.load(Ordering::SeqCst) > 0
+    }
+}
+
+#[cfg(all(test, feature = "mcp-test-client"))]
+struct TestFailingWriter {
+    inner: tokio::io::WriteHalf<tokio::io::DuplexStream>,
+    failure: Arc<TestFlushFailure>,
+}
+
+#[cfg(all(test, feature = "mcp-test-client"))]
+impl tokio::io::AsyncWrite for TestFailingWriter {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        context: &mut std::task::Context<'_>,
+        bytes: &[u8],
+    ) -> std::task::Poll<io::Result<usize>> {
+        use std::sync::atomic::Ordering;
+        let result =
+            tokio::io::AsyncWrite::poll_write(std::pin::Pin::new(&mut self.inner), context, bytes);
+        if let std::task::Poll::Ready(Ok(count)) = &result
+            && self.failure.armed.load(Ordering::SeqCst)
+        {
+            self.failure.accepted.fetch_add(*count, Ordering::SeqCst);
+        }
+        result
+    }
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        context: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<io::Result<()>> {
+        use std::sync::atomic::Ordering;
+        if self.failure.armed.swap(false, Ordering::SeqCst) {
+            self.failure.failed.store(true, Ordering::SeqCst);
+            return std::task::Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()));
+        }
+        tokio::io::AsyncWrite::poll_flush(std::pin::Pin::new(&mut self.inner), context)
+    }
+    fn poll_shutdown(
+        mut self: std::pin::Pin<&mut Self>,
+        context: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<io::Result<()>> {
+        tokio::io::AsyncWrite::poll_shutdown(std::pin::Pin::new(&mut self.inner), context)
+    }
+}
+
+#[cfg(all(test, feature = "mcp-test-client"))]
+pub(crate) fn test_connection_with_flush_failure(
+    context: egui::Context,
+) -> (
+    UiBridge,
+    tokio::io::DuplexStream,
+    impl Future<Output = ()> + Send,
+    Arc<TestFlushFailure>,
+) {
+    use std::sync::atomic::{AtomicBool, AtomicUsize};
+    let failure = Arc::new(TestFlushFailure {
+        armed: AtomicBool::new(false),
+        failed: AtomicBool::new(false),
+        accepted: AtomicUsize::new(0),
+    });
+    let captured = failure.clone();
+    let (bridge, client, serving) = test_connection_writer(context, |inner| TestFailingWriter {
+        inner,
+        failure: captured,
+    });
+    (bridge, client, serving, failure)
+}
+
+#[cfg(all(test, feature = "mcp-test-client"))]
+fn test_connection_writer<W>(
+    context: egui::Context,
+    wrap: impl FnOnce(tokio::io::WriteHalf<tokio::io::DuplexStream>) -> W,
+) -> (
+    UiBridge,
+    tokio::io::DuplexStream,
+    impl Future<Output = ()> + Send,
+)
+where
+    W: tokio::io::AsyncWrite + Send + Unpin + 'static,
+{
     let (bridge, ingress) = test_bridge(context);
     let (server_io, client_io) = tokio::io::duplex(transport::MAX_EGRESS_BYTES);
     let (reader, writer) = tokio::io::split(server_io);
     let server = tools::EditorServer::new(ingress.sender, ingress.shared.clone());
-    let transport = BoundedTransport::new(reader, writer, ingress.shared);
+    let transport = BoundedTransport::new(reader, wrap(writer), ingress.shared);
     let serving = async {
         server
             .serve(transport)
