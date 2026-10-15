@@ -16,6 +16,8 @@ Save barriers. Remote mutations cannot commit that human draft.
 The isolated branch passed default248, headless192 and MCP-client314 tests, plus
 formatting and strict default/headless/client/production lint. Actual widget and
 SDK tests cover draft targeting, precise Enter/Escape, History and repeated Save.
+SDK edit/inspection/History assertions remain portable; persistence assertions
+run only on Unix, matching the native writer's supported platforms.
 The independent viewer source-word oracle passed; three isolated core mutations
 each failed at their intended assertions and passed after exact restoration.
 Those private-resolver sensitivity runs are separate from the ordinary matrix.

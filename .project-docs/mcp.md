@@ -45,7 +45,9 @@ one; no source record is inserted and no other shader input is editable. The
 isolated official SDK material edit/inspect/Undo/Save/reopen journey and full
 client matrix pass. The corrected test performs actual protocol Open after Save,
 requiring new document tokens and inspected material values; independent focused
-verification reproduced it. Bounded macOS native data QA also passed. Committed
+verification reproduced it. Bounded macOS native data QA also passed.
+SDK edit/inspection/History coverage is portable; Save/reopen assertions are
+Unix-only because Windows native binary writing remains unsupported. Committed
 cold, hooks/CI and published combined-parent verification remain pending;
 material data changes do not enable rendered Phong output.
 
