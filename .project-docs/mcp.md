@@ -1,6 +1,6 @@
 # Native editor MCP
 
-The optional MCP server controls the new native Editor window launched by its client. Tools use that window's canonical native scene, history, selection and camera. It cannot attach to an already running instance. This prototype exposes seventeen tools; it does not establish Maya scripting, plug-in or full-functionality compatibility.
+The optional MCP server controls the new native Editor window launched by its client. Tools use that window's canonical native scene, history, selection and camera. It cannot attach to an already running instance. This prototype exposes eighteen tools; it does not establish Maya scripting, plug-in or full-functionality compatibility.
 
 ## Build and launch
 
@@ -41,6 +41,7 @@ Call `inspect_scene` first. Every other tool requires `scene_token`, a UUID stri
 | `rename_node` | `node_id`, `name` | Changed or unchanged authoring state |
 | `set_transform` | `node_id`, `translation`, `rotation_degrees`, `scale`, each an array of three finite f64 numbers | Translation in declared scene units, rotation in degrees, dimensionless scale |
 | `edit_node` | `node_id`; optional `name`, `translation`, `rotation_degrees`, `scale` | One undo entry for the supplied name and individual channels; selection stays unchanged |
+| `extrude_face` | `node_id`, `shape_id`, `instance_path`, `face_index`, `distance` | Extrudes one current canonical face through the shared native history |
 | `delete_node` | `node_id` | Changed authoring state |
 | `undo` | None | Changed or unchanged history state |
 | `redo` | None | Changed or unchanged history state |
@@ -67,6 +68,24 @@ imported renames. An empty edit validates the node and returns unchanged after
 the normal guards, without creating history or synchronizing fields. Identical
 values preserve redo. These operations retain the document token, file binding,
 camera and full instance selection.
+
+`extrude_face` requires an explicit root-to-shape `instance_path` of 2 to 257
+decimal NativeId strings, ending in `shape_id` beneath the transform identified
+by `node_id`. Unlike `select_node`, this path includes the shape. `face_index`
+is the current canonical face ordinal before triangulation. The document token
+does not identify a topology revision: an old ordinal that remains in range may
+refer to a different face, so inspect current state before editing. No selected
+face or default path is inferred.
+
+Distance is finite f64 in declared scene linear units, applied along the mesh's
+local face normal; transforms are not baked. Negative distances are supported,
+and zero distance still changes topology. Shared shapes change for all their
+instances. Successful extrusion creates one undo entry and preserves selection,
+camera, document token and unrelated objects. Imported structural edits and
+unsupported topology or mesh metadata refuse without mutation. Extruding the
+single-face plane refuses because all-faces extrusion is unsupported. The native face
+extrusion control remains visibly unsupported; this tool exposes the existing
+checked History command.
 
 Successful tool results provide `structuredContent` and equivalent text content. Authoring outcomes are `scene`, `created`, `changed` or `unchanged`; file lifecycle outcomes are `document_applied`, `pending_confirmation`, `cancelled` and `close_requested`. A scene result nests fields under `inspection`; a created result includes `node_id`. Authoring mutations share native undo history. Selection and camera operations do not create authoring undo entries or mark the document dirty. Navigation arguments use camera units, not pointer pixels. Invalid resulting camera ranges return `camera_error` without changing the camera; finite JSON numbers outside the camera's f32 range are also rejected by camera validation.
 
@@ -140,7 +159,7 @@ No-default core builds remain independent of desktop and MCP dependencies. See [
 
 Every existing and new user-facing capability and its relevant state must be accessible through MCP, including while catch-up is in progress. Each applicable feature slice includes its typed operation, MCP schema/handler and inspection changes, real Editor protocol tests and documentation before the completed feature gate. The feature owner coordinates protected editor boundaries and adapter review with the MCP owner. Do not advertise a tool before the operation exists or leave MCP support as a permanent later backlog.
 
-The current catalog omits component selection/extrusion, file writing, GUI Export, materials, animation, simulation and scripting. Native face selection/extrusion support must include its MCP capability updates in that same completed feature slice. Core-only APIs and unsupported controls do not imply an advertised MCP tool. The current binary decoder refuses shared-instance MB input, and the native UI cannot create instances; SDK ambiguity behavior has no reachable producer in this slice. Canonical path/ambiguity checks and reachable explicit-path protocol tests do not establish full instanced-file support.
+The current catalog omits component selection, file writing, GUI Export, materials, animation, simulation and scripting. `extrude_face` exposes the existing bounded single-quad operation through an explicit current target; native component selection and face-extrusion UI remain pending. Native face UI support must include its MCP capability updates in that same completed feature slice. Core-only APIs and unsupported controls do not imply an advertised MCP tool. The current binary decoder refuses shared-instance MB input, and the native UI cannot create instances; SDK ambiguity behavior has no reachable producer in this slice. Canonical path/ambiguity checks and reachable explicit-path protocol tests do not establish full instanced-file support.
 
 Nine verified tools establish the initial server foundation, not catch-up with every existing operation. Existing capabilities without tools need reviewed follow-up slices; their absence does not defer MCP support for new applicable features, including the native face slice.
 
@@ -151,7 +170,7 @@ Nine verified tools establish the initial server foundation, not catch-up with e
 | Native Close | `request_close` and matching pending resolution use the native close guard and response-delivery barrier |
 | Native Save/Save As | Unavailable while native writing is pending; no file writes or lossy JSON fallback |
 | Core OBJ export | No tool; file authority and create-new/no-clobber behavior need a dedicated slice |
-| Core mesh extrusion | No tool; native face selection/extrusion, component inspection and protocol support belong in the completed native face slice |
+| Core mesh extrusion | `extrude_face` exposes the checked single-quad History command with an explicit current face target; component selection and native face-extrusion UI remain pending |
 | Interactive camera orbit/pan/dolly | Three navigation tools use the same typed operations as native captured gestures; live camera state is inspectable |
 | GPU geometry viewport | `inspect_scene` exposes live backend/error/depth/clipping/appearance state; camera and object selection share the native frame consumer. Materials and complete appearance remain unsupported |
 

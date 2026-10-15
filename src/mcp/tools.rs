@@ -7,7 +7,7 @@ use crate::editor_operations::{
     RemoteRequest, TOOL_NAMES, TransformInput,
 };
 use azteccraft::{
-    native_scene::NativeId,
+    native_scene::{FaceTarget, NativeId},
     scene::{NodeId, Primitive},
 };
 use rmcp::{
@@ -101,6 +101,18 @@ struct EditNodeArgs {
 
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+struct ExtrudeArgs {
+    scene_token: String,
+    node_id: String,
+    shape_id: String,
+    #[schemars(length(min = 2, max = 257))]
+    instance_path: Vec<String>,
+    face_index: usize,
+    distance: f64,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct OpenArgs {
     scene_token: String,
     #[schemars(length(min = 1, max = 4096))]
@@ -164,6 +176,18 @@ fn node_id(value: &str) -> Result<NodeId, ErrorData> {
         .map_err(|_| ErrorData::invalid_params("node_id must fit an unsigned 64-bit integer", None))
 }
 
+fn native_id(value: &str) -> Result<NativeId, ErrorData> {
+    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(ErrorData::invalid_params(
+            "Native IDs must be unsigned decimal strings",
+            None,
+        ));
+    }
+    NativeId::from_decimal(value).map_err(|_| {
+        ErrorData::invalid_params("Native IDs must fit unsigned 64-bit integers", None)
+    })
+}
+
 fn parse_request(name: &str, arguments: JsonObject) -> Result<RemoteRequest, ErrorData> {
     if arguments
         .get("name")
@@ -215,21 +239,7 @@ fn parse_request(name: &str, arguments: JsonObject) -> Result<RemoteRequest, Err
                         ));
                     }
                     path.into_iter()
-                        .map(|value| {
-                            if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit())
-                            {
-                                return Err(ErrorData::invalid_params(
-                                    "instance_path IDs must be unsigned decimal strings",
-                                    None,
-                                ));
-                            }
-                            NativeId::from_decimal(&value).map_err(|_| {
-                                ErrorData::invalid_params(
-                                    "instance_path IDs must fit unsigned 64-bit integers",
-                                    None,
-                                )
-                            })
-                        })
+                        .map(|value| native_id(&value))
                         .collect::<Result<Vec<_>, _>>()
                 })
                 .transpose()?;
@@ -288,6 +298,31 @@ fn parse_request(name: &str, arguments: JsonObject) -> Result<RemoteRequest, Err
                     translation: args.translation,
                     rotation_degrees: args.rotation_degrees,
                     scale: args.scale,
+                },
+            )
+        }
+        "extrude_face" => {
+            let args: ExtrudeArgs = decode(arguments)?;
+            if !(2..=257).contains(&args.instance_path.len()) || !args.distance.is_finite() {
+                return Err(ErrorData::invalid_params(
+                    "Extrusion requires 2 to 257 path IDs and a finite distance",
+                    None,
+                ));
+            }
+            (
+                token(&args.scene_token)?,
+                Operation::ExtrudeFace {
+                    target: FaceTarget {
+                        transform: node_id(&args.node_id)?,
+                        shape: native_id(&args.shape_id)?,
+                        path: args
+                            .instance_path
+                            .iter()
+                            .map(|value| native_id(value))
+                            .collect::<Result<_, _>>()?,
+                        face_index: args.face_index,
+                    },
+                    distance: args.distance,
                 },
             )
         }
@@ -419,6 +454,10 @@ fn catalog() -> Vec<Tool> {
                 "edit_node" => (
                     "Edit optional name and individual f64 channels in one undo entry. Omitted arrays and null components are untouched; translation uses declared scene units and supplied rotations use degrees. Does not change selection",
                     schema::<EditNodeArgs>(),
+                ),
+                "extrude_face" => (
+                    "Extrude one current canonical quad along its local normal by distance in declared scene units. Requires node, shape and full root-to-shape path; shared-shape edits affect every instance. Zero distance changes topology; imported structural edits remain unsupported",
+                    schema::<ExtrudeArgs>(),
                 ),
                 "delete_node" => (
                     "Delete an object through editor undo history",
@@ -642,6 +681,9 @@ mod tests {
                 "select_node" => json!({"scene_token":token,"node_id":null}),
                 "rename_node" => json!({"scene_token":token,"node_id":"1","name":"cube"}),
                 "edit_node" => json!({"scene_token":token,"node_id":"1"}),
+                "extrude_face" => {
+                    json!({"scene_token":token,"node_id":"1","shape_id":"2","instance_path":["1","2"],"face_index":0,"distance":1})
+                }
                 "set_transform" => {
                     json!({"scene_token":token,"node_id":"1","translation":[0,0,0],"rotation_degrees":[0,0,0],"scale":[1,1,1]})
                 }
@@ -679,7 +721,6 @@ mod tests {
         assert!(parse_request("rename_node", args.as_object().unwrap().clone()).is_ok());
         args["name"] = format!("{}a", args["name"].as_str().unwrap()).into();
         assert!(parse_request("rename_node", args.as_object().unwrap().clone()).is_err());
-        assert!(parse_request("extrude_face", JsonObject::new()).is_err());
     }
 
     #[test]
@@ -786,6 +827,95 @@ mod tests {
             ))
             .is_err()
         );
+    }
+
+    #[test]
+    fn extrusion_schema_and_runtime_require_explicit_bounded_targets() {
+        let token = Uuid::new_v4().to_string();
+        let tool = catalog()
+            .into_iter()
+            .find(|tool| tool.name == "extrude_face")
+            .unwrap();
+        assert_eq!(
+            tool.input_schema["properties"]["instance_path"]["minItems"],
+            2
+        );
+        assert_eq!(
+            tool.input_schema["properties"]["instance_path"]["maxItems"],
+            257
+        );
+        let valid = json!({"scene_token":token,"node_id":"1","shape_id":"2","instance_path":["1","2"],"face_index":1,"distance":-0.75});
+        let request = parse_request("extrude_face", valid.as_object().unwrap().clone()).unwrap();
+        let Operation::ExtrudeFace { target, distance } = request.operation else {
+            panic!("expected extrusion")
+        };
+        assert_eq!(target.transform.to_decimal(), "1");
+        assert_eq!(target.shape.to_decimal(), "2");
+        assert_eq!(target.face_index, 1);
+        assert_eq!(distance, -0.75);
+        for (field, values) in [
+            (
+                "instance_path",
+                vec![
+                    json!(null),
+                    json!([]),
+                    json!(["1"]),
+                    json!(vec!["1"; 258]),
+                    json!([1, "2"]),
+                    json!(["+1", "2"]),
+                    json!(["1", "18446744073709551616"]),
+                ],
+            ),
+            (
+                "node_id",
+                vec![
+                    json!(1),
+                    json!(""),
+                    json!("+1"),
+                    json!("18446744073709551616"),
+                ],
+            ),
+            (
+                "shape_id",
+                vec![
+                    json!(2),
+                    json!(""),
+                    json!("+2"),
+                    json!("18446744073709551616"),
+                ],
+            ),
+            (
+                "face_index",
+                vec![json!(-1), json!(1.5), json!("1"), json!(null)],
+            ),
+            ("distance", vec![json!(null), json!("1"), json!(false)]),
+        ] {
+            for value in values {
+                let mut args = valid.clone();
+                args[field] = value;
+                assert!(
+                    parse_request("extrude_face", args.as_object().unwrap().clone()).is_err(),
+                    "{field}"
+                );
+            }
+        }
+        for required in [
+            "node_id",
+            "shape_id",
+            "instance_path",
+            "face_index",
+            "distance",
+        ] {
+            let mut args = valid.clone();
+            args.as_object_mut().unwrap().remove(required);
+            assert!(parse_request("extrude_face", args.as_object().unwrap().clone()).is_err());
+        }
+        let mut args = valid.clone();
+        args["extra"] = json!(true);
+        assert!(parse_request("extrude_face", args.as_object().unwrap().clone()).is_err());
+        let mut args = valid;
+        args["instance_path"] = json!(vec!["1"; 257]);
+        assert!(parse_request("extrude_face", args.as_object().unwrap().clone()).is_ok());
     }
 
     #[test]

@@ -1,5 +1,5 @@
 #[cfg(any(test, feature = "mcp"))]
-use azteccraft::native_scene::NativeTransform;
+use azteccraft::native_scene::{FaceTarget, NativeTransform};
 use azteccraft::{
     native_scene::{NativeError, NativeId},
     scene::{NodeId, Primitive},
@@ -10,6 +10,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 #[derive(Clone, Copy, Debug, Serialize)]
+#[cfg(any(test, feature = "mcp"))]
 pub struct TransformInput {
     pub translation: [f64; 3],
     pub rotation_degrees: [f64; 3],
@@ -38,13 +39,14 @@ pub const MAX_NAME_BYTES: usize = 4096;
 pub const MAX_RESULT_BYTES: usize = 512 * 1024;
 
 #[cfg(any(test, feature = "mcp"))]
-pub const TOOL_NAMES: [&str; 17] = [
+pub const TOOL_NAMES: [&str; 18] = [
     "inspect_scene",
     "create_primitive",
     "select_node",
     "rename_node",
     "set_transform",
     "edit_node",
+    "extrude_face",
     "delete_node",
     "undo",
     "redo",
@@ -78,10 +80,12 @@ pub enum Operation {
         pending_id: uuid::Uuid,
         decision: FileDecision,
     },
+    #[cfg(any(test, feature = "mcp"))]
     Rename {
         id: NodeId,
         name: String,
     },
+    #[cfg(any(test, feature = "mcp"))]
     SetTransform {
         id: NodeId,
         transform: TransformInput,
@@ -94,9 +98,9 @@ pub enum Operation {
         rotation_degrees: [Option<f64>; 3],
         scale: [Option<f64>; 3],
     },
+    #[cfg(any(test, feature = "mcp"))]
     ExtrudeFace {
-        shape: NativeId,
-        face_index: usize,
+        target: FaceTarget,
         distance: f64,
     },
     Delete(NodeId),

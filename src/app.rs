@@ -1,14 +1,16 @@
 #[cfg(any(test, feature = "mcp"))]
 use crate::editor_operations::{
     CameraInspection, NodeInspection, RemoteRequest, SceneInspection, ShapeInspection,
-    UnitsInspection,
+    TransformInput, UnitsInspection,
 };
-use crate::editor_operations::{Operation, OperationError, OperationReply, TransformInput};
+use crate::editor_operations::{Operation, OperationError, OperationReply};
+#[cfg(test)]
+use azteccraft::native_scene::FaceTarget;
 #[cfg(any(test, feature = "mcp"))]
-use azteccraft::native_scene::LinearUnit;
+use azteccraft::native_scene::{LinearUnit, NativeTransform};
 use azteccraft::{
     history::{Command, EditOutcome, History},
-    native_scene::{AngularUnit, NativeId, NativeTransform},
+    native_scene::{AngularUnit, NativeId},
     scene::{NodeId, Primitive},
     view_scene::ViewScene,
     viewport::Camera,
@@ -131,40 +133,6 @@ impl Editor {
         });
     }
 
-    fn execute(&mut self, command: Command) {
-        let operation = match command {
-            Command::Create { primitive, name } => Operation::Create {
-                primitive,
-                name: Some(name),
-            },
-            Command::Remove(id) => Operation::Delete(id),
-            Command::Rename { id, name } => Operation::Rename { id, name },
-            Command::SetTransform { id, transform } => match self.transform_input(transform) {
-                Ok(transform) => Operation::SetTransform { id, transform },
-                Err(error) => {
-                    self.status = error.to_string();
-                    self.error = true;
-                    return;
-                }
-            },
-            Command::EditNode { .. } => {
-                self.status = "Draft commands are committed by the Channel Box".into();
-                self.error = true;
-                return;
-            }
-            Command::ExtrudeFace {
-                shape,
-                face_index,
-                distance,
-            } => Operation::ExtrudeFace {
-                shape,
-                face_index,
-                distance,
-            },
-        };
-        self.native_operation(operation);
-    }
-
     fn create(&mut self, primitive: Primitive) {
         self.native_operation(Operation::Create {
             primitive,
@@ -248,6 +216,7 @@ impl Editor {
         self.apply_operation(request.operation)
     }
 
+    #[cfg(any(test, feature = "mcp"))]
     fn transform_input(
         &self,
         transform: NativeTransform,
@@ -509,6 +478,7 @@ impl Editor {
                 });
                 Command::Create { primitive, name }
             }
+            #[cfg(any(test, feature = "mcp"))]
             Operation::Rename { id, name } => Command::Rename { id, name },
             #[cfg(any(test, feature = "mcp"))]
             Operation::EditNode {
@@ -555,6 +525,7 @@ impl Editor {
                 }
                 Command::EditNode { id, name, channels }
             }
+            #[cfg(any(test, feature = "mcp"))]
             Operation::SetTransform { id, transform } => {
                 let rotation = match self.history.scene().units().angular {
                     AngularUnit::Degree => transform.rotation_degrees,
@@ -574,15 +545,26 @@ impl Editor {
                     },
                 }
             }
-            Operation::ExtrudeFace {
-                shape,
-                face_index,
-                distance,
-            } => Command::ExtrudeFace {
-                shape,
-                face_index,
-                distance,
-            },
+            #[cfg(any(test, feature = "mcp"))]
+            Operation::ExtrudeFace { target, distance } => {
+                if !(2..=azteccraft::native_scene::MAX_TRANSFORM_DEPTH + 1)
+                    .contains(&target.path.len())
+                    || !distance.is_finite()
+                {
+                    return Err(OperationError::InvalidInput(
+                        "Extrusion requires a bounded full shape path and finite distance".into(),
+                    ));
+                }
+                self.history
+                    .scene()
+                    .resolve_face_target(&target)
+                    .map_err(OperationError::Scene)?;
+                Command::ExtrudeFace {
+                    shape: target.shape,
+                    face_index: target.face_index,
+                    distance,
+                }
+            }
             Operation::Delete(id) => Command::Remove(id),
             Operation::Select { node, .. } => {
                 let path = selected_path.unwrap_or_default();
@@ -727,7 +709,7 @@ impl Editor {
             self.history_step(true);
         }
         if delete && let Some(id) = self.selected {
-            self.execute(Command::Remove(id));
+            self.native_operation(Operation::Delete(id));
         }
         if frame {
             self.frame_selected();
@@ -838,7 +820,7 @@ impl Editor {
                     .clicked()
                 {
                     if let Some(id) = self.selected {
-                        self.execute(Command::Remove(id));
+                        self.native_operation(Operation::Delete(id));
                     }
                     ui.close();
                 }
@@ -1010,7 +992,7 @@ impl Editor {
         }
         ui.separator();
         if ui.button("Delete selected").clicked() {
-            self.execute(Command::Remove(id));
+            self.native_operation(Operation::Delete(id));
         }
         ui.separator();
         ui.weak("Inputs / construction history");
@@ -1385,7 +1367,7 @@ mod tests {
     #[test]
     fn remote_operations_share_native_scene_selection_history_and_camera() {
         let mut editor = Editor::default();
-        assert_eq!(crate::editor_operations::TOOL_NAMES.len(), 17);
+        assert_eq!(crate::editor_operations::TOOL_NAMES.len(), 18);
         let OperationReply::Created { node_id } = remote(
             &mut editor,
             Operation::Create {
@@ -1674,9 +1656,17 @@ mod tests {
         let id = editor.selected.unwrap();
         let shape = editor.history.scene().shapes()[0].id();
         editor.channels[0] = "2".into();
-        editor.execute(Command::ExtrudeFace {
+        let target = FaceTarget {
+            transform: id,
             shape,
+            path: vec![
+                editor.history.scene().node(id).unwrap().transform_id(),
+                shape,
+            ],
             face_index: 0,
+        };
+        editor.native_operation(Operation::ExtrudeFace {
+            target: target.clone(),
             distance: 0.0,
         });
         assert!(!editor.error);
@@ -1713,9 +1703,8 @@ mod tests {
         );
         let before = editor.history.scene().clone();
         editor.channels[0] = "nan".into();
-        editor.execute(Command::ExtrudeFace {
-            shape,
-            face_index: 0,
+        editor.native_operation(Operation::ExtrudeFace {
+            target: target.clone(),
             distance: 1.0,
         });
         assert!(editor.error);
@@ -1723,9 +1712,18 @@ mod tests {
         assert_eq!(editor.history.scene(), &before);
         assert!(editor.history.can_redo());
         editor.sync_fields();
-        editor.execute(Command::ExtrudeFace {
-            shape,
-            face_index: 99,
+        editor.native_operation(Operation::ExtrudeFace {
+            target: target.clone(),
+            distance: f64::NAN,
+        });
+        assert!(editor.error);
+        assert_eq!(editor.history.scene(), &before);
+        assert!(editor.history.can_redo());
+        editor.native_operation(Operation::ExtrudeFace {
+            target: FaceTarget {
+                face_index: 99,
+                ..target
+            },
             distance: 1.0,
         });
         assert!(editor.error);

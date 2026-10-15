@@ -335,7 +335,7 @@ fn camera_for_scene(scene: &NativeScene, aspect: f32) -> Result<Camera, Operatio
 #[cfg(test)]
 mod tests {
     use super::*;
-    use azteccraft::{history::Command, scene::Primitive};
+    use azteccraft::scene::Primitive;
 
     fn write_legacy_cube(path: &Path, translation: f32) -> azteccraft::scene::NodeId {
         let mut scene = azteccraft::scene::Scene::default();
@@ -607,7 +607,7 @@ mod tests {
         assert!(editor.error);
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
         editor.sync_fields();
-        editor.execute(Command::Rename {
+        editor.native_operation(Operation::Rename {
             id: editor.selected.unwrap(),
             name: "changed".into(),
         });
