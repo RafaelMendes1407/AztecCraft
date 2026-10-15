@@ -14,7 +14,7 @@ Keep each commit independently reviewable. Use a distinct reviewer for 2 plan/di
 
 Unsupported controls must visibly say they're unsupported. Update documentation with the implemented behavior and verification limits, and distinguish work completed in a branch from behavior integrated into the current checkout. Store reference versions, fixture hashes and comparison outcomes so another reviewer can reproduce the result.
 
-Keep reference assets, private scenes, secrets and personal paths out of commits unless explicitly approved for distribution. Preserve existing user data and logs, and obtain per-item confirmation before destructive cleanup. Inspect licenses and preserve required attribution before adopting upstream code. This checkout hasn't selected a project distribution license.
+Keep reference assets, private scenes, secrets and personal paths out of commits unless explicitly approved for distribution. Preserve existing user data and logs, and obtain per-item confirmation before destructive cleanup. Inspect licenses and preserve required attribution before adopting upstream code. Unless you state otherwise, contributions are accepted under the project's dual license, MIT OR Apache-2.0 (see [README](README.md#license)).
 
 ## Publication and acceptance
 

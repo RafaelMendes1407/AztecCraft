@@ -375,9 +375,13 @@ existing three-platform CI matrix runs both. Packaging captures all four complet
 vendor license/notice files from the selected manifest's project root before
 creating output, with a 64 KiB per-file limit and a 256 KiB total bound. Inputs
 must be stable regular files during capture. Captured bytes accompany each binary
-and its archive at `Contents/Resources/licenses/craft-atomic/` on macOS or
-`azteccraft/licenses/craft-atomic/` on Linux/Windows. Rejected notice inputs leave
-no new output directory. This prerequisite does not implement native Save.
+and its archive under `Contents/Resources/licenses/` on macOS or
+`azteccraft/licenses/` on Linux/Windows: the root `LICENSE-MIT`,
+`LICENSE-APACHE` and `NOTICE`, then `craft-atomic/` (the vendor files) and
+`egui-default-fonts/` (the font license files copied verbatim from
+`epaint_default_fonts` 0.36.2). Rejected notice inputs leave no new output
+directory.
+This prerequisite does not implement native Save.
 
 ## Maya Binary container inspection
 

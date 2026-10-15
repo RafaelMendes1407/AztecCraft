@@ -12,27 +12,47 @@ import struct
 import tarfile
 import tomllib
 import zipfile
-from pathlib import Path
-from typing import Literal
+from collections.abc import Iterable
+from pathlib import Path, PurePath
+from typing import Literal, TypeVar
 
 Platform = Literal["macos", "windows", "linux"]
 ATOMIC_NOTICES = ("LICENSE-MIT", "LICENSE-APACHE", "NOTICE", "ATTRIBUTION.md")
+PROJECT_NOTICES = ("LICENSE-MIT", "LICENSE-APACHE", "NOTICE")
+FONT_NOTICES = (
+    "Hack-Regular.txt",
+    "OFL.txt",
+    "UFL.txt",
+    "emoji-icon-font-mit-license.txt",
+)
+P = TypeVar("P", bound=PurePath)
 NOTICE_LIMIT = 64 * 1024
 
 
 def capture_atomic_notices(manifest: Path) -> tuple[tuple[str, bytes], ...]:
-    root = manifest.parent / "vendor" / "craft-atomic"
+    return capture_notices(manifest.parent / "vendor" / "craft-atomic", ATOMIC_NOTICES)
+
+
+def capture_project_notices(manifest: Path) -> tuple[tuple[str, bytes], ...]:
+    return capture_notices(manifest.parent, PROJECT_NOTICES)
+
+
+def capture_font_notices(manifest: Path) -> tuple[tuple[str, bytes], ...]:
+    return capture_notices(manifest.parent / "licenses" / "egui-default-fonts", FONT_NOTICES)
+
+
+def capture_notices(root: Path, names: tuple[str, ...]) -> tuple[tuple[str, bytes], ...]:
     notices = []
-    for name in ATOMIC_NOTICES:
+    for name in names:
         path = root / name
         if not stat.S_ISREG(path.lstat().st_mode):
-            raise ValueError(f"atomic notice {name} must be a regular file, not a symlink")
+            raise ValueError(f"license notice {name} must be a regular file, not a symlink")
         with path.open("rb") as source:
             if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
-                raise ValueError(f"atomic notice {name} must be a regular file")
+                raise ValueError(f"license notice {name} must be a regular file")
             content = source.read(NOTICE_LIMIT + 1)
         if len(content) > NOTICE_LIMIT:
-            raise ValueError(f"atomic notice {name} exceeds 64 KiB")
+            raise ValueError(f"license notice {name} exceeds 64 KiB")
         notices.append((name, content))
     return tuple(notices)
 
@@ -72,6 +92,11 @@ def sha256(path: Path) -> str:
         return hashlib.file_digest(source, "sha256").hexdigest()
 
 
+def archive_order(paths: Iterable[P], root: PurePath) -> list[P]:
+    # Path ordering is case-insensitive on Windows; sort by a case-sensitive POSIX key instead.
+    return sorted(paths, key=lambda path: path.relative_to(root).as_posix())
+
+
 def archive_metadata(info: tarfile.TarInfo) -> tarfile.TarInfo:
     info.uid = info.gid = 0
     info.uname = info.gname = ""
@@ -94,6 +119,8 @@ def package(binary: Path, manifest: Path, output: Path, target: Platform) -> Pat
     ):
         raise ValueError("package version must be a semantic version")
     notices = capture_atomic_notices(manifest)
+    project_notices = capture_project_notices(manifest)
+    font_notices = capture_font_notices(manifest)
     output.mkdir()
     if target == "macos":
         bundle = output / "AztecCraft.app"
@@ -119,15 +146,21 @@ def package(binary: Path, manifest: Path, output: Path, target: Platform) -> Pat
         bundle = output / "azteccraft"
         bundle.mkdir()
         executable = bundle / binary.name
-    licenses = (
-        bundle / "Contents" / "Resources" / "licenses" / "craft-atomic"
-        if target == "macos"
-        else bundle / "licenses" / "craft-atomic"
+    project_licenses = (
+        bundle / "Contents" / "Resources" / "licenses" if target == "macos" else bundle / "licenses"
     )
+    licenses = project_licenses / "craft-atomic"
+    fonts = project_licenses / "egui-default-fonts"
     licenses.mkdir(parents=True)
-    for name, content in notices:
-        with (licenses / name).open("xb") as destination:
-            destination.write(content)
+    fonts.mkdir()
+    for directory, files in (
+        (project_licenses, project_notices),
+        (licenses, notices),
+        (fonts, font_notices),
+    ):
+        for name, content in files:
+            with (directory / name).open("xb") as destination:
+                destination.write(content)
     with binary.open("rb") as source, executable.open("xb") as destination:
         shutil.copyfileobj(source, destination)
     if target != "windows":
@@ -141,7 +174,7 @@ def package(binary: Path, manifest: Path, output: Path, target: Platform) -> Pat
     else:
         archive = output / f"{basename}.zip"
         with zipfile.ZipFile(archive, "x", compression=zipfile.ZIP_DEFLATED) as zip_file:
-            for path in sorted(bundle.rglob("*")):
+            for path in archive_order(bundle.rglob("*"), output):
                 info = zipfile.ZipInfo.from_file(path, str(path.relative_to(output)))
                 info.create_system = 3
                 info.compress_type = zipfile.ZIP_DEFLATED

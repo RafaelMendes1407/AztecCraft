@@ -14,8 +14,9 @@ remain active for both artifacts and all vendored files.
 
 The library retains its `MIT OR Apache-2.0` license expression, both complete
 license texts and original notices. Packaging includes all four license/notice
-files unchanged with each platform binary. No trademark endorsement, upstream
-acceptance of local changes or AztecCraft distribution license is inferred.
+files unchanged with each platform binary. No trademark endorsement or upstream
+acceptance of local changes is inferred. AztecCraft's own license (MIT OR Apache-2.0) is in
+the root `LICENSE-MIT`, `LICENSE-APACHE` and `NOTICE`.
 
 The reviewed local writable-preflight hook has provenance commit
 `8fb530c18dcbe617d5ba81fd2df21216a863c89b`, tree
