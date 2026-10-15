@@ -390,12 +390,9 @@ fn binary_nonbinary_units_check_actual_stored_displacement() {
         let frame = scene.world_move_frame(&selected).unwrap();
         let before = scene.clone();
         if factor == 2.54 {
-            assert!(matches!(
-                frame.translation(WorldAxis::X, 2.54),
-                Err(NativeError::UnsupportedMove(
-                    WorldMoveUnsupported::NumericalDisplacement
-                ))
-            ));
+            // Ordinary inch rounding at 1000 cm is within the storage precision, not a refusal.
+            let nudged = frame.translation(WorldAxis::X, 2.54).unwrap();
+            assert!(((nudged[0] - 1000.0 / factor) * factor - 2.54).abs() < 1e-12);
             assert_eq!(scene, before);
         }
         let translation = frame.translation(WorldAxis::X, distance).unwrap();
@@ -546,6 +543,72 @@ fn moving_selected_group_with_multiple_shapes_updates_every_derived_instance() {
                     f64::from(before.z),
                 ],
             );
+        }
+    }
+}
+
+#[test]
+fn seeded_sweep_of_large_translations_and_distances_stays_representable_on_every_axis() {
+    let mut state = 0x9E37_79B9_7F4A_7C15_u64;
+    let mut next = || {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (state >> 11) as f64 / (1_u64 << 53) as f64
+    };
+    for rotated_parent in [false, true] {
+        let (mut scene, node) = if rotated_parent {
+            let (mut scene, root, child, _) = test_fixtures::grouped_shape();
+            scene
+                .set_transform(
+                    root,
+                    NativeTransform {
+                        rotation: [20.0, 35.0, -15.0],
+                        scale: [2.0, 0.5, 1.5],
+                        ..NativeTransform::default()
+                    },
+                )
+                .unwrap();
+            (scene, child)
+        } else {
+            test_fixtures::cube()
+        };
+        for sweep in 0..300 {
+            let extent = if sweep == 0 { 696.64 } else { 1e5 };
+            let channels = [
+                Channel::TranslateX,
+                Channel::TranslateY,
+                Channel::TranslateZ,
+            ];
+            for channel in channels {
+                let value = if sweep == 0 {
+                    extent
+                } else {
+                    (next() * 2.0 - 1.0) * extent
+                };
+                scene.set_channel(node, channel, value).unwrap();
+            }
+            let frame = scene.world_move_frame(&target(&scene, node)).unwrap();
+            for axis in [WorldAxis::X, WorldAxis::Y, WorldAxis::Z] {
+                let distance = if sweep == 0 {
+                    0.41
+                } else {
+                    (0.01 + next() * 19.99) * if next() < 0.5 { -1.0 } else { 1.0 }
+                };
+                let translation = frame.translation(axis, distance).unwrap_or_else(|error| {
+                    panic!(
+                        "T={value:?} d={distance} {axis:?}: {error}",
+                        value = frame.translation
+                    )
+                });
+                let moved = DVec3::from_array(translation) * frame.linear_factor;
+                let world = frame.parent_linear * (moved - frame.translation_cm);
+                let expected = axis.direction() * distance;
+                assert!(
+                    (world - expected).abs().max_element() <= 1e-6 * distance.abs(),
+                    "{rotated_parent} {axis:?} {distance}: {world:?}"
+                );
+            }
         }
     }
 }

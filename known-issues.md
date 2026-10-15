@@ -197,9 +197,9 @@ unproved retained source words reject editing. MA and general source authoring
 remain subject to their existing read-only/source guards. The 72-physical-pixel
 geometry and near-parallel threshold are application policies, not Maya parity.
 
-Native/SDK tests for this candidate pass locally: the workspace and
-mcp-test-client suites ran green on 2026-10-15. Native framebuffer/desktop and
-genuine source-bound Save consumer checks remain open.
+Native/SDK tests for this candidate are in the workspace and mcp-test-client
+suites; CI for the current head is the record of their status. Native
+framebuffer/desktop and genuine source-bound Save consumer checks remain open.
 The prior changed-parent full MCP-client run observed an unchanged transport
 notification-flood outer-timeout failure; its single isolated reproduction
 passed. The full run remains failed and the timing cause unproved.

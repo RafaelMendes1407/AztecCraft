@@ -4,6 +4,13 @@ use std::sync::Arc;
 
 const MAX_PARENT_CONDITION: f64 = 1e12;
 const ROUNDTRIP_EPSILON: f64 = 128.0 * f64::EPSILON;
+// A move is refused when the stored translation cannot resolve it to about one part in 2^20.
+const MIN_RESOLUTION: f64 = 1.0 / 1_048_576.0;
+
+// Upper bound of the spacing between f64 values near `value`.
+fn ulp_bound(value: f64) -> f64 {
+    value.abs().max(f64::MIN_POSITIVE) * f64::EPSILON
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WorldAxis {
@@ -105,8 +112,23 @@ impl WorldMoveFrame {
         }
         let represented_delta = DVec3::from_array(internal) - self.translation_cm;
         let represented_world = self.parent_linear * represented_delta;
+        // Rounding of the stored channel, of its centimeter product and of the baseline product
+        // limits how exactly any move can be stored; it grows with |translation|.
+        let mut storage_precision: f64 = 0.0;
+        for component in 0..3 {
+            if translation[component].to_bits() != self.translation[component].to_bits() {
+                storage_precision = storage_precision.max(
+                    ulp_bound(translation[component]) * self.linear_factor
+                        + ulp_bound(internal[component])
+                        + ulp_bound(self.translation_cm[component]),
+                );
+            }
+        }
+        let world_precision = self.parent_norm * storage_precision;
         if !represented_world.is_finite()
-            || (represented_world - displacement).abs().max_element() > tolerance
+            || !world_precision.is_finite()
+            || world_precision > MIN_RESOLUTION * distance_cm.abs()
+            || (represented_world - displacement).abs().max_element() > tolerance + world_precision
         {
             return Err(NativeError::UnsupportedMove(
                 WorldMoveUnsupported::NumericalDisplacement,
