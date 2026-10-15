@@ -378,7 +378,6 @@ fn source_mismatch_refuses_preview_and_finish_without_restoring_into_another_sou
     history
         .update_move(token, id, MoveProvenance::Native, 1.0)
         .unwrap();
-    let previous = history.scene.clone();
     history.scene = binary::decode(wire::specimen().into()).unwrap();
     let changed_identity = history.scene.clone();
     assert_eq!(
@@ -389,16 +388,38 @@ fn source_mismatch_refuses_preview_and_finish_without_restoring_into_another_sou
         history.finish_move(token, id, MoveProvenance::Native, MoveFinish::Commit),
         Err(MoveError::Native(NativeError::InvalidRetention))
     );
+    assert!(history.active_move().is_none());
+    assert_eq!(history.scene, changed_identity);
+    assert!(history.undo.is_empty() && history.redo.is_empty());
+    assert_eq!(history.cancel_active_move(), Ok(EditOutcome::Unchanged));
+    assert_eq!(
+        history.update_move(token, id, MoveProvenance::Native, 2.0),
+        Err(MoveError::StaleMove)
+    );
+}
+
+#[test]
+fn failed_cancel_still_clears_the_active_move_so_a_new_move_can_begin() {
+    let scene = binary::decode(wire::specimen().into()).unwrap();
+    let mut history = History::new(scene);
+    let token = Uuid::new_v4();
+    let id = start(&mut history, token);
+    history
+        .update_move(token, id, MoveProvenance::Native, 1.0)
+        .unwrap();
+    history.scene = binary::decode(wire::specimen().into()).unwrap();
+    let changed_identity = history.scene.clone();
     assert_eq!(
         history.cancel_active_move(),
         Err(MoveError::Native(NativeError::InvalidRetention))
     );
+    assert!(history.active_move().is_none());
     assert_eq!(history.scene, changed_identity);
-    assert_eq!(history.active_move().unwrap().id, id);
-    assert!(history.undo.is_empty() && history.redo.is_empty());
-    history.scene = previous;
-    history.cancel_active_move().unwrap();
-    assert_eq!(history.scene, scene);
+    assert_eq!(
+        start(&mut history, token),
+        MoveId(2),
+        "the failed cancel must not leave the transaction owning the history"
+    );
 }
 
 #[test]

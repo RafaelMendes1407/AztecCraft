@@ -200,12 +200,15 @@ impl History {
         provenance: MoveProvenance,
         finish: MoveFinish,
     ) -> Result<EditOutcome, MoveError> {
-        let active = self.active_move.as_ref().ok_or(MoveError::StaleMove)?;
-        active.matches(scene_token, id, provenance)?;
+        self.active_move
+            .as_ref()
+            .ok_or(MoveError::StaleMove)?
+            .matches(scene_token, id, provenance)?;
+        // Clear before any fallible scene work so a failure cannot leave an unfinishable move.
+        let active = self.active_move.take().ok_or(MoveError::StaleMove)?;
         let channels = self.scene.move_translation_changes(&active.baseline)?;
         let node = active.target.node;
         self.scene.restore_move_translation(&active.baseline)?;
-        self.active_move = None;
         if finish == MoveFinish::Cancel || channels.iter().all(Option::is_none) {
             return Ok(if channels.iter().all(Option::is_none) {
                 EditOutcome::Unchanged
@@ -222,12 +225,12 @@ impl History {
     }
 
     pub fn cancel_active_move(&mut self) -> Result<EditOutcome, MoveError> {
-        let Some(active) = &self.active_move else {
+        // Clear before any fallible scene work so a failure cannot leave an unfinishable move.
+        let Some(active) = self.active_move.take() else {
             return Ok(EditOutcome::Unchanged);
         };
         let channels = self.scene.move_translation_changes(&active.baseline)?;
         self.scene.restore_move_translation(&active.baseline)?;
-        self.active_move = None;
         Ok(if channels.iter().all(Option::is_none) {
             EditOutcome::Unchanged
         } else {
