@@ -18,7 +18,7 @@ Remote, `remote_operation_guarded` (`src/app.rs:298`), checks in this order:
    input is `BusyEditing` (`src/app.rs:322`).
 5. Then `apply_operation_guarded` with provenance Remote (`src/app.rs:331`).
 
-Native, `apply_operation` (`src/app.rs:622`) calls `apply_operation_guarded` (`src/app.rs:626`) with
+Native, `apply_operation` (`src/app.rs:622`) calls `apply_operation_guarded` (defined at `src/app.rs:626`, called at `src/app.rs:623`) with
 provenance Native and no token or draft checks. In order:
 
 1. `guard_move_dispatch` first, with side effects (`src/app.rs:632`, `src/move_ui.rs:82`). For
@@ -29,18 +29,19 @@ provenance Native and no token or draft checks. In order:
    `UpdateMove`/`FinishMove`.
 2. Closing is `BusyEditing` (`src/app.rs:633`), so a native `NewScene` while closing cancels the
    Move and then fails.
-3. Per-operation modal rules: `SetGridVisible` (`src/app.rs:636`); `SaveScene`/`SaveSceneAs`
-   (`src/app.rs:652`, `src/app.rs:659`); `SetActiveTool` and the three Move
-   operations (`src/app.rs:673`). `OpenScene` reaches `open_candidate` (`src/app.rs:650`);
-   `NewScene`, `RequestClose` and `ResolveFileAction` decide internally
-   (`src/app.rs:665`-`src/app.rs:670`).
-4. Validation before the draft commit: path validity (`src/app.rs:641`), `selection_path` and
-   Select-clear-with-path (`src/app.rs:684`), Face mode and face-target resolution for `SelectFace`
-   (`src/app.rs:699`).
-5. `commit_pending` (`src/app.rs:1091`) commits a valid human draft first, except for `UpdateMove`
+3. `SetGridVisible` while modal is `BusyEditing` (`src/app.rs:636`).
+4. File operations are decided in one match (`src/app.rs:639`), before any draft commit. For
+   `OpenScene` and `SaveSceneAs`, path validity (`src/app.rs:641`) runs first. `OpenScene` then
+   reaches `open_candidate` with no modal check (`src/app.rs:650`); `SaveSceneAs` is refused while
+   modal (`src/app.rs:652`) and `SaveScene` likewise (`src/app.rs:659`). `NewScene`,
+   `RequestClose` and `ResolveFileAction` decide internally (`src/app.rs:665`-`src/app.rs:670`).
+5. `SetActiveTool` and the three Move operations are `BusyEditing` while modal (`src/app.rs:673`).
+6. Validation before the draft commit: `selection_path` and Select-clear-with-path
+   (`src/app.rs:684`), Face mode and face-target resolution for `SelectFace` (`src/app.rs:699`).
+7. `commit_pending` (`src/app.rs:1091`) commits a valid human draft first, except for `UpdateMove`
    and `FinishMove` (`src/app.rs:719`). On failure the operation returns `InvalidInput(status)`
    and the status text and error flag change.
-6. The operation handler runs and `sync_fields` refreshes Channel Box drafts.
+8. The operation handler runs and `sync_fields` refreshes Channel Box drafts.
 
 ## Behavior that stays inside handlers
 
@@ -54,9 +55,30 @@ These are not expressible as a shared guard and must not be hoisted without a ne
   `src/native_scene.rs:934`) and surfaces as `ReadOnlyFormat`; Move maps it in
   `src/move_ui.rs:156`.
 - `EditNode` with no fields returns `Unchanged` after only checking the node (`src/app.rs:773`).
-- Delete in Face mode is refused in `native_operation` (`src/app.rs:243`), above the pipeline, and
-  not by `apply_operation_guarded`; the matrix therefore shows native `delete` succeeding in
-  Face mode. The Move Face-mode refusal is in `begin_editor_move` (`src/move_ui.rs:138`).
+- Delete in Face mode is refused only in `native_operation` (`src/app.rs:243`), above the
+  pipeline. The matrix calls the pipeline directly, so its `delete(face_mode)` cells show the
+  operation succeeding in both columns; `native_operation_refuses_face_mode_delete_before_the_pipeline`
+  covers the UI refusal. The remote pipeline has no such refusal today, which is a bug
+  (cristim/AztecCraft#83, listed in `known-issues.md`); the snapshot records current behavior and
+  must change with the fix. The Move Face-mode refusal is in `begin_editor_move`
+  (`src/move_ui.rs:138`) and applies to both pipelines (`begin_move(face_mode)` cells).
+- The `read_only_ascii` fixture is a curve-only scene with no mesh. `set_material_diffuse`,
+  `select_face(face_mode)` and `extrude_face` therefore fail there with a missing-shape error, not
+  `ReadOnlyFormat`; read-only refusal is shown by `create`, `delete`, `rename` and the other
+  edits that pass target validation.
+
+## Observed behavior (recorded, not endorsed)
+
+The matrix records these asymmetries; treat a change as a behavior change that needs review.
+
+- Inspect: remote `inspect` is `Ok` in every state. Native `inspect` is `BusyManipulation` during
+  a Move and `BusyEditing` while closing, and `Ok` under a modal.
+- Native mutations (`create`, `delete`, `rename`, `undo`) succeed under a modal pending file
+  action; the remote pipeline refuses all of them as `BusyEditing`.
+- Native `set_active_tool` while closing consumes the pointer sequence (the Move guard runs
+  first) and then fails with `BusyEditing`.
+- Native `delete` with a changed material draft commits the draft first, then fails; the status
+  becomes "Material data edited" and the scene has changed even though the result is an `Err`.
 - Human-draft commits (`commit_pending`) are the only history mutation besides operations; the
   entry-point test names them.
 
@@ -66,8 +88,9 @@ These are not expressible as a shared guard and must not be hoisted without a ne
 | --- | --- |
 | Tool catalog bytes | `tests/snapshots/mcp_tool_catalog.json` |
 | Inspection bytes for four editor states | `tests/snapshots/inspection_*.json` |
-| Operation x pipeline x state matrix | `tests/snapshots/guard_matrix.txt` |
+| Operation x pipeline x state matrix, all platforms | `tests/snapshots/guard_matrix.txt` |
+| Matrix cells that write files (Save, Save As, Resolve(save)), Unix only | `tests/snapshots/guard_matrix_file_writing_unix.txt` |
 | Entry points | `src/entry_point_tests.rs` |
 
-The matrix covers Unix only for cells that write files. Snapshots are public: they hold no scene
+Snapshots are public: they hold no scene
 tokens, UUIDs, absolute paths or home directories (`src/snapshots.rs` rejects those).
