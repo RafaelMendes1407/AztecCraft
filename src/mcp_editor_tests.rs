@@ -1771,6 +1771,163 @@ mod official_client {
     }
 
     #[tokio::test]
+    async fn ncrv_sdk_open_refusal_preserves_the_complete_editor_baseline() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("synthetic.mb");
+        let baseline = binary_fixture::specimen();
+        std::fs::write(&path, &baseline).unwrap();
+        let context = egui::Context::default();
+        let (mut editor, client, server) = start(&context).await;
+        let token = editor.scene_token.to_string();
+        let opened = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "open_scene",
+            json!({"scene_token":token,"path":path.to_str().unwrap()}),
+        )
+        .await;
+        assert_eq!(
+            opened.structured_content.unwrap()["outcome"],
+            "document_applied"
+        );
+        let token = editor.scene_token.to_string();
+        let id = editor.history.scene().nodes()[0].id();
+        let selected = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "select_node",
+            json!({"scene_token":token,"node_id":id.to_decimal()}),
+        )
+        .await;
+        assert!(selected.structured_content.unwrap().get("error").is_none());
+        assert_eq!(editor.selected, Some(id));
+        assert!(!editor.selected_path.is_empty());
+        let changed = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "edit_node",
+            json!({"scene_token":token,"node_id":id.to_decimal(),"translation":[1.0,2.0,3.0]}),
+        )
+        .await;
+        assert!(changed.structured_content.unwrap().get("error").is_none());
+        let edited = editor.history.scene().clone();
+        let undone = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "undo",
+            json!({"scene_token":token}),
+        )
+        .await;
+        assert!(undone.structured_content.unwrap().get("error").is_none());
+        assert!(editor.history.can_redo());
+        let before = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "inspect_scene",
+            json!({}),
+        )
+        .await
+        .structured_content
+        .unwrap();
+        let original = editor.history.scene().clone();
+        let camera = editor.camera.clone();
+        let selection = (editor.selected, editor.selected_path.clone());
+        let title = editor.document_title();
+        for children in [
+            Vec::new(),
+            [
+                binary_fixture::creation(b"curve", Some(b"object")),
+                binary_fixture::chunk(b"NRBC", &[0xff, 0, 7], 8),
+            ]
+            .concat(),
+        ] {
+            let mut source = baseline.clone();
+            let offset = source.len();
+            source.extend(binary_fixture::group(b"NCRV", &children, 4));
+            let size = (source.len() - 16) as u64;
+            source[8..16].copy_from_slice(&size.to_be_bytes());
+            let refusal =
+                azteccraft::native_scene::binary::decode(source.clone().into()).unwrap_err();
+            assert_eq!(
+                refusal.kind(),
+                azteccraft::native_scene::binary::ErrorKind::Unsupported
+            );
+            assert_eq!(refusal.offset(), Some(offset));
+            let rejected = directory.path().join("unsupported.mb");
+            std::fs::write(&rejected, &source).unwrap();
+            assert!(matches!(
+                editor.apply_operation(Operation::OpenScene {
+                    path: rejected.clone()
+                }),
+                Err(OperationError::File(_))
+            ));
+            let failed = call(
+                &mut editor,
+                &context,
+                client.peer(),
+                "open_scene",
+                json!({"scene_token":token,"path":rejected.to_str().unwrap()}),
+            )
+            .await
+            .structured_content
+            .unwrap();
+            assert_eq!(failed["error"]["code"], "file_error");
+            assert_eq!(editor.history.scene(), &original);
+            assert_eq!(editor.camera, camera);
+            assert_eq!(
+                (editor.selected, &editor.selected_path),
+                (selection.0, &selection.1)
+            );
+            assert_eq!(editor.scene_token.to_string(), token);
+            assert_eq!(editor.document_title(), title);
+            assert!(!editor.is_dirty());
+            assert!(!editor.files.is_modal());
+            assert!(!editor.files.is_closing());
+            assert!(std::fs::read(&path).unwrap() == baseline);
+            assert!(std::fs::read(&rejected).unwrap() == source);
+            let after = call(
+                &mut editor,
+                &context,
+                client.peer(),
+                "inspect_scene",
+                json!({}),
+            )
+            .await
+            .structured_content
+            .unwrap();
+            assert_eq!(after, before);
+        }
+        let redone = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "redo",
+            json!({"scene_token":token}),
+        )
+        .await;
+        assert_eq!(redone.structured_content.unwrap()["outcome"], "changed");
+        assert_eq!(editor.history.scene(), &edited);
+        let undone = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "undo",
+            json!({"scene_token":token}),
+        )
+        .await;
+        assert_eq!(undone.structured_content.unwrap()["outcome"], "changed");
+        assert_eq!(editor.history.scene(), &original);
+        client.cancel().await.unwrap();
+        drop(editor);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
     async fn native_mb_open_inspects_precision_and_discards_the_exact_staged_candidate() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("private-synthetic-scene.mb");

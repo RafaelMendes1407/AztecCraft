@@ -251,6 +251,13 @@ pub(super) fn construct(
     retained_bytes: usize,
     retained_appearance_bytes: usize,
 ) -> Result<NativeScene, BinaryError> {
+    if let Some(chunk) = container
+        .chunks()
+        .iter()
+        .find(|chunk| chunk.tag() == *b"FOR8" && chunk.form() == Some(*b"NCRV"))
+    {
+        return Err(fail(ErrorKind::Unsupported, chunk.header_range().start));
+    }
     let initial = container
         .source()
         .len()

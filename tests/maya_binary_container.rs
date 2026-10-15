@@ -79,6 +79,95 @@ fn synthetic_unknown_leaf_and_padding_preserve_the_original_arc_and_header_bits(
 }
 
 #[test]
+fn synthetic_ncrv_uses_payload_size_alignment_and_retains_opaque_bytes() {
+    let mut leaves = record(*b"CREA", 0x1122_3344, &[0x81; 42], 8);
+    leaves.extend(record(*b"FLGS", 0x5566_7788, &[1, 2, 3], 8));
+    leaves.extend(record(*b"NRBC", 0x99aa_bbcc, &[0xff, 0, 0xfe, 7, 8], 8));
+    for prefix in [Vec::new(), record(*b"LEAF", 0, &[9; 4], 4)] {
+        let shift = prefix.len();
+        let bytes = root(&[prefix, group(*b"FOR8", *b"NCRV", &leaves, 4)].concat());
+        let source: Arc<[u8]> = bytes.into();
+        let container = container::inspect(source.clone()).unwrap();
+        assert!(Arc::ptr_eq(&source, container.source()));
+        assert_eq!(container.chunks().len(), if shift == 0 { 5 } else { 6 });
+        let index = if shift == 0 { 1 } else { 2 };
+        let curve = container.chunk(index).unwrap();
+        assert_eq!(curve.header_range(), 20 + shift..36 + shift);
+        assert_eq!(curve.payload_range(), 36 + shift..152 + shift);
+        assert_eq!(curve.form(), Some(*b"NCRV"));
+        assert_eq!(curve.auxiliary(), 0xfedc_ba98);
+        for (ordinal, (header, payload, padding, auxiliary)) in [
+            (40..56, 56..98, 98..104, 0x1122_3344),
+            (104..120, 120..123, 123..128, 0x5566_7788),
+            (128..144, 144..149, 149..152, 0x99aa_bbcc),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let child = container.chunk(index + ordinal + 1).unwrap();
+            assert_eq!(
+                child.header_range(),
+                header.start + shift..header.end + shift
+            );
+            assert_eq!(
+                child.payload_range(),
+                payload.start + shift..payload.end + shift
+            );
+            assert_eq!(
+                child.padding_range(),
+                padding.start + shift..padding.end + shift
+            );
+            assert_eq!(child.auxiliary(), auxiliary);
+            assert_eq!(child.parent(), Some(index));
+            assert!(
+                source[child.padding_range()]
+                    .iter()
+                    .all(|byte| *byte == 0xa5)
+            );
+        }
+        assert_eq!(
+            container.payload(index + 3),
+            Some([0xff, 0, 0xfe, 7, 8].as_slice())
+        );
+        assert_partition(&container);
+    }
+}
+
+#[test]
+fn synthetic_ncrv_rejects_malformed_children_and_unobserved_forms() {
+    for (tag, form) in [
+        (*b"LIS8", *b"NCRV"),
+        (*b"FOR8", *b"NRCV"),
+        (*b"FOR8", *b"JOIN"),
+    ] {
+        let error = container::inspect(root(&group(tag, form, &[], 4)).into()).unwrap_err();
+        assert_eq!((error.kind(), error.offset()), (ErrorKind::Unsupported, 20));
+    }
+    let unknown = group(*b"FOR8", *b"NEW!", &[], 8);
+    let error =
+        container::inspect(root(&group(*b"FOR8", *b"NCRV", &unknown, 4)).into()).unwrap_err();
+    assert_eq!((error.kind(), error.offset()), (ErrorKind::Unsupported, 40));
+    for residual in 1..16 {
+        let bytes = root(&group(*b"FOR8", *b"NCRV", &vec![0; residual], 4));
+        let error = container::inspect(bytes.into()).unwrap_err();
+        assert_eq!((error.kind(), error.offset()), (ErrorKind::Truncated, 40));
+    }
+    for end in 16..24 {
+        let leaf = record(*b"NRBC", 0, &[1, 2, 3, 4, 5], 8);
+        let bytes = root(&group(*b"FOR8", *b"NCRV", &leaf[..end], 4));
+        let error = container::inspect(bytes.into()).unwrap_err();
+        assert_eq!((error.kind(), error.offset()), (ErrorKind::Truncated, 40));
+    }
+    let mut overflow = record(*b"NRBC", 0, &[], 8);
+    overflow[8..16].copy_from_slice(&u64::MAX.to_be_bytes());
+    let error =
+        container::inspect(root(&group(*b"FOR8", *b"NCRV", &overflow, 4)).into()).unwrap_err();
+    assert_eq!((error.kind(), error.offset()), (ErrorKind::Overflow, 40));
+    let error = container::inspect(root(&record(*b"FOR8", 0, b"NCR", 4)).into()).unwrap_err();
+    assert_eq!((error.kind(), error.offset()), (ErrorKind::Truncated, 20));
+}
+
+#[test]
 fn synthetic_cons_children_align_to_four_while_connection_leaves_align_to_eight() {
     let mut leaves = record(*b"CWFL", 7, b"opaque connection", 8);
     leaves.extend(record(*b"RELA", 9, b"relation", 8));
@@ -270,6 +359,26 @@ fn private_fixture_paths_refuse_symlink_escape() {
         Some(inside.canonicalize().unwrap())
     );
     assert!(fixture_path(directory.path(), Path::new("../scene.mb")).is_none());
+}
+
+#[test]
+#[ignore = "requires two explicit vendor inputs and separate regular-file/size/SHA/Git precheck"]
+fn private_ncrv_vendor_inputs_reach_the_next_unadmitted_join() {
+    for (variable, size, offset) in [
+        ("AZTECCRAFT_MB_NCRV_ANIM", 66400, 5560),
+        ("AZTECCRAFT_MB_NCRV_LAYOUT", 60424, 4792),
+    ] {
+        let path = std::env::var_os(variable).expect("explicit vendor input required");
+        let bytes = bounded_read(Path::new(&path));
+        assert_eq!(bytes.len(), size);
+        assert!(bytes.get(offset..offset + 4) == Some(b"FOR8"));
+        assert!(bytes.get(offset + 16..offset + 20) == Some(b"JOIN"));
+        let error = container::inspect(bytes.into()).unwrap_err();
+        assert_eq!(
+            (error.kind(), error.offset()),
+            (ErrorKind::Unsupported, offset)
+        );
+    }
 }
 
 #[test]

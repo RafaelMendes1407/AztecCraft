@@ -185,11 +185,20 @@ no new output directory. This prerequisite does not implement native Save.
 
 `maya_binary::container::inspect` inspects an immutable byte buffer and retains
 the original bytes, header bits and padding with checked chunk spans. It admits
-40 explicitly observed FOR8/LIS8 group layouts, rejects unseen group layouts and
+41 explicitly observed FOR8/LIS8 group layouts, rejects unseen group layouts and
 malformed nested extents, and keeps unknown leaf payloads inert. Its 16 MiB,
 100,000-chunk and 64-level limits are application resource policy, not Maya
 format limits. Container inspection alone doesn't establish scene semantics or
 native Open, display or Save compatibility.
+
+The observed FOR8/NCRV layout rounds child payload sizes to eight bytes and
+retains NRBC payloads opaquely, including header bits and nonzero padding.
+Native decoding and Open explicitly refuse every NCRV group, including empty
+groups, until curve semantics are supported. Two retained vendor streams advance
+from NCRV refusal to the next unsupported JOIN form; neither scene is admitted.
+After a separate regular-file/size/SHA256/Git precheck, the ignored
+`private_ncrv_vendor_inputs_reach_the_next_unadmitted_join` container test requires
+explicit `AZTECCRAFT_MB_NCRV_ANIM` and `AZTECCRAFT_MB_NCRV_LAYOUT` input paths.
 
 The layout observations were compared with
 [MayaSceneKit's pinned raw parser](https://github.com/yamahigashi/MayaSceneKit/blob/95a11db062689285604b3a647385dc9388402865/crates/maya-scene-kit-formats/src/mb/parser.rs)

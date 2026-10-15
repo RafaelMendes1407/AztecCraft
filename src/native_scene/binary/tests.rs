@@ -48,6 +48,42 @@ fn shared_protocol_specimen_uses_the_actual_checked_decoder() {
 }
 
 #[test]
+fn ncrv_is_opaque_to_inspection_but_refused_before_native_construction() {
+    let baseline = wire_fixture::specimen();
+    let candidate = decode(baseline.clone().into()).unwrap();
+    assert_eq!(candidate.nodes().len(), 1);
+    assert_eq!(candidate.shapes().len(), 1);
+    for children in [
+        Vec::new(),
+        [
+            creation(b"curve", Some(b"object")),
+            chunk(b"NRBC", &[0xff, 0, 7], 8),
+        ]
+        .concat(),
+    ] {
+        let mut bytes = baseline.clone();
+        let offset = bytes.len();
+        bytes.extend(group(b"NCRV", &children, 4));
+        let size = (bytes.len() - 16) as u64;
+        bytes[8..16].copy_from_slice(&size.to_be_bytes());
+        let source: Arc<[u8]> = bytes.into();
+        let inspected = container::inspect(source.clone()).unwrap();
+        assert!(Arc::ptr_eq(inspected.source(), &source));
+        if !children.is_empty() {
+            let opaque = inspected
+                .chunks()
+                .iter()
+                .position(|chunk| chunk.tag() == *b"NRBC")
+                .unwrap();
+            assert_eq!(inspected.payload(opaque), Some([0xff, 0, 7].as_slice()));
+        }
+        let error = decode(source).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Unsupported);
+        assert_eq!(error.offset(), Some(offset));
+    }
+}
+
+#[test]
 fn effective_last_origin_and_signed_zero_retain_earlier_source() {
     let earlier = triple(b"t", [12.0, 13.0, 14.0]);
     let last = triple(b"t", [-0.0, 2.0, 3.0]);

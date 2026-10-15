@@ -65,6 +65,18 @@ The synthetic extruded-cube example and core journey tests exercise geometry,
 history, document persistence, OBJ export and camera picking. They don't replace
 native face-tool interaction checks or comparison against a pinned Maya scene.
 
+## Maya binary curve and remaining container coverage
+
+**Severity:** high
+**Area:** native documents
+
+Public container inspection retains the observed FOR8/NCRV framing and opaque
+curve records. Native decode/Open refuses NCRV, including empty groups, to avoid
+silently omitting curve geometry. The next unsupported form in two retained
+vendor streams is JOIN; other unseen layouts and curve semantics remain pending.
+This framing coverage does not establish complete container parsing, scene Open,
+NURBS rendering, native writing or Euler behavior.
+
 ## Existing Maya plug-in compatibility unverified
 
 **Severity:** high
