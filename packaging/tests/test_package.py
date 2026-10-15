@@ -11,7 +11,14 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from package import ATOMIC_NOTICES, NOTICE_LIMIT, Platform, capture_atomic_notices, package
+from package import (
+    ATOMIC_NOTICES,
+    NOTICE_LIMIT,
+    PROJECT_NOTICES,
+    Platform,
+    capture_atomic_notices,
+    package,
+)
 
 
 def binary_fixture(directory: Path, target: Platform) -> Path:
@@ -40,6 +47,8 @@ def manifest_fixture(directory: Path, version: str = "0.1.0") -> Path:
     notices.mkdir(parents=True)
     for name in ATOMIC_NOTICES:
         (notices / name).write_bytes(f"fixture notice {name}\n".encode())
+    for name in PROJECT_NOTICES:
+        (directory / name).write_bytes(f"fixture project notice {name}\n".encode())
     return manifest
 
 
@@ -66,8 +75,16 @@ def test_package_preserves_payload_metadata_and_archive_layout(
     for name in ATOMIC_NOTICES:
         expected = (manifest.parent / "vendor" / "craft-atomic" / name).read_bytes()
         assert (output / notice_root / name).read_bytes() == expected
+    project_root = notice_root.rsplit("/", 1)[0]
+    for name in PROJECT_NOTICES:
+        expected = (manifest.parent / name).read_bytes()
+        assert (output / project_root / name).read_bytes() == expected
     if target == "linux":
         with tarfile.open(archive) as tar:
+            for name in PROJECT_NOTICES:
+                notice = tar.extractfile(f"{project_root}/{name}")
+                assert notice is not None
+                assert notice.read() == (manifest.parent / name).read_bytes()
             for name in ATOMIC_NOTICES:
                 notice = tar.extractfile(f"{notice_root}/{name}")
                 assert notice is not None
@@ -81,6 +98,10 @@ def test_package_preserves_payload_metadata_and_archive_layout(
             assert member.uname == member.gname == ""
     else:
         with zipfile.ZipFile(archive) as zip_file:
+            for name in PROJECT_NOTICES:
+                assert (
+                    zip_file.read(f"{project_root}/{name}") == (manifest.parent / name).read_bytes()
+                )
             for name in ATOMIC_NOTICES:
                 assert (
                     zip_file.read(f"{notice_root}/{name}")
@@ -107,6 +128,9 @@ def test_package_preserves_payload_metadata_and_archive_layout(
                     name,
                     "AztecCraft.app/Contents/Resources/",
                     "AztecCraft.app/Contents/Resources/licenses/",
+                    f"{project_root}/LICENSE-APACHE",
+                    f"{project_root}/LICENSE-MIT",
+                    f"{project_root}/NOTICE",
                     f"{notice_root}/",
                     f"{notice_root}/ATTRIBUTION.md",
                     f"{notice_root}/LICENSE-APACHE",
@@ -246,3 +270,14 @@ def test_all_four_notices_at_size_limit_are_captured(tmp_path: Path) -> None:
     assert capture_atomic_notices(manifest) == tuple(
         (name, b"x" * NOTICE_LIMIT) for name in ATOMIC_NOTICES
     )
+
+
+@pytest.mark.parametrize("name", PROJECT_NOTICES)
+def test_missing_project_notice_fails_before_creating_output(tmp_path: Path, name: str) -> None:
+    binary = binary_fixture(tmp_path, "linux")
+    manifest = manifest_fixture(tmp_path)
+    (manifest.parent / name).unlink()
+    output = tmp_path / "artifacts"
+    with pytest.raises(FileNotFoundError):
+        package(binary, manifest, output, "linux")
+    assert not output.exists()

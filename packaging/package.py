@@ -17,13 +17,21 @@ from typing import Literal
 
 Platform = Literal["macos", "windows", "linux"]
 ATOMIC_NOTICES = ("LICENSE-MIT", "LICENSE-APACHE", "NOTICE", "ATTRIBUTION.md")
+PROJECT_NOTICES = ("LICENSE-MIT", "LICENSE-APACHE", "NOTICE")
 NOTICE_LIMIT = 64 * 1024
 
 
 def capture_atomic_notices(manifest: Path) -> tuple[tuple[str, bytes], ...]:
-    root = manifest.parent / "vendor" / "craft-atomic"
+    return capture_notices(manifest.parent / "vendor" / "craft-atomic", ATOMIC_NOTICES)
+
+
+def capture_project_notices(manifest: Path) -> tuple[tuple[str, bytes], ...]:
+    return capture_notices(manifest.parent, PROJECT_NOTICES)
+
+
+def capture_notices(root: Path, names: tuple[str, ...]) -> tuple[tuple[str, bytes], ...]:
     notices = []
-    for name in ATOMIC_NOTICES:
+    for name in names:
         path = root / name
         if not stat.S_ISREG(path.lstat().st_mode):
             raise ValueError(f"atomic notice {name} must be a regular file, not a symlink")
@@ -94,6 +102,7 @@ def package(binary: Path, manifest: Path, output: Path, target: Platform) -> Pat
     ):
         raise ValueError("package version must be a semantic version")
     notices = capture_atomic_notices(manifest)
+    project_notices = capture_project_notices(manifest)
     output.mkdir()
     if target == "macos":
         bundle = output / "AztecCraft.app"
@@ -119,15 +128,15 @@ def package(binary: Path, manifest: Path, output: Path, target: Platform) -> Pat
         bundle = output / "azteccraft"
         bundle.mkdir()
         executable = bundle / binary.name
-    licenses = (
-        bundle / "Contents" / "Resources" / "licenses" / "craft-atomic"
-        if target == "macos"
-        else bundle / "licenses" / "craft-atomic"
+    project_licenses = (
+        bundle / "Contents" / "Resources" / "licenses" if target == "macos" else bundle / "licenses"
     )
+    licenses = project_licenses / "craft-atomic"
     licenses.mkdir(parents=True)
-    for name, content in notices:
-        with (licenses / name).open("xb") as destination:
-            destination.write(content)
+    for directory, files in ((project_licenses, project_notices), (licenses, notices)):
+        for name, content in files:
+            with (directory / name).open("xb") as destination:
+                destination.write(content)
     with binary.open("rb") as source, executable.open("xb") as destination:
         shutil.copyfileobj(source, destination)
     if target != "windows":

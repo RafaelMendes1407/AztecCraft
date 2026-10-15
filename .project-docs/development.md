@@ -377,7 +377,8 @@ creating output, with a 64 KiB per-file limit and a 256 KiB total bound. Inputs
 must be stable regular files during capture. Captured bytes accompany each binary
 and its archive at `Contents/Resources/licenses/craft-atomic/` on macOS or
 `azteccraft/licenses/craft-atomic/` on Linux/Windows. Rejected notice inputs leave
-no new output directory. This prerequisite does not implement native Save.
+no new output directory. Packaging also captures the root `LICENSE-MIT`, `LICENSE-APACHE` and `NOTICE` the same way and places them in the `licenses/` directory beside `craft-atomic/`.
+This prerequisite does not implement native Save.
 
 ## Maya Binary container inspection
 
