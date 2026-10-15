@@ -1,6 +1,70 @@
 use super::test_fixtures::{cube, grouped_shape, shared_shape};
 use super::*;
 
+#[test]
+fn transform_path_discovery_includes_hidden_groups_and_every_transform_instance() {
+    let (mut scene, root, child, _) = test_fixtures::hidden_group();
+    let root_id = scene.node(root).unwrap().transform_id;
+    let child_id = scene.node(child).unwrap().transform_id;
+    scene.dag.push(DagEdge {
+        parent: None,
+        child: child_id,
+    });
+    scene.validate().unwrap();
+    let before = scene.clone();
+    let paths = scene.transform_paths().unwrap();
+    assert_eq!(paths.len(), 3);
+    assert!(
+        paths
+            .iter()
+            .any(|target| target.node == root && target.path == [root_id])
+    );
+    for path in [vec![root_id, child_id], vec![child_id]] {
+        assert!(
+            paths
+                .iter()
+                .any(|target| target.node == child && target.path == path)
+        );
+        assert_eq!(
+            scene.resolve_transform_path(child, &path).unwrap().id(),
+            child
+        );
+    }
+    assert!(scene.resolve_transform_path(root, &[child_id]).is_err());
+    assert!(
+        scene
+            .resolve_transform_path(child, &[root_id, root_id, child_id])
+            .is_err()
+    );
+    assert_eq!(scene, before);
+}
+
+#[test]
+fn transform_path_discovery_refuses_excess_depth_without_a_partial_result() {
+    let (mut scene, root) = test_fixtures::cube();
+    let template = scene.nodes[0].clone();
+    let mut parent = scene.node(root).unwrap().transform_id;
+    for index in 0..MAX_TRANSFORM_DEPTH {
+        let mut node = template.clone();
+        node.id = NodeId::from_decimal(&(index as u64 + 2).to_string()).unwrap();
+        node.transform_id = NativeId(index as u64 + 3);
+        node.name = format!("group{index}");
+        scene.dag.push(DagEdge {
+            parent: Some(parent),
+            child: node.transform_id,
+        });
+        parent = node.transform_id;
+        scene.nodes.push(node);
+    }
+    scene.next_id = MAX_TRANSFORM_DEPTH as u64 + 2;
+    scene.next_native_id = MAX_TRANSFORM_DEPTH as u64 + 3;
+    scene.validate().unwrap();
+    assert!(matches!(
+        scene.transform_paths(),
+        Err(NativeError::ResourceLimit)
+    ));
+}
+
 fn retain(scene: &mut NativeScene, bytes: &[u8], records: Vec<Range<usize>>) {
     scene.source = Some(SourceRetention {
         bytes: bytes.into(),

@@ -1,4 +1,7 @@
-use crate::scene::{NodeId, Primitive, Scene, SceneError, Transform};
+use crate::{
+    native_scene::{NativeError, NativeId, NativeScene, NativeTransform},
+    scene::{NodeId, Primitive},
+};
 
 #[derive(Clone, Debug)]
 pub enum Command {
@@ -13,12 +16,17 @@ pub enum Command {
     },
     SetTransform {
         id: NodeId,
-        transform: Transform,
+        transform: NativeTransform,
+    },
+    EditNode {
+        id: NodeId,
+        name: Option<String>,
+        channels: [Option<f64>; 9],
     },
     ExtrudeFace {
-        id: NodeId,
+        shape: NativeId,
         face_index: usize,
-        distance: f32,
+        distance: f64,
     },
 }
 
@@ -31,13 +39,13 @@ pub enum EditOutcome {
 
 #[derive(Default)]
 pub struct History {
-    scene: Scene,
-    undo: Vec<Scene>,
-    redo: Vec<Scene>,
+    scene: NativeScene,
+    undo: Vec<NativeScene>,
+    redo: Vec<NativeScene>,
 }
 
 impl History {
-    pub fn new(scene: Scene) -> Self {
+    pub fn new(scene: NativeScene) -> Self {
         Self {
             scene,
             undo: Vec::new(),
@@ -45,7 +53,7 @@ impl History {
         }
     }
 
-    pub fn scene(&self) -> &Scene {
+    pub fn scene(&self) -> &NativeScene {
         &self.scene
     }
     pub fn can_undo(&self) -> bool {
@@ -55,37 +63,42 @@ impl History {
         !self.redo.is_empty()
     }
 
-    pub fn execute(&mut self, command: Command) -> Result<EditOutcome, SceneError> {
-        let before = self.scene.clone();
+    pub fn execute(&mut self, command: Command) -> Result<EditOutcome, NativeError> {
+        let mut candidate = self.scene.clone();
         let outcome = match command {
             Command::Create { primitive, name } => {
-                EditOutcome::Created(self.scene.create(primitive, &name)?)
+                EditOutcome::Created(candidate.create(primitive, &name)?)
             }
             Command::Remove(id) => {
-                self.scene.remove(id)?;
+                candidate.remove(id)?;
                 EditOutcome::Changed
             }
             Command::Rename { id, name } => {
-                self.scene.rename(id, &name)?;
+                candidate.rename(id, &name)?;
                 EditOutcome::Changed
             }
             Command::SetTransform { id, transform } => {
-                self.scene.set_transform(id, transform)?;
+                candidate.set_transform(id, transform)?;
+                EditOutcome::Changed
+            }
+            Command::EditNode { id, name, channels } => {
+                candidate.edit_node(id, name.as_deref(), channels)?;
                 EditOutcome::Changed
             }
             Command::ExtrudeFace {
-                id,
+                shape,
                 face_index,
                 distance,
             } => {
-                self.scene.extrude_face(id, face_index, distance)?;
+                candidate.extrude_face(shape, face_index, distance)?;
                 EditOutcome::Changed
             }
         };
-        if self.scene == before {
+        if self.scene == candidate {
             return Ok(EditOutcome::Unchanged);
         }
-        self.undo.push(before);
+        self.undo
+            .push(std::mem::replace(&mut self.scene, candidate));
         self.redo.clear();
         Ok(outcome)
     }

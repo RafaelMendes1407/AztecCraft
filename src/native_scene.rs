@@ -107,7 +107,7 @@ impl PartialEq for NativeTransform {
 }
 
 impl NativeTransform {
-    fn values(self) -> [f64; 9] {
+    pub fn values(self) -> [f64; 9] {
         let [x, y, z] = self.translation;
         let [rx, ry, rz] = self.rotation;
         let [sx, sy, sz] = self.scale;
@@ -437,6 +437,16 @@ pub struct FaceTarget {
     pub face_index: usize,
 }
 
+pub const MAX_TRANSFORM_PATHS: usize = 4096;
+pub const MAX_TRANSFORM_DEPTH: usize = 256;
+pub const MAX_PATH_IDENTITIES: usize = 65536;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TransformTarget {
+    pub node: NodeId,
+    pub path: Vec<NativeId>,
+}
+
 #[derive(Clone)]
 pub struct NativeScene {
     nodes: Vec<NativeTransformNode>,
@@ -553,11 +563,117 @@ impl NativeScene {
     pub fn units(&self) -> &Units {
         &self.units
     }
+    pub fn appearance_incomplete(&self) -> bool {
+        self.source.is_some()
+    }
     pub fn node(&self, id: NodeId) -> Result<&NativeTransformNode, NativeError> {
         self.nodes
             .iter()
             .find(|n| n.id == id)
             .ok_or(NativeError::Legacy(SceneError::MissingNode(id)))
+    }
+    fn transform_prefix(&self, path: &[NativeId]) -> Result<(), NativeError> {
+        if path.is_empty()
+            || !self
+                .dag
+                .iter()
+                .any(|edge| edge.parent.is_none() && edge.child == path[0])
+            || path.iter().enumerate().any(|(index, id)| {
+                path[..index].contains(id)
+                    || !self.nodes.iter().any(|node| node.transform_id == *id)
+            })
+            || path.windows(2).any(|pair| {
+                !self
+                    .dag
+                    .iter()
+                    .any(|edge| edge.parent == Some(pair[0]) && edge.child == pair[1])
+            })
+        {
+            return Err(NativeError::InvalidInstancePath);
+        }
+        Ok(())
+    }
+    pub fn resolve_transform_path(
+        &self,
+        id: NodeId,
+        path: &[NativeId],
+    ) -> Result<&NativeTransformNode, NativeError> {
+        self.transform_prefix(path)?;
+        let node = self.node(id)?;
+        if path.last() != Some(&node.transform_id) {
+            return Err(NativeError::InvalidInstancePath);
+        }
+        Ok(node)
+    }
+    pub fn transform_paths(&self) -> Result<Vec<TransformTarget>, NativeError> {
+        let mut paths = Vec::<TransformTarget>::new();
+        for root in self.dag.iter().filter(|edge| edge.parent.is_none()) {
+            let node = self
+                .nodes
+                .iter()
+                .find(|node| node.transform_id == root.child)
+                .ok_or(NativeError::InvalidInstancePath)?;
+            if paths.len() == MAX_TRANSFORM_PATHS {
+                return Err(NativeError::ResourceLimit);
+            }
+            paths
+                .try_reserve(1)
+                .map_err(|_| NativeError::ResourceLimit)?;
+            let mut path = Vec::new();
+            path.try_reserve_exact(1)
+                .map_err(|_| NativeError::ResourceLimit)?;
+            path.push(root.child);
+            paths.push(TransformTarget {
+                node: node.id,
+                path,
+            });
+        }
+        let mut identities = paths.len();
+        let mut cursor = 0;
+        while cursor < paths.len() {
+            let parent = *paths[cursor]
+                .path
+                .last()
+                .ok_or(NativeError::InvalidInstancePath)?;
+            for edge in self.dag.iter().filter(|edge| edge.parent == Some(parent)) {
+                let Some(node) = self
+                    .nodes
+                    .iter()
+                    .find(|node| node.transform_id == edge.child)
+                else {
+                    continue;
+                };
+                let depth = paths[cursor]
+                    .path
+                    .len()
+                    .checked_add(1)
+                    .ok_or(NativeError::ResourceLimit)?;
+                identities = identities
+                    .checked_add(depth)
+                    .ok_or(NativeError::ResourceLimit)?;
+                if depth > MAX_TRANSFORM_DEPTH
+                    || paths.len() == MAX_TRANSFORM_PATHS
+                    || identities > MAX_PATH_IDENTITIES
+                {
+                    return Err(NativeError::ResourceLimit);
+                }
+                let mut path = Vec::new();
+                path.try_reserve_exact(depth)
+                    .map_err(|_| NativeError::ResourceLimit)?;
+                path.extend_from_slice(&paths[cursor].path);
+                path.push(edge.child);
+                paths
+                    .try_reserve(1)
+                    .map_err(|_| NativeError::ResourceLimit)?;
+                paths.push(TransformTarget {
+                    node: node.id,
+                    path,
+                });
+            }
+            cursor += 1;
+        }
+        paths.sort_unstable_by(|a, b| a.path.cmp(&b.path));
+        Ok(paths)
     }
     pub fn internal_transform(&self, id: NodeId) -> Result<InternalTransform, NativeError> {
         let node = self.node(id)?;
@@ -611,23 +727,14 @@ impl NativeScene {
     }
     fn instance_shape(&self, path: &[NativeId]) -> Result<&NativeMeshShape, NativeError> {
         // Construction and mutation validate the opaque scene; per-instance queries must stay bounded.
-        if path.len() < 2
-            || path[..path.len() - 1]
-                .iter()
-                .any(|id| !self.nodes.iter().any(|node| node.transform_id == *id))
+        if path.len() < 2 {
+            return Err(NativeError::InvalidInstancePath);
+        }
+        self.transform_prefix(&path[..path.len() - 1])?;
+        if path[..path.len() - 1].contains(&path[path.len() - 1])
             || !self.dag.contains(&DagEdge {
-                parent: None,
-                child: path[0],
-            })
-            || path
-                .iter()
-                .enumerate()
-                .any(|(i, id)| path[..i].contains(id))
-            || path.windows(2).any(|pair| {
-                !self.dag.contains(&DagEdge {
-                    parent: Some(pair[0]),
-                    child: pair[1],
-                })
+                parent: Some(path[path.len() - 2]),
+                child: path[path.len() - 1],
             })
         {
             return Err(NativeError::InvalidInstancePath);
@@ -656,7 +763,7 @@ impl NativeScene {
         }
         Ok(GeometryViewAdmission {
             visible,
-            appearance_incomplete: self.source.is_some(),
+            appearance_incomplete: self.appearance_incomplete(),
         })
     }
     pub fn restore_authoring(&mut self, mut snapshot: Self) {
@@ -885,30 +992,7 @@ impl NativeScene {
         id: NodeId,
         transform: NativeTransform,
     ) -> Result<(), NativeError> {
-        let values = transform.values();
-        if values.iter().any(|v| !v.is_finite()) {
-            return Err(NativeError::NonFinite);
-        }
-        let index = self.editable(id)?;
-        let node = &self.nodes[index];
-        let mut channels = node.channels.clone();
-        for (slot, (channel, value)) in channels.iter_mut().zip(values).enumerate() {
-            let field = [
-                TransformField::Translation,
-                TransformField::Rotation,
-                TransformField::Scale,
-            ][slot / 3];
-            *channel = channel.replacement(
-                value,
-                self.source.as_ref(),
-                &self.units,
-                node.transform_id,
-                field,
-                slot % 3,
-            )?;
-        }
-        self.nodes[index].channels = channels;
-        Ok(())
+        self.edit_node(id, None, transform.values().map(Some))
     }
     pub fn set_channel(
         &mut self,
@@ -916,26 +1000,50 @@ impl NativeScene {
         channel: Channel,
         value: f64,
     ) -> Result<(), NativeError> {
-        if !value.is_finite() {
+        let mut channels = [None; 9];
+        channels[channel as usize] = Some(value);
+        self.edit_node(id, None, channels)
+    }
+    pub fn edit_node(
+        &mut self,
+        id: NodeId,
+        name: Option<&str>,
+        channels: [Option<f64>; 9],
+    ) -> Result<(), NativeError> {
+        if channels.iter().flatten().any(|value| !value.is_finite()) {
             return Err(NativeError::NonFinite);
         }
         let index = self.editable(id)?;
+        let name = name.filter(|name| *name != self.nodes[index].name);
+        if let Some(name) = name {
+            if self.source.is_some() {
+                return Err(NativeError::UnsupportedEdit);
+            }
+            self.validate_new_name(Some(id), name)?;
+        }
         let node = &self.nodes[index];
-        let slot = channel as usize;
-        let field = [
-            TransformField::Translation,
-            TransformField::Rotation,
-            TransformField::Scale,
-        ][slot / 3];
-        let target = node.channels[slot].replacement(
-            value,
-            self.source.as_ref(),
-            &self.units,
-            node.transform_id,
-            field,
-            slot % 3,
-        )?;
-        self.nodes[index].channels[slot] = target;
+        let mut replacement = node.channels.clone();
+        for (slot, value) in channels.into_iter().enumerate() {
+            if let Some(value) = value {
+                let field = [
+                    TransformField::Translation,
+                    TransformField::Rotation,
+                    TransformField::Scale,
+                ][slot / 3];
+                replacement[slot] = replacement[slot].replacement(
+                    value,
+                    self.source.as_ref(),
+                    &self.units,
+                    node.transform_id,
+                    field,
+                    slot % 3,
+                )?;
+            }
+        }
+        self.nodes[index].channels = replacement;
+        if let Some(name) = name {
+            self.nodes[index].name = name.into();
+        }
         Ok(())
     }
     pub fn extrude_face(

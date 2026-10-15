@@ -298,3 +298,46 @@ fn imported_debug_redacts_names_bytes_and_scalar_values() {
         assert!(diagnostic.len() < 512);
     }
 }
+
+#[test]
+fn raw_binary_radians_reach_actual_view_before_f32_cancellation_and_edited_degrees_convert_once() {
+    let units = Units::default();
+    let (raw, translation) = (1..10000)
+        .find_map(|index| {
+            let raw = f64::from(index) / 7.0;
+            let declared = Storage::Radians.declared(raw, &units).unwrap();
+            let rounded = Storage::Radians.internal(declared, &units).unwrap();
+            if raw.to_bits() == rounded.to_bits() {
+                return None;
+            }
+            let (sine, cosine) = raw.sin_cos();
+            let rotated_x = 0.5 * sine - 0.5 * cosine;
+            let rotated_y = -0.5 * cosine - 0.5 * sine;
+            let (wrong_sine, wrong_cosine) = rounded.sin_cos();
+            let wrong_x = 0.5 * wrong_sine - 0.5 * wrong_cosine;
+            let wrong_y = -0.5 * wrong_cosine - 0.5 * wrong_sine;
+            (wrong_x != rotated_x || wrong_y != rotated_y)
+                .then_some((raw, [-rotated_x, -rotated_y, 0.5]))
+        })
+        .unwrap();
+    let (mut scene, id) = binary(&[
+        (TransformField::Translation, translation),
+        (TransformField::Rotation, [0.0, 0.0, raw]),
+    ]);
+    assert_eq!(
+        scene.shapes()[0].mesh().effective_point_cm(0).unwrap(),
+        [-0.5; 3]
+    );
+    let before = scene.clone();
+    let view = crate::view_scene::ViewScene::from_native(&scene, 1024 * 1024).unwrap();
+    assert_eq!(view.instances()[0].world_vertices()[0], glam::Vec3::ZERO);
+    assert_eq!(scene, before);
+    scene.set_channel(id, Channel::RotateZ, 90.0).unwrap();
+    let edited = crate::view_scene::ViewScene::from_native(&scene, 1024 * 1024).unwrap();
+    let expected = glam::Vec3::new(
+        (0.5 + translation[0]) as f32,
+        (-0.5 + translation[1]) as f32,
+        0.0,
+    );
+    assert!(edited.instances()[0].world_vertices()[0].distance(expected) < 1e-7);
+}

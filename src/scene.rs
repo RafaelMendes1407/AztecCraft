@@ -180,12 +180,6 @@ impl Scene {
         Ok(())
     }
 
-    pub(crate) fn restore_authoring(&mut self, mut snapshot: Self) {
-        // Undone creates remain reserved so stale editor selections cannot target a new node.
-        snapshot.next_id = snapshot.next_id.max(self.next_id);
-        *self = snapshot;
-    }
-
     pub fn nodes(&self) -> &[Node] {
         &self.nodes
     }

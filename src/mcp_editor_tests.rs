@@ -14,6 +14,231 @@ fn camera_operations() -> [Operation; 3] {
 }
 
 #[test]
+fn pending_file_resolution_retains_input_draft_focus_and_scene_guards() {
+    for condition in 0..5 {
+        let context = egui::Context::default();
+        let mut editor = Editor::default();
+        editor.create(Primitive::Cube);
+        let token = editor.scene_token;
+        let reply = editor
+            .remote_operation(
+                RemoteRequest {
+                    expected_scene_token: Some(token),
+                    operation: Operation::NewScene,
+                },
+                &context,
+            )
+            .unwrap();
+        let OperationReply::PendingConfirmation {
+            pending_action_id, ..
+        } = reply
+        else {
+            panic!("expected pending confirmation")
+        };
+        let before = editor.history.scene().clone();
+        match condition {
+            0 => editor.name = "human_draft".into(),
+            1 => editor.channels[0] = "nan".into(),
+            2 => context.memory_mut(|memory| memory.request_focus(name_edit_id())),
+            3 => editor.native_input_pending = true,
+            _ => (),
+        }
+        let result = editor.remote_operation(
+            RemoteRequest {
+                expected_scene_token: Some(if condition == 4 {
+                    Uuid::new_v4()
+                } else {
+                    token
+                }),
+                operation: Operation::ResolveFileAction {
+                    pending_id: Uuid::parse_str(&pending_action_id).unwrap(),
+                    decision: crate::editor_operations::FileDecision::Discard,
+                },
+            },
+            &context,
+        );
+        if condition == 4 {
+            assert!(matches!(result, Err(OperationError::StaleScene)));
+        } else {
+            assert!(matches!(result, Err(OperationError::BusyEditing)));
+        }
+        assert_eq!(editor.history.scene(), &before);
+        assert_eq!(editor.scene_token, token);
+        let OperationReply::Scene { inspection } = editor
+            .remote_operation(
+                RemoteRequest {
+                    expected_scene_token: None,
+                    operation: Operation::Inspect,
+                },
+                &context,
+            )
+            .unwrap()
+        else {
+            panic!("expected inspection")
+        };
+        assert_eq!(inspection.pending_action.unwrap().id, pending_action_id);
+    }
+}
+
+#[test]
+fn undelivered_remote_close_withdraws_approval_and_suppresses_disconnect_retry() {
+    let context = egui::Context::default();
+    let (bridge, ingress) = mcp::test_bridge(context.clone());
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    editor.history_step(false);
+    let before = editor.history.scene().clone();
+    let token = editor.scene_token;
+    editor.mcp = Some(bridge);
+    let mut reply = ingress
+        .queue(RemoteRequest {
+            expected_scene_token: Some(token),
+            operation: Operation::RequestClose,
+        })
+        .unwrap();
+    let first = hidden_frame(&mut editor, &context, vec![]);
+    assert!(matches!(
+        reply.try_recv().unwrap(),
+        Ok(OperationReply::CloseRequested { .. })
+    ));
+    assert!(
+        !first
+            .viewport_commands
+            .get(&egui::ViewportId::ROOT)
+            .is_some_and(|commands| commands
+                .iter()
+                .any(|command| matches!(command, egui::ViewportCommand::Close)))
+    );
+    ingress.close();
+    let failed = hidden_frame(&mut editor, &context, vec![]);
+    assert!(
+        !failed
+            .viewport_commands
+            .get(&egui::ViewportId::ROOT)
+            .is_some_and(|commands| commands
+                .iter()
+                .any(|command| matches!(command, egui::ViewportCommand::Close)))
+    );
+    assert!(!editor.files.is_closing());
+    assert!(editor.error);
+    assert_eq!(editor.history.scene(), &before);
+    assert!(editor.history.can_redo());
+    assert_eq!(editor.scene_token, token);
+    let OperationReply::Scene { inspection } = editor
+        .remote_operation(
+            RemoteRequest {
+                expected_scene_token: None,
+                operation: Operation::Inspect,
+            },
+            &context,
+        )
+        .unwrap()
+    else {
+        panic!("expected inspection")
+    };
+    assert!(!inspection.closing);
+    editor.request_close();
+    let explicit = hidden_frame(&mut editor, &context, vec![]);
+    assert!(
+        explicit.viewport_commands[&egui::ViewportId::ROOT]
+            .iter()
+            .any(|command| matches!(command, egui::ViewportCommand::Close))
+    );
+}
+
+#[test]
+fn applied_pending_and_cancelled_file_replies_request_a_following_frame() {
+    for condition in 0..3 {
+        let context = egui::Context::default();
+        let (mut bridge, ingress) = mcp::test_bridge(context.clone());
+        let mut editor = Editor::default();
+        if condition != 0 {
+            editor.create(Primitive::Cube);
+        }
+        let operation = if condition == 2 {
+            let OperationReply::PendingConfirmation {
+                pending_action_id, ..
+            } = editor
+                .remote_operation(
+                    RemoteRequest {
+                        expected_scene_token: Some(editor.scene_token),
+                        operation: Operation::NewScene,
+                    },
+                    &context,
+                )
+                .unwrap()
+            else {
+                panic!("expected pending")
+            };
+            Operation::ResolveFileAction {
+                pending_id: Uuid::parse_str(&pending_action_id).unwrap(),
+                decision: crate::editor_operations::FileDecision::Cancel,
+            }
+        } else {
+            Operation::NewScene
+        };
+        for _ in 0..2 {
+            let _ = context.run_logic(&egui::RawInput::default(), |_| {});
+        }
+        assert!(!context.has_requested_repaint());
+        let mut reply = ingress
+            .queue(RemoteRequest {
+                expected_scene_token: Some(editor.scene_token),
+                operation,
+            })
+            .unwrap();
+        bridge.dispatch(&mut editor, &context);
+        match condition {
+            0 => assert!(matches!(
+                reply.try_recv().unwrap(),
+                Ok(OperationReply::DocumentApplied { .. })
+            )),
+            1 => assert!(matches!(
+                reply.try_recv().unwrap(),
+                Ok(OperationReply::PendingConfirmation { .. })
+            )),
+            _ => assert!(matches!(
+                reply.try_recv().unwrap(),
+                Ok(OperationReply::Cancelled { .. })
+            )),
+        }
+        assert!(context.has_requested_repaint());
+    }
+}
+
+#[test]
+fn approved_close_still_dispatches_readonly_inspection_and_refuses_mutation() {
+    let context = egui::Context::default();
+    let (bridge, ingress) = mcp::test_bridge(context.clone());
+    let mut editor = Editor {
+        mcp: Some(bridge),
+        ..Default::default()
+    };
+    editor.request_close();
+    let mut inspected = ingress
+        .queue(RemoteRequest {
+            expected_scene_token: None,
+            operation: Operation::Inspect,
+        })
+        .unwrap();
+    let mut mutation = ingress
+        .queue(RemoteRequest {
+            expected_scene_token: Some(editor.scene_token),
+            operation: Operation::NewScene,
+        })
+        .unwrap();
+    editor.process_mcp(&context);
+    let OperationReply::Scene { inspection } = inspected.try_recv().unwrap().unwrap() else {
+        panic!("expected inspection")
+    };
+    assert!(inspection.closing);
+    assert!(matches!(
+        mutation.try_recv().unwrap(),
+        Err(OperationError::BusyEditing)
+    ));
+}
+
+#[test]
 fn camera_requests_keep_human_and_closed_bridge_guards() {
     for condition in 0..7 {
         for operation in camera_operations() {
@@ -180,6 +405,8 @@ fn hidden_pending_input_preserves_native_baseline_before_visible_consumption() {
     let mut baseline = Editor::default();
     editor.create(Primitive::Cube);
     baseline.create(Primitive::Cube);
+    let before = editor.history.scene().clone();
+    let baseline_before = baseline.history.scene().clone();
     editor.mcp = Some(bridge);
     for _ in 0..2 {
         frame(&mut editor, &context, vec![]);
@@ -221,7 +448,9 @@ fn hidden_pending_input_preserves_native_baseline_before_visible_consumption() {
         panic!("expected inspection")
     };
     assert!(inspection.native_input_pending);
-    assert_eq!(editor.history.scene(), baseline.history.scene());
+    assert_eq!(editor.history.scene(), &before);
+    assert_eq!(baseline.history.scene(), &baseline_before);
+    assert_eq!(editor.camera, baseline.camera);
     assert_eq!(editor.name, baseline.name);
     assert_eq!(editor.channels, baseline.channels);
     assert_eq!(
@@ -250,7 +479,9 @@ fn hidden_pending_input_preserves_native_baseline_before_visible_consumption() {
     assert_eq!(editor.name, baseline.name);
     assert_eq!(editor.channels, baseline.channels);
     assert_eq!(editor.selected, baseline.selected);
-    assert_eq!(editor.history.scene(), baseline.history.scene());
+    assert_eq!(editor.history.scene(), &before);
+    assert_eq!(baseline.history.scene(), &baseline_before);
+    assert_eq!(editor.camera, baseline.camera);
     assert_eq!(editor.history.can_undo(), baseline.history.can_undo());
     assert_eq!(editor.history.can_redo(), baseline.history.can_redo());
 }
@@ -392,18 +623,18 @@ fn hidden_eof_defers_close_until_pending_input_is_visibly_processed() {
         vec![egui::Event::Text("pending".into())],
     );
     assert!(editor.native_input_pending);
-    assert!(!editor.files.close_approved());
+    assert!(!editor.files.is_closing());
     assert!(editor.mcp.is_some());
     hidden_frame(&mut editor, &context, vec![]);
-    assert!(!editor.files.close_approved());
+    assert!(!editor.files.is_closing());
     frame(
         &mut editor,
         &context,
         vec![egui::Event::Text("pending".into())],
     );
     assert!(!editor.native_input_pending);
-    assert!(editor.files.close_approved());
-    assert!(editor.mcp.is_none());
+    assert!(editor.files.is_closing());
+    assert!(editor.mcp.is_some());
     let output = hidden_frame(&mut editor, &context, vec![]);
     assert!(
         output.viewport_commands[&egui::ViewportId::ROOT].contains(&egui::ViewportCommand::Close)
@@ -420,7 +651,7 @@ fn hidden_eof_defers_close_until_pending_input_is_visibly_processed() {
         editor.mcp = Some(bridge);
         ingress.close();
         hidden_frame(&mut editor, &context, vec![]);
-        assert!(!editor.files.close_approved());
+        assert!(!editor.files.is_closing());
         assert_eq!(editor.files.is_modal(), !invalid_draft);
         assert_eq!(editor.history.scene(), &before);
         assert_eq!(editor.channels[0], if invalid_draft { "nan" } else { "0" });
@@ -443,7 +674,7 @@ fn hidden_native_close_without_a_bridge_rejects_unprocessed_input() {
     let output = context.run_logic(&input, |ctx| {
         eframe::App::logic(&mut editor, ctx, &mut native_frame)
     });
-    assert!(!editor.files.close_approved());
+    assert!(!editor.files.is_closing());
     assert!(
         output.viewport_commands[&egui::ViewportId::ROOT]
             .contains(&egui::ViewportCommand::CancelClose)
@@ -458,7 +689,7 @@ fn hidden_native_close_without_a_bridge_rejects_unprocessed_input() {
     let output = context.run_logic(&input, |ctx| {
         eframe::App::logic(&mut editor, ctx, &mut native_frame)
     });
-    assert!(editor.files.close_approved());
+    assert!(editor.files.is_closing());
     assert!(
         output.viewport_commands[&egui::ViewportId::ROOT].contains(&egui::ViewportCommand::Close)
     );
@@ -560,6 +791,7 @@ fn same_frame_click_and_type_blocks_queued_mutation_without_prior_focus() {
     frame(&mut baseline, &baseline_context, vec![]);
     frame(&mut baseline, &baseline_context, vec![]);
     let before = editor.history.scene().clone();
+    let baseline_before = baseline.history.scene().clone();
     let name_rect = context.read_response(name_edit_id()).unwrap().rect;
     assert_eq!(
         name_rect,
@@ -600,7 +832,9 @@ fn same_frame_click_and_type_blocks_queued_mutation_without_prior_focus() {
         context.memory(|memory| memory.focused()),
         baseline_context.memory(|memory| memory.focused())
     );
-    assert_eq!(editor.history.scene(), baseline.history.scene());
+    assert_eq!(editor.history.scene(), &before);
+    assert_eq!(baseline.history.scene(), &baseline_before);
+    assert_eq!(editor.camera, baseline.camera);
     assert_eq!(editor.history.can_undo(), baseline.history.can_undo());
     assert_eq!(editor.history.can_redo(), baseline.history.can_redo());
     assert_eq!(editor.history.scene(), &before);
@@ -621,7 +855,9 @@ fn same_frame_click_and_type_blocks_queued_mutation_without_prior_focus() {
         baseline_context.memory(|memory| memory.focused())
     );
     assert_eq!(editor.history.scene(), &before);
-    assert_eq!(editor.history.scene(), baseline.history.scene());
+    assert_eq!(editor.history.scene(), &before);
+    assert_eq!(baseline.history.scene(), &baseline_before);
+    assert_eq!(editor.camera, baseline.camera);
     assert!(editor.has_draft());
     assert_eq!(editor.history.undo(), baseline.history.undo());
     assert_eq!(editor.history.scene(), baseline.history.scene());
@@ -629,7 +865,9 @@ fn same_frame_click_and_type_blocks_queued_mutation_without_prior_focus() {
     assert!(!editor.history.can_undo());
     assert!(!baseline.history.can_undo());
     assert_eq!(editor.history.redo(), baseline.history.redo());
-    assert_eq!(editor.history.scene(), baseline.history.scene());
+    assert_eq!(editor.history.scene(), &before);
+    assert_eq!(baseline.history.scene(), &baseline_before);
+    assert_eq!(editor.camera, baseline.camera);
 }
 
 #[test]
@@ -654,7 +892,8 @@ fn shutdown_child_with_open_stdin() {
         .push(egui::ViewportEvent::Close);
     let mut output = context.run_ui(input, |ui| editor.render(ui));
     output.textures_delta.clear();
-    assert!(editor.mcp.is_none());
+    assert!(editor.files.is_closing());
+    drop(editor);
 }
 
 #[test]
@@ -702,6 +941,647 @@ mod official_client {
     };
     use serde_json::{Value, json};
     use std::time::Duration;
+
+    mod binary_fixture {
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/support/maya_binary.rs"
+        ));
+    }
+
+    #[tokio::test]
+    async fn remote_close_and_discard_close_flush_their_own_reply_before_hidden_exit() {
+        use rmcp::model::{CallToolRequest, ClientRequest, ServerResult};
+        for dirty in [false, true] {
+            let context = egui::Context::default();
+            let (mut editor, client, server) = start(&context).await;
+            let token = editor.scene_token.to_string();
+            let (name, arguments) = if dirty {
+                call(
+                    &mut editor,
+                    &context,
+                    client.peer(),
+                    "create_primitive",
+                    json!({"scene_token":token,"primitive":"cube"}),
+                )
+                .await;
+                let pending = call(
+                    &mut editor,
+                    &context,
+                    client.peer(),
+                    "request_close",
+                    json!({"scene_token":token}),
+                )
+                .await
+                .structured_content
+                .unwrap();
+                assert_eq!(pending["outcome"], "pending_confirmation");
+                assert_eq!(pending["kind"], "close");
+                assert_eq!(editor.mcp.as_mut().unwrap().poll_close_delivery(), None);
+                let cancelled = call(&mut editor, &context, client.peer(), "resolve_file_action", json!({"scene_token":token,"pending_action_id":pending["pending_action_id"],"decision":"cancel"})).await.structured_content.unwrap();
+                assert_eq!(cancelled["outcome"], "cancelled");
+                assert!(!editor.files.is_closing());
+                let pending = call(
+                    &mut editor,
+                    &context,
+                    client.peer(),
+                    "request_close",
+                    json!({"scene_token":token}),
+                )
+                .await
+                .structured_content
+                .unwrap();
+                (
+                    "resolve_file_action",
+                    json!({"scene_token":token,"pending_action_id":pending["pending_action_id"],"decision":"discard"}),
+                )
+            } else {
+                ("request_close", json!({"scene_token":token}))
+            };
+            let before = editor.history.scene().clone();
+            let request = ClientRequest::CallToolRequest(CallToolRequest::new(
+                CallToolRequestParams::new(name)
+                    .with_arguments(arguments.as_object().unwrap().clone()),
+            ));
+            let handle = client
+                .peer()
+                .send_cancellable_request(request, Default::default())
+                .await
+                .unwrap();
+            wait_for_queue(&editor).await;
+            let first = hidden_frame(&mut editor, &context, vec![]);
+            assert!(
+                !first
+                    .viewport_commands
+                    .get(&egui::ViewportId::ROOT)
+                    .is_some_and(|commands| commands
+                        .iter()
+                        .any(|command| matches!(command, egui::ViewportCommand::Close)))
+            );
+            assert_eq!(
+                editor.mcp.as_mut().unwrap().poll_close_delivery(),
+                Some(mcp::CloseDelivery::Waiting)
+            );
+            let OperationReply::Scene { inspection } = editor
+                .remote_operation(
+                    RemoteRequest {
+                        expected_scene_token: None,
+                        operation: Operation::Inspect,
+                    },
+                    &context,
+                )
+                .unwrap()
+            else {
+                panic!("expected inspection")
+            };
+            assert!(inspection.closing);
+            assert!(matches!(
+                editor.remote_operation(
+                    RemoteRequest {
+                        expected_scene_token: Some(editor.scene_token),
+                        operation: Operation::NewScene
+                    },
+                    &context
+                ),
+                Err(OperationError::BusyEditing)
+            ));
+            let response = tokio::time::timeout(Duration::from_secs(2), handle.await_response())
+                .await
+                .unwrap()
+                .unwrap();
+            let ServerResult::CallToolResult(response) = response else {
+                panic!("expected tool response")
+            };
+            assert_eq!(
+                response.structured_content.unwrap()["outcome"],
+                "close_requested"
+            );
+            let output = hidden_frame(&mut editor, &context, vec![]);
+            assert!(
+                output.viewport_commands[&egui::ViewportId::ROOT]
+                    .iter()
+                    .any(|command| matches!(command, egui::ViewportCommand::Close))
+            );
+            assert_eq!(editor.history.scene(), &before);
+            assert_eq!(editor.scene_token.to_string(), token);
+            client.cancel().await.unwrap();
+            drop(editor);
+            tokio::time::timeout(Duration::from_secs(2), server)
+                .await
+                .unwrap()
+                .unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn native_mb_open_inspects_precision_and_discards_the_exact_staged_candidate() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("private-synthetic-scene.mb");
+        let source = binary_fixture::specimen();
+        std::fs::write(&path, &source).unwrap();
+        let context = egui::Context::default();
+        let (mut editor, client, server) = start(&context).await;
+        let original_token = editor.scene_token.to_string();
+        let result = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "open_scene",
+            json!({"scene_token":original_token,"path":path.to_str().unwrap()}),
+        )
+        .await
+        .structured_content
+        .unwrap();
+        assert_eq!(result["outcome"], "document_applied");
+        let token = result["scene_token"].as_str().unwrap().to_owned();
+        assert_ne!(token, original_token);
+        assert_eq!(
+            editor.history.scene().nodes()[0].transform().translation[0],
+            16777217.125
+        );
+        let id = editor.history.scene().nodes()[0].id();
+        assert_eq!(
+            editor
+                .history
+                .scene()
+                .internal_transform(id)
+                .unwrap()
+                .rotation_radians[2],
+            0.25
+        );
+        let inspected = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "inspect_scene",
+            json!({}),
+        )
+        .await
+        .structured_content
+        .unwrap();
+        assert_eq!(
+            inspected["inspection"]["nodes"][0]["authoring_transform"]["translation"][0].as_f64(),
+            Some(16777217.125)
+        );
+        assert_eq!(inspected["inspection"]["shapes"][0]["points"], 3);
+        assert!(
+            !serde_json::to_string(&inspected)
+                .unwrap()
+                .contains(path.to_str().unwrap())
+        );
+        assert!(
+            editor
+                .camera
+                .target()
+                .distance(Vec3::new(16777217.125_f32, -2.0, 3.0))
+                < 4.0
+        );
+        let imported_scene = editor.history.scene().clone();
+        let imported_channels = imported_scene.nodes()[0].transform();
+        let imported_id = inspected["inspection"]["nodes"][0]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let rotation_degrees =
+            inspected["inspection"]["nodes"][0]["transform"]["rotation_degrees"].clone();
+        assert_eq!(imported_channels.scale, [1.0; 3]);
+        assert!(!editor.is_dirty());
+        assert!(!editor.history.can_undo());
+        let changed = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "set_transform",
+            json!({
+                "scene_token":token,
+                "node_id":imported_id,
+                "translation":[16777221.125,-2.0,3.0],
+                "rotation_degrees":rotation_degrees,
+                "scale":[1.0,1.0,1.0]
+            }),
+        )
+        .await;
+        assert_ne!(changed.is_error, Some(true));
+        assert_eq!(changed.structured_content.unwrap()["outcome"], "changed");
+        assert_eq!(
+            editor.history.scene().nodes()[0].transform().translation,
+            [16777221.125, -2.0, 3.0]
+        );
+        assert_eq!(
+            editor
+                .history
+                .scene()
+                .internal_transform(id)
+                .unwrap()
+                .rotation_radians[2]
+                .to_bits(),
+            0.25_f64.to_bits()
+        );
+        assert_eq!(
+            editor.history.scene().nodes()[0].transform().scale,
+            [1.0; 3]
+        );
+        assert_eq!(editor.history.scene().shapes(), imported_scene.shapes());
+        assert_eq!(editor.scene_token.to_string(), token);
+        assert!(editor.is_dirty());
+        assert!(editor.history.can_undo());
+        let edited = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "inspect_scene",
+            json!({}),
+        )
+        .await
+        .structured_content
+        .unwrap();
+        assert_eq!(
+            edited["inspection"]["nodes"][0]["authoring_transform"]["translation"][0].as_f64(),
+            Some(16777221.125)
+        );
+        assert_eq!(edited["inspection"]["dirty"], true);
+        assert_eq!(edited["inspection"]["can_undo"], true);
+        let undone = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "undo",
+            json!({"scene_token":token}),
+        )
+        .await;
+        assert_ne!(undone.is_error, Some(true));
+        assert_eq!(undone.structured_content.unwrap()["outcome"], "changed");
+        assert_eq!(editor.history.scene(), &imported_scene);
+        assert_eq!(
+            editor.history.scene().nodes()[0].transform(),
+            imported_channels
+        );
+        assert_eq!(editor.scene_token.to_string(), token);
+        assert!(!editor.is_dirty());
+        assert!(!editor.history.can_undo());
+        assert!(editor.history.can_redo());
+        let restored = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "inspect_scene",
+            json!({}),
+        )
+        .await
+        .structured_content
+        .unwrap();
+        assert_eq!(
+            restored["inspection"]["nodes"],
+            inspected["inspection"]["nodes"]
+        );
+        assert_eq!(restored["inspection"]["dirty"], false);
+        assert_eq!(restored["inspection"]["can_undo"], false);
+        assert_eq!(restored["inspection"]["can_redo"], true);
+        call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "new_scene",
+            json!({"scene_token":token}),
+        )
+        .await;
+        let token = editor.scene_token.to_string();
+        call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "create_primitive",
+            json!({"scene_token":token,"primitive":"cube"}),
+        )
+        .await;
+        let before = editor.history.scene().clone();
+        let pending = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "open_scene",
+            json!({"scene_token":token,"path":path.to_str().unwrap()}),
+        )
+        .await
+        .structured_content
+        .unwrap();
+        assert_eq!(pending["outcome"], "pending_confirmation");
+        assert_eq!(pending["scene_token"], token);
+        assert_eq!(pending["kind"], "open");
+        let pending_id = pending["pending_action_id"].as_str().unwrap();
+        assert!(
+            !serde_json::to_string(&pending)
+                .unwrap()
+                .contains(path.to_str().unwrap())
+        );
+        std::fs::write(&path, b"changed after admission").unwrap();
+        let result = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "resolve_file_action",
+            json!({"scene_token":token,"pending_action_id":pending_id,"decision":"discard"}),
+        )
+        .await
+        .structured_content
+        .unwrap();
+        assert_eq!(result["outcome"], "document_applied");
+        assert_ne!(editor.history.scene(), &before);
+        assert_eq!(
+            editor.history.scene().nodes()[0].transform().translation[0],
+            16777217.125
+        );
+        assert_eq!(
+            editor
+                .history
+                .scene()
+                .internal_transform(editor.history.scene().nodes()[0].id())
+                .unwrap()
+                .rotation_radians[2],
+            0.25
+        );
+        assert!(!editor.history.can_undo());
+        assert!(!editor.is_dirty());
+        let token = editor.scene_token.to_string();
+        let before = editor.history.scene().clone();
+        let camera = editor.camera.clone();
+        let failed = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "open_scene",
+            json!({"scene_token":token,"path":path.to_str().unwrap()}),
+        )
+        .await
+        .structured_content
+        .unwrap();
+        assert_eq!(failed["error"]["code"], "file_error");
+        assert!(
+            !serde_json::to_string(&failed)
+                .unwrap()
+                .contains(path.to_str().unwrap())
+        );
+        assert_eq!(editor.history.scene(), &before);
+        assert_eq!(editor.scene_token.to_string(), token);
+        assert_eq!(editor.camera, camera);
+        client.cancel().await.unwrap();
+        drop(editor);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn native_file_confirmation_uses_scene_and_action_identity_without_replay() {
+        let context = egui::Context::default();
+        let (mut editor, client, server) = start(&context).await;
+        let first_token = editor.scene_token.to_string();
+        let applied = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "new_scene",
+            json!({"scene_token":first_token}),
+        )
+        .await
+        .structured_content
+        .unwrap();
+        assert_eq!(applied["outcome"], "document_applied");
+        let token = applied["scene_token"].as_str().unwrap().to_owned();
+        assert_ne!(token, first_token);
+        call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "create_primitive",
+            json!({"scene_token":token,"primitive":"cube"}),
+        )
+        .await;
+        let before = editor.history.scene().clone();
+        let camera = editor.camera.clone();
+        let selected = editor.selected;
+        let selected_path = editor.selected_path.clone();
+        let pending = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "new_scene",
+            json!({"scene_token":token}),
+        )
+        .await
+        .structured_content
+        .unwrap();
+        assert_eq!(pending["outcome"], "pending_confirmation");
+        assert_eq!(pending["scene_token"], token);
+        assert_eq!(pending["kind"], "new");
+        let old_pending = pending["pending_action_id"].as_str().unwrap().to_owned();
+        let inspected = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "inspect_scene",
+            json!({}),
+        )
+        .await
+        .structured_content
+        .unwrap();
+        assert_eq!(inspected["inspection"]["pending_action"]["id"], old_pending);
+        assert_eq!(inspected["inspection"]["pending_action"]["kind"], "new");
+        assert_eq!(inspected["inspection"]["save_available"], false);
+        for (tool, fields) in [
+            ("create_primitive", json!({"primitive":"plane"})),
+            ("select_node", json!({"node_id":null})),
+            (
+                "rename_node",
+                json!({"node_id":selected.unwrap().to_decimal(),"name":"blocked"}),
+            ),
+            (
+                "set_transform",
+                json!({"node_id":selected.unwrap().to_decimal(),"translation":[0,0,0],"rotation_degrees":[0,0,0],"scale":[1,1,1]}),
+            ),
+            (
+                "delete_node",
+                json!({"node_id":selected.unwrap().to_decimal()}),
+            ),
+            ("undo", json!({})),
+            ("redo", json!({})),
+            ("frame_selected", json!({})),
+            ("orbit_camera", json!({"radians":[0.2,0]})),
+            ("pan_camera", json!({"world_units":[1,0]})),
+            ("dolly_camera", json!({"factor":0.5})),
+            ("new_scene", json!({})),
+            ("request_close", json!({})),
+            ("open_scene", json!({"path":"unopened.mb"})),
+        ] {
+            let mut args = fields;
+            args["scene_token"] = json!(token);
+            let result = call(&mut editor, &context, client.peer(), tool, args).await;
+            assert_eq!(
+                result.structured_content.unwrap()["error"]["code"],
+                "busy_editing",
+                "{tool}"
+            );
+            assert_eq!(editor.history.scene(), &before);
+            assert_eq!(editor.camera, camera);
+            assert_eq!(editor.selected, selected);
+            assert_eq!(editor.selected_path, selected_path);
+        }
+        let stale = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "resolve_file_action",
+            json!({"scene_token":first_token,"pending_action_id":old_pending,"decision":"discard"}),
+        )
+        .await;
+        assert_eq!(
+            stale.structured_content.unwrap()["error"]["code"],
+            "stale_scene"
+        );
+        let cancelled = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "resolve_file_action",
+            json!({"scene_token":token,"pending_action_id":old_pending,"decision":"cancel"}),
+        )
+        .await;
+        assert_eq!(
+            cancelled.structured_content.unwrap()["outcome"],
+            "cancelled"
+        );
+        assert_eq!(editor.scene_token.to_string(), token);
+        assert_eq!(editor.history.scene(), &before);
+        let pending = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "new_scene",
+            json!({"scene_token":token}),
+        )
+        .await
+        .structured_content
+        .unwrap();
+        let current_pending = pending["pending_action_id"].as_str().unwrap();
+        assert_ne!(current_pending, old_pending);
+        let stale = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "resolve_file_action",
+            json!({"scene_token":token,"pending_action_id":old_pending,"decision":"discard"}),
+        )
+        .await;
+        assert_eq!(
+            stale.structured_content.unwrap()["error"]["code"],
+            "stale_pending_action"
+        );
+        assert_eq!(editor.history.scene(), &before);
+        let applied = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "resolve_file_action",
+            json!({"scene_token":token,"pending_action_id":current_pending,"decision":"discard"}),
+        )
+        .await
+        .structured_content
+        .unwrap();
+        assert_eq!(applied["outcome"], "document_applied");
+        let new_token = applied["scene_token"].as_str().unwrap();
+        assert_ne!(new_token, token);
+        assert!(editor.history.scene().nodes().is_empty());
+        assert!(!editor.history.can_undo());
+        let replay = call(&mut editor, &context, client.peer(), "resolve_file_action", json!({"scene_token":new_token,"pending_action_id":current_pending,"decision":"discard"})).await;
+        assert_eq!(
+            replay.structured_content.unwrap()["error"]["code"],
+            "stale_pending_action"
+        );
+        client.cancel().await.unwrap();
+        drop(editor);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn native_sdk_transforms_preserve_double_precision_and_inspect_metadata_only() {
+        let context = egui::Context::default();
+        let (mut editor, client, server) = start(&context).await;
+        let token = editor.scene_token.to_string();
+        let created = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "create_primitive",
+            json!({"scene_token":token,"primitive":"cube"}),
+        )
+        .await
+        .structured_content
+        .unwrap();
+        let id = created["node_id"].as_str().unwrap();
+        let result = call(&mut editor, &context, client.peer(), "set_transform", json!({"scene_token":token,"node_id":id,"translation":[16777217.125,0,0],"rotation_degrees":[90,0,0],"scale":[1,1,1]})).await;
+        assert_eq!(result.structured_content.unwrap()["outcome"], "changed");
+        assert_eq!(
+            editor.history.scene().nodes()[0].transform().translation[0],
+            16777217.125
+        );
+        let inspected = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "inspect_scene",
+            json!({}),
+        )
+        .await
+        .structured_content
+        .unwrap();
+        let inspection = &inspected["inspection"];
+        let node = &inspection["nodes"][0];
+        assert_eq!(
+            node["transform"]["translation"][0].as_f64(),
+            Some(16777217.125)
+        );
+        assert_eq!(node["transform"]["rotation_degrees"][0], 90.0);
+        assert_eq!(node["authoring_transform"]["rotation"][0], 90.0);
+        assert_eq!(inspection["units"]["angular"], "deg");
+        assert_eq!(inspection["units"]["linear"], "cm");
+        assert!(node.get("mesh").is_none());
+        assert!(node.get("source").is_none());
+        assert_eq!(inspection["shapes"][0]["points"], 8);
+        assert_eq!(inspection["shapes"][0]["faces"], 6);
+        assert_eq!(node["shape_ids"][0], inspection["shapes"][0]["id"]);
+        assert_eq!(inspection["viewport_backend"], "cpu_geometry_preview");
+        assert_eq!(inspection["depth_complete"], false);
+        assert_eq!(inspection["clipping_complete"], false);
+        assert!(inspection["shapes"][0].get("vertices").is_none());
+        let paths = node["instance_paths"].as_array().unwrap();
+        assert_eq!(paths.len(), 1);
+        let selected = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "select_node",
+            json!({"scene_token":token,"node_id":id,"instance_path":paths[0]}),
+        )
+        .await;
+        assert_eq!(selected.is_error, Some(false));
+        let before = editor.history.scene().clone();
+        let selected_path = editor.selected_path.clone();
+        let wrong = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "select_node",
+            json!({"scene_token":token,"node_id":id,"instance_path":["18446744073709551615"]}),
+        )
+        .await;
+        assert_eq!(
+            wrong.structured_content.unwrap()["error"]["code"],
+            "scene_error"
+        );
+        assert_eq!(editor.history.scene(), &before);
+        assert_eq!(editor.selected_path, selected_path);
+        client.cancel().await.unwrap();
+        drop(editor);
+        server.await.unwrap();
+    }
 
     #[tokio::test]
     async fn sdk_camera_navigation_inspects_real_view_without_authoring_changes() {
@@ -968,11 +1848,6 @@ mod official_client {
                 "delete_node",
                 json!({"scene_token":Uuid::new_v4().to_string(),"node_id":id}),
                 "stale_scene",
-            ),
-            (
-                "set_transform",
-                json!({"scene_token":token,"node_id":id,"translation":[1e40,0,0],"rotation_degrees":[0,0,0],"scale":[1,1,1]}),
-                "scene_error",
             ),
         ] {
             let result = call(&mut editor, &context, client.peer(), name, arguments).await;

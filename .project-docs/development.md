@@ -14,7 +14,7 @@ functionality coverage and exact parity remain unmeasured and unmet.
 | `cargo test --locked --no-default-features` | Run core suites without the desktop target or a window |
 | `cargo test --locked --test scene_workflows` | Run scene tests only |
 | `cargo test --locked --test history_workflows` | Run command history tests only |
-| `cargo test --locked --test document_workflows` | Run native scene file tests only |
+| `cargo test --locked --test document_workflows` | Run retained legacy JSON utility tests |
 | `cargo test --locked --test viewport_workflows` | Run camera/projection/picking tests only |
 | `cargo test --locked --no-default-features --test obj_workflows` | Run OBJ export tests only |
 
@@ -40,11 +40,22 @@ The prototype provides menus/shelf, Outliner, Channel Box, projected mesh drawin
 selection, name/numeric edits, undo/redo, delete and framing. Alt-left drag orbits,
 middle drag pans, right drag/wheel dollies, and F frames the selected object when
 a text field isn't consuming keys. Ctrl/Cmd-Z undoes and Ctrl/Cmd-Shift-Z redoes.
-New/Open/Save As use the document API, with Save As requiring a new destination.
+New/Open use the shared native document lifecycle. Save As is visibly disabled
+until genuine native writing is available; no derived JSON save is substituted.
 GUI Export and unfinished modeling/animation/material controls are disabled.
 Docking and full Maya interaction parity aren't implemented or verified.
 
-`Scene` owns root nodes with stable IDs,
+`NativeScene` is the editor and History's sole mutable authoring state. It owns
+separate transform/shape identities, instance DAG edges, f64 channels and pivots
+in declared units, and immutable original source bytes with typed edit intent.
+`ViewScene` derives bounded read-only triangle/quad instances, preserving original
+face indices and full instance paths. Unsupported evaluation or topology refuses
+projection or editing explicitly; it isn't flattened into a second authoring mesh.
+Local mesh points and sparse offsets remain separate centimeter-valued storage;
+both are promoted to f64 before addition/world transformation. Native values
+outside f32 view representation remain authoring data and yield an explicit view error.
+
+The retained legacy `Scene` utility owns root nodes with stable IDs,
 read-only mesh access and validated rename/transform mutations. Cube and plane
 primitives are unit quads in a right-handed Y-up coordinate system. Transforms
 apply scale, XYZ Euler rotation in degrees, then translation. XYZ rotates about
@@ -59,9 +70,10 @@ Hierarchy editing remains a subsequent task.
 Scene validation requires finite local/world coordinates, index bounds and four
 distinct indices per face. It preserves unused vertices, empty meshes, coincident
 or zero-area geometry, nonplanarity, inconsistent winding and non-manifold states.
-Loading edited arrays is supported; native topology editing is still pending.
+Loading edited legacy arrays remains supported. This quad-only utility is not
+the native editor's authoring model.
 
-`Scene::extrude_face` and `Command::ExtrudeFace` extrude one quad by signed
+`Scene::extrude_face` and the native `Command::ExtrudeFace` subset extrude one quad by signed
 object-space displacement along its oriented Newell normal, with one segment.
 The cap replaces the selected face at the same index and four side quads are
 appended. Zero or rounded-to-coincident displacement still creates undoable
@@ -81,8 +93,10 @@ add native face-editing controls or prove Maya equivalence.
 
 ## History
 
-`History` wraps scene edits as explicit create/remove/rename/set-transform/extrude-face commands
-and stores full scene snapshots for undo/redo. Failed edits and unchanged values
+`History::scene()` returns the authoritative `NativeScene`. Its explicit commands
+include one mixed name/nine-channel-intent transaction and shape-targeted extrusion;
+snapshots retain native precision, identities and the shared immutable source Arc.
+Failed edits and unchanged values
 don't create history entries or clear redo. A changed edit after undo clears the
 redo branch, while node ID reservations stay at their highest allocated value so
 IDs from discarded branches aren't reused. Memory grows with scene size and edit
@@ -90,21 +104,27 @@ count, and no history limit or history persistence exists yet.
 
 ## Native documents
 
-`document::load` decodes a versioned JSON envelope and validates the scene before
-returning it. JSON v1 accepts structurally valid quad meshes, stable IDs, names and
-transforms. Unknown fields/versions, malformed data, invalid geometry and invalid
-allocator state are rejected. This is AztecCraft's native format, with no Maya,
-OBJ, FBX, USD or Alembic compatibility claim.
+`document::load_native` stages Maya binary `.mb` or legacy `.aztec` data from one
+bounded regular-file handle, retaining the exact parsed Arc and opened-file
+baseline. Unix reads use nonblocking open followed by a regular-handle check so
+special files cannot wait for a writer. No equivalent Windows deadline is claimed.
+The 16 MiB input limit is application policy. Legacy validation uses these same
+bytes rather than rereading the path. Maya ASCII and genuine Maya writing remain pending.
 
-Both loading and saving enforce a 16 MiB document limit. `document::save_new`
-uses pinned `craft-atomic::write_new` for staged create-new writes. Existing files,
-directories and symlinks are occupied destinations and aren't overwritten. Saving
-to a new path is required, and overwrite-save, recovery and autosave are pending.
-The file stores scene data and allocator reservations, without undo/redo stacks
-or camera state. File integration validates an opened scene before replacement,
-keeps the scene/drafts on malformed open and prompts Save As/Discard/Cancel for
-unsaved changes before New/Open/close. Tests exercise real files and UI events,
-but native file-dialog interaction remains unverified.
+Open validates/prepares an off-document candidate and frames its visible geometry
+before replacement or an unsaved confirmation. Discard applies the exact staged
+bytes, even if the path changed; a modal resize reframes that candidate using the
+current aspect before consuming it. Failed decode/view/framing preserves the old
+document. New/Open/Close use explicit Discard/Cancel with a pending-action UUID;
+MCP also requires the current scene token. Save is unavailable and cannot discard.
+UI and MCP use the same handlers; [the MCP contract](mcp.md) documents the response
+delivery barrier for remote Close. Full native file-dialog navigation, native
+editing of imported scenes and other-platform interaction need separate evidence.
+
+The standalone legacy `document::load`/`save_new` utilities retain validated JSON
+v1 quad scenes and create-new/no-clobber writes via pinned `craft-atomic`.
+They are tested independently and aren't used to save native editor state.
+Overwrite-save, recovery, autosave, history and camera persistence remain pending.
 
 ## OBJ export
 
@@ -144,8 +164,8 @@ the original bytes, header bits and padding with checked chunk spans. It admits
 40 explicitly observed FOR8/LIS8 group layouts, rejects unseen group layouts and
 malformed nested extents, and keeps unknown leaf payloads inert. Its 16 MiB,
 100,000-chunk and 64-level limits are application resource policy, not Maya
-format limits. This library slice does not decode native scene semantics or
-enable Maya Binary Open, editing, display or Save.
+format limits. Container inspection alone doesn't establish scene semantics or
+native Open, display or Save compatibility.
 
 The layout observations were compared with
 [MayaSceneKit's pinned raw parser](https://github.com/yamahigashi/MayaSceneKit/blob/95a11db062689285604b3a647385dc9388402865/crates/maya-scene-kit-formats/src/mb/parser.rs)
@@ -184,9 +204,11 @@ The decoder applies a 128 MiB accounted-buffer policy and a checked 50 million
 validation-work-unit policy before canonical construction. These are operational
 limits, not a process heap guarantee, timing promise or Maya format limits.
 Errors expose only a fixed category and an optional source byte offset. The
-decoder performs no IO or live document replacement. Native and MCP Open,
-editing integration and genuine Maya Save require their separate shared-editor
-integration; this library decoder does not enable them.
+decoder performs no IO or live document replacement. The document/editor adapter
+uses this decoder for native and MCP Open into the same NativeScene/History;
+supported source-bound numeric edits preserve original bytes plus typed intent.
+Missing-record insertion, structural imported edits and genuine Maya Save remain
+unsupported. A decoder success alone doesn't prove appearance or Maya parity.
 
 The ignored unit test
 `maya_binary::semantic::tests::private_wire_fixture_spans_and_mesh_trace_match_audit`

@@ -3,10 +3,13 @@ use super::{
     transport::{Control, Shared, check_serialized_size},
 };
 use crate::editor_operations::{
-    MAX_NAME_BYTES, MAX_RESULT_BYTES, Operation, OperationError, OperationReply, RemoteRequest,
-    TOOL_NAMES,
+    FileDecision, MAX_NAME_BYTES, MAX_RESULT_BYTES, Operation, OperationError, OperationReply,
+    RemoteRequest, TOOL_NAMES, TransformInput,
 };
-use azteccraft::scene::{NodeId, Primitive, Transform};
+use azteccraft::{
+    native_scene::NativeId,
+    scene::{NodeId, Primitive},
+};
 use rmcp::{
     RoleServer, ServerHandler,
     model::{
@@ -53,6 +56,8 @@ struct CreateArgs {
 struct SelectArgs {
     scene_token: String,
     node_id: Option<String>,
+    #[schemars(length(max = 256))]
+    instance_path: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -75,9 +80,32 @@ struct RenameArgs {
 struct TransformArgs {
     scene_token: String,
     node_id: String,
-    translation: [f32; 3],
-    rotation_degrees: [f32; 3],
-    scale: [f32; 3],
+    translation: [f64; 3],
+    rotation_degrees: [f64; 3],
+    scale: [f64; 3],
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct OpenArgs {
+    scene_token: String,
+    #[schemars(length(min = 1, max = 4096))]
+    path: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum FileDecisionInput {
+    Cancel,
+    Discard,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ResolveFileArgs {
+    scene_token: String,
+    pending_action_id: String,
+    decision: FileDecisionInput,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -157,9 +185,46 @@ fn parse_request(name: &str, arguments: JsonObject) -> Result<RemoteRequest, Err
         }
         "select_node" => {
             let args: SelectArgs = decode(arguments)?;
+            if args.node_id.is_none() && args.instance_path.is_some() {
+                return Err(ErrorData::invalid_params(
+                    "Clearing selection cannot include an instance_path",
+                    None,
+                ));
+            }
+            let instance_path = args
+                .instance_path
+                .map(|path| {
+                    if path.len() > 256 {
+                        return Err(ErrorData::invalid_params(
+                            "instance_path exceeds 256 IDs",
+                            None,
+                        ));
+                    }
+                    path.into_iter()
+                        .map(|value| {
+                            if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit())
+                            {
+                                return Err(ErrorData::invalid_params(
+                                    "instance_path IDs must be unsigned decimal strings",
+                                    None,
+                                ));
+                            }
+                            NativeId::from_decimal(&value).map_err(|_| {
+                                ErrorData::invalid_params(
+                                    "instance_path IDs must fit unsigned 64-bit integers",
+                                    None,
+                                )
+                            })
+                        })
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .transpose()?;
             (
                 token(&args.scene_token)?,
-                Operation::Select(args.node_id.as_deref().map(node_id).transpose()?),
+                Operation::Select {
+                    node: args.node_id.as_deref().map(node_id).transpose()?,
+                    instance_path,
+                },
             )
         }
         "rename_node" => {
@@ -178,10 +243,10 @@ fn parse_request(name: &str, arguments: JsonObject) -> Result<RemoteRequest, Err
                 token(&args.scene_token)?,
                 Operation::SetTransform {
                     id: node_id(&args.node_id)?,
-                    transform: Transform {
-                        translation: args.translation.into(),
-                        rotation_degrees: args.rotation_degrees.into(),
-                        scale: args.scale.into(),
+                    transform: TransformInput {
+                        translation: args.translation,
+                        rotation_degrees: args.rotation_degrees,
+                        scale: args.scale,
                     },
                 },
             )
@@ -191,6 +256,45 @@ fn parse_request(name: &str, arguments: JsonObject) -> Result<RemoteRequest, Err
             (
                 token(&args.scene_token)?,
                 Operation::Delete(node_id(&args.node_id)?),
+            )
+        }
+        "new_scene" => {
+            let args: MutationArgs = decode(arguments)?;
+            (token(&args.scene_token)?, Operation::NewScene)
+        }
+        "request_close" => {
+            let args: MutationArgs = decode(arguments)?;
+            (token(&args.scene_token)?, Operation::RequestClose)
+        }
+        "open_scene" => {
+            let args: OpenArgs = decode(arguments)?;
+            if args.path.is_empty() || args.path.len() > 4096 || args.path.contains('\0') {
+                return Err(ErrorData::invalid_params(
+                    "path must contain 1 to 4096 UTF-8 bytes and no NUL",
+                    None,
+                ));
+            }
+            (
+                token(&args.scene_token)?,
+                Operation::OpenScene {
+                    path: args.path.into(),
+                },
+            )
+        }
+        "resolve_file_action" => {
+            let args: ResolveFileArgs = decode(arguments)?;
+            let pending_id = Uuid::parse_str(&args.pending_action_id)
+                .map_err(|_| ErrorData::invalid_params("pending_action_id must be a UUID", None))?;
+            let decision = match args.decision {
+                FileDecisionInput::Cancel => FileDecision::Cancel,
+                FileDecisionInput::Discard => FileDecision::Discard,
+            };
+            (
+                token(&args.scene_token)?,
+                Operation::ResolveFileAction {
+                    pending_id,
+                    decision,
+                },
             )
         }
         "orbit_camera" => {
@@ -264,12 +368,12 @@ fn catalog() -> Vec<Tool> {
                     schema::<CreateArgs>(),
                 ),
                 "select_node" => (
-                    "Select an object, or clear selection with null node_id",
+                    "Select an object using an optional full transform instance_path; ambiguous objects require a path. Null node_id clears selection without a path",
                     schema::<SelectArgs>(),
                 ),
                 "rename_node" => ("Rename an existing object", schema::<RenameArgs>()),
                 "set_transform" => (
-                    "Set translation, rotation in XYZ degrees, and scale",
+                    "Set f64 translation in declared scene units, rotation in XYZ degrees, and scale",
                     schema::<TransformArgs>(),
                 ),
                 "delete_node" => (
@@ -299,6 +403,22 @@ fn catalog() -> Vec<Tool> {
                 "dolly_camera" => (
                     "Multiply live camera distance by a positive finite factor; below one moves closer",
                     schema::<DollyArgs>(),
+                ),
+                "new_scene" => (
+                    "Request a new empty document; dirty documents require explicit confirmation using the returned pending_action_id",
+                    schema::<MutationArgs>(),
+                ),
+                "request_close" => (
+                    "Request native window closure; dirty documents require explicit confirmation, and approved remote closure waits for its successful reply to be flushed",
+                    schema::<MutationArgs>(),
+                ),
+                "open_scene" => (
+                    "Open a supported scene from a local UTF-8 path (1 to 4096 bytes, no NUL); dirty documents require confirmation. No writer is available",
+                    schema::<OpenArgs>(),
+                ),
+                "resolve_file_action" => (
+                    "Cancel or discard the exact pending file action using its UUID and current scene token; replayed IDs are rejected",
+                    schema::<ResolveFileArgs>(),
                 ),
                 _ => unreachable!("catalogue names must have schemas"),
             };
@@ -356,6 +476,9 @@ fn tool_reply(reply: Result<OperationReply, OperationError>) -> CallToolResult {
                 OperationError::InvalidInput(_) => "invalid_input",
                 OperationError::Scene(_) => "scene_error",
                 OperationError::Camera(_) => "camera_error",
+                OperationError::File(_) => "file_error",
+                OperationError::AmbiguousSelection => "ambiguous_selection",
+                OperationError::StalePendingAction => "stale_pending_action",
             };
             tool_error(code, error)
         }
@@ -397,6 +520,7 @@ impl ServerHandler for EditorServer {
                 request,
                 reply,
                 cancellation: context.ct.clone(),
+                request_id: context.id.clone(),
             })
             .is_err()
         {
@@ -404,11 +528,20 @@ impl ServerHandler for EditorServer {
         }
         self.shared.repaint();
         let result = tokio::select! {
-            _ = context.ct.cancelled() => tool_error("cancelled", "Request cancelled; inspect to reconcile any completed operation"),
+            _ = context.ct.cancelled() => {
+                self.shared.fail_close(&context.id);
+                tool_error("cancelled", "Request cancelled; inspect to reconcile any completed operation")
+            },
             outcome = tokio::time::timeout(UI_REPLY_TIMEOUT, receiver) => match outcome {
                 Ok(Ok(reply)) => tool_reply(reply),
-                Ok(Err(_)) => tool_error("unavailable", "Editor did not acknowledge the request"),
-                Err(_) => tool_error("busy", "Editor reply deadline exceeded; inspect before retrying"),
+                Ok(Err(_)) => {
+                    self.shared.fail_close(&context.id);
+                    tool_error("unavailable", "Editor did not acknowledge the request")
+                },
+                Err(_) => {
+                    self.shared.fail_close(&context.id);
+                    tool_error("busy", "Editor reply deadline exceeded; inspect before retrying")
+                },
             },
         };
         Ok(result.into())
@@ -471,6 +604,10 @@ mod tests {
                 "orbit_camera" => json!({"scene_token":token,"radians":[0,0]}),
                 "pan_camera" => json!({"scene_token":token,"world_units":[0,0]}),
                 "dolly_camera" => json!({"scene_token":token,"factor":1}),
+                "open_scene" => json!({"scene_token":token,"path":"scene.mb"}),
+                "resolve_file_action" => {
+                    json!({"scene_token":token,"pending_action_id":Uuid::new_v4().to_string(),"decision":"cancel"})
+                }
                 _ => json!({"scene_token":token}),
             };
             assert!(parse_request(&tool.name, args.as_object().unwrap().clone()).is_ok());
@@ -498,6 +635,49 @@ mod tests {
         args["name"] = format!("{}a", args["name"].as_str().unwrap()).into();
         assert!(parse_request("rename_node", args.as_object().unwrap().clone()).is_err());
         assert!(parse_request("extrude_face", JsonObject::new()).is_err());
+    }
+
+    #[test]
+    fn native_file_and_instance_arguments_enforce_bounds_and_exact_decisions() {
+        let token = Uuid::new_v4().to_string();
+        let pending = Uuid::new_v4().to_string();
+        for path in [String::new(), "x\0.mb".into(), "é".repeat(2049)] {
+            let args = json!({"scene_token":token,"path":path});
+            assert!(parse_request("open_scene", args.as_object().unwrap().clone()).is_err());
+        }
+        let args = json!({"scene_token":token,"path":"é".repeat(2048)});
+        assert!(parse_request("open_scene", args.as_object().unwrap().clone()).is_ok());
+        for path in [
+            json!(["+1"]),
+            json!([1]),
+            json!(["18446744073709551616"]),
+            json!(vec!["1"; 257]),
+        ] {
+            let args = json!({"scene_token":token,"node_id":"1","instance_path":path});
+            assert!(parse_request("select_node", args.as_object().unwrap().clone()).is_err());
+        }
+        let args = json!({"scene_token":token,"node_id":null,"instance_path":[]});
+        assert!(parse_request("select_node", args.as_object().unwrap().clone()).is_err());
+        for args in [
+            json!({"scene_token":token,"pending_action_id":pending,"decision":"save"}),
+            json!({"scene_token":token,"pending_action_id":"bad","decision":"cancel"}),
+            json!({"scene_token":token,"pending_action_id":pending,"decision":"cancel","path":"ignored.mb"}),
+            json!({"scene_token":token,"path":"scene.mb","extra":true}),
+        ] {
+            let name = if args.get("pending_action_id").is_some() {
+                "resolve_file_action"
+            } else {
+                "open_scene"
+            };
+            assert!(parse_request(name, args.as_object().unwrap().clone()).is_err());
+        }
+        let args = json!({"scene_token":token,"node_id":"1","translation":[16777217.125,0,0],"rotation_degrees":[90,0,0],"scale":[1,1,1]});
+        let request = parse_request("set_transform", args.as_object().unwrap().clone()).unwrap();
+        let Operation::SetTransform { transform, .. } = request.operation else {
+            panic!("expected transform")
+        };
+        assert_eq!(transform.translation[0], 16777217.125);
+        assert_eq!(transform.rotation_degrees[0], 90.0);
     }
 
     #[test]

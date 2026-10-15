@@ -185,21 +185,49 @@ impl Camera {
         vertices: &[Vec3],
         aspect: f32,
     ) -> Result<(), InvalidCameraInput> {
+        self.frame_iter(vertices.iter().copied(), aspect)
+    }
+
+    pub fn frame_view(
+        &mut self,
+        scene: &ViewScene,
+        prefix: Option<&[crate::native_scene::NativeId]>,
+        aspect: f32,
+    ) -> Result<(), InvalidCameraInput> {
+        self.frame_iter(
+            scene
+                .instances()
+                .iter()
+                .filter(move |instance| {
+                    prefix.is_none_or(|prefix| instance.path().starts_with(prefix))
+                })
+                .flat_map(|instance| instance.world_vertices().iter().copied()),
+            aspect,
+        )
+    }
+
+    fn frame_iter(
+        &mut self,
+        vertices: impl Iterator<Item = Vec3> + Clone,
+        aspect: f32,
+    ) -> Result<(), InvalidCameraInput> {
         self.projection_matrix(aspect)?;
-        if vertices.is_empty() || vertices.iter().any(|point| !point.is_finite()) {
-            return Err(InvalidCameraInput);
-        }
+        let mut any = false;
         let mut min = Vec3::splat(f32::INFINITY);
         let mut max = Vec3::splat(f32::NEG_INFINITY);
-        for vertex in vertices {
-            min = min.min(*vertex);
-            max = max.max(*vertex);
+        for vertex in vertices.clone() {
+            if !vertex.is_finite() {
+                return Err(InvalidCameraInput);
+            }
+            any = true;
+            min = min.min(vertex);
+            max = max.max(vertex);
+        }
+        if !any {
+            return Err(InvalidCameraInput);
         }
         let target = min * 0.5 + max * 0.5;
-        let radius = vertices
-            .iter()
-            .map(|v| v.distance(target))
-            .fold(0.0_f32, f32::max);
+        let radius = vertices.map(|v| v.distance(target)).fold(0.0_f32, f32::max);
         let half_angle = (self.fov_y * 0.5).min(((self.fov_y * 0.5).tan() * aspect).atan());
         let mut next = self.clone();
         next.target = target;

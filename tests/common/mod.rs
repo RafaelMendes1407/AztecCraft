@@ -1,27 +1,10 @@
-use azteccraft::{
-    history::{Command, EditOutcome, History},
-    scene::{NodeId, Primitive},
-};
+use azteccraft::scene::{NodeId, Primitive, Scene};
 
-pub fn extruded_corner() -> (History, NodeId) {
-    let mut history = History::default();
-    let EditOutcome::Created(id) = history
-        .execute(Command::Create {
-            primitive: Primitive::Cube,
-            name: "extruded_cube".into(),
-        })
-        .unwrap()
-    else {
-        panic!("cube creation failed");
-    };
+pub fn extruded_corner() -> (Scene, NodeId) {
+    let mut scene = Scene::default();
+    let id = scene.create(Primitive::Cube, "extruded_cube").unwrap();
     for face_index in [1, 7] {
-        history
-            .execute(Command::ExtrudeFace {
-                id,
-                face_index,
-                distance: 0.5,
-            })
-            .unwrap();
+        scene.extrude_face(id, face_index, 0.5).unwrap();
     }
-    (history, id)
+    (scene, id)
 }

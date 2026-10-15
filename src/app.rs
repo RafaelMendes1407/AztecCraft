@@ -1,12 +1,20 @@
 #[cfg(any(test, feature = "mcp"))]
-use crate::editor_operations::{CameraInspection, NodeInspection, RemoteRequest, SceneInspection};
-use crate::editor_operations::{Operation, OperationError, OperationReply};
+use crate::editor_operations::{
+    CameraInspection, NodeInspection, RemoteRequest, SceneInspection, ShapeInspection,
+    UnitsInspection,
+};
+use crate::editor_operations::{Operation, OperationError, OperationReply, TransformInput};
+#[cfg(any(test, feature = "mcp"))]
+use azteccraft::native_scene::LinearUnit;
 use azteccraft::{
     history::{Command, EditOutcome, History},
-    scene::{NodeId, Primitive, Transform},
+    native_scene::{AngularUnit, NativeId, NativeTransform},
+    scene::{NodeId, Primitive},
+    view_scene::ViewScene,
     viewport::Camera,
 };
 use eframe::egui::{self, Color32, Key, RichText};
+#[cfg(test)]
 use glam::Vec3;
 use uuid::Uuid;
 
@@ -19,9 +27,12 @@ pub struct Editor {
     scene_token: Uuid,
     history: History,
     selected: Option<NodeId>,
+    selected_path: Vec<NativeId>,
     camera: Camera,
     name: String,
     channels: [String; 9],
+    channel_intents: [bool; 9],
+    name_intent: bool,
     native_input_pending: bool,
     status: String,
     error: bool,
@@ -37,9 +48,12 @@ impl Default for Editor {
             scene_token: Uuid::new_v4(),
             history: History::default(),
             selected: None,
+            selected_path: Vec::new(),
             camera: Camera::default(),
             name: String::new(),
             channels: Default::default(),
+            channel_intents: [false; 9],
+            name_intent: false,
             native_input_pending: false,
             status: "Ready | Create a cube or plane to start".into(),
             error: false,
@@ -71,31 +85,29 @@ impl Editor {
     }
 
     fn sync_fields(&mut self) {
+        self.channel_intents = [false; 9];
+        self.name_intent = false;
         let Some(node) = self
             .selected
             .and_then(|id| self.history.scene().node(id).ok())
         else {
             self.selected = None;
+            self.selected_path.clear();
+            self.name.clear();
+            self.channels = Default::default();
             return;
         };
         self.name = node.name().into();
-        let t = node.transform();
-        let values = [
-            t.translation.x,
-            t.translation.y,
-            t.translation.z,
-            t.rotation_degrees.x,
-            t.rotation_degrees.y,
-            t.rotation_degrees.z,
-            t.scale.x,
-            t.scale.y,
-            t.scale.z,
-        ];
+        let values = node.transform().values();
         self.channels = values.map(|value| value.to_string());
     }
 
+    #[cfg(test)]
     fn select(&mut self, selected: Option<NodeId>) {
-        self.native_operation(Operation::Select(selected));
+        self.native_operation(Operation::Select {
+            node: selected,
+            instance_path: None,
+        });
     }
 
     fn execute(&mut self, command: Command) {
@@ -106,13 +118,25 @@ impl Editor {
             },
             Command::Remove(id) => Operation::Delete(id),
             Command::Rename { id, name } => Operation::Rename { id, name },
-            Command::SetTransform { id, transform } => Operation::SetTransform { id, transform },
+            Command::SetTransform { id, transform } => match self.transform_input(transform) {
+                Ok(transform) => Operation::SetTransform { id, transform },
+                Err(error) => {
+                    self.status = error.to_string();
+                    self.error = true;
+                    return;
+                }
+            },
+            Command::EditNode { .. } => {
+                self.status = "Draft commands are committed by the Channel Box".into();
+                self.error = true;
+                return;
+            }
             Command::ExtrudeFace {
-                id,
+                shape,
                 face_index,
                 distance,
             } => Operation::ExtrudeFace {
-                id,
+                shape,
                 face_index,
                 distance,
             },
@@ -141,11 +165,12 @@ impl Editor {
 
     fn native_operation(&mut self, operation: Operation) {
         let status = match operation {
-            Operation::Select(_) | Operation::FrameSelected => None,
-            #[cfg(any(test, feature = "mcp"))]
+            Operation::Select { .. } | Operation::FrameSelected => None,
             Operation::Orbit { .. } | Operation::Pan { .. } | Operation::Dolly { .. } => None,
             Operation::Undo => Some("Undo"),
             Operation::Redo => Some("Redo"),
+            Operation::OpenScene { .. } | Operation::NewScene => Some("Scene ready"),
+            Operation::RequestClose => None,
             _ => Some("Scene edited"),
         };
         match self.apply_operation(operation) {
@@ -153,6 +178,11 @@ impl Editor {
                 if let Some(status) = status {
                     self.status = match reply {
                         OperationReply::Unchanged => "No change",
+                        OperationReply::DocumentApplied { .. } => "Scene ready",
+                        OperationReply::PendingConfirmation { .. } => {
+                            "Resolve unsaved changes to continue"
+                        }
+                        OperationReply::Cancelled { .. } => "File action cancelled",
                         _ => status,
                     }
                     .into();
@@ -179,36 +209,162 @@ impl Editor {
         });
         if matches!(request.operation, Operation::Inspect) {
             return Ok(OperationReply::Scene {
-                inspection: self.inspect(focused)?,
+                inspection: Box::new(self.inspect(focused)?),
             });
         }
         if request.expected_scene_token != Some(self.scene_token) {
             return Err(OperationError::StaleScene);
         }
-        if self.files.is_modal() || focused || self.has_draft() || self.native_input_pending {
+        if self.files.is_closing()
+            || (self.files.is_modal()
+                && !matches!(request.operation, Operation::ResolveFileAction { .. }))
+            || focused
+            || self.has_draft()
+            || self.native_input_pending
+        {
             return Err(OperationError::BusyEditing);
         }
         self.apply_operation(request.operation)
     }
 
+    fn transform_input(
+        &self,
+        transform: NativeTransform,
+    ) -> Result<TransformInput, OperationError> {
+        let rotation_degrees = match self.history.scene().units().angular {
+            AngularUnit::Degree => transform.rotation,
+            AngularUnit::Radian => transform.rotation.map(f64::to_degrees),
+            AngularUnit::Unsupported(_) => {
+                return Err(OperationError::InvalidInput(
+                    "Declared angular unit is unsupported".into(),
+                ));
+            }
+        };
+        if rotation_degrees.iter().any(|v| !v.is_finite()) {
+            return Err(OperationError::InvalidInput(
+                "Rotation cannot be represented in degrees".into(),
+            ));
+        }
+        Ok(TransformInput {
+            translation: transform.translation,
+            rotation_degrees,
+            scale: transform.scale,
+        })
+    }
+
     #[cfg(any(test, feature = "mcp"))]
     fn inspect(&self, text_focused: bool) -> Result<SceneInspection, OperationError> {
         crate::editor_operations::check_inspection_size(self.history.scene())?;
+        let paths = self
+            .history
+            .scene()
+            .transform_paths()
+            .map_err(OperationError::Scene)?;
+        let path_bytes = paths
+            .iter()
+            .try_fold(0usize, |sum, target| {
+                sum.checked_add(target.path.len().checked_mul(24)?)
+                    .and_then(|sum| sum.checked_add(64))
+            })
+            .ok_or(OperationError::TooLarge)?;
+        if path_bytes > crate::editor_operations::MAX_RESULT_BYTES / 2 {
+            return Err(OperationError::TooLarge);
+        }
+        let units = self.history.scene().units();
+        let linear = match &units.linear {
+            LinearUnit::Centimeter => "cm",
+            LinearUnit::Millimeter => "mm",
+            LinearUnit::Meter => "m",
+            LinearUnit::Inch => "in",
+            LinearUnit::Foot => "ft",
+            LinearUnit::Unsupported(value) => value,
+        };
+        let angular = match &units.angular {
+            AngularUnit::Degree => "deg",
+            AngularUnit::Radian => "rad",
+            AngularUnit::Unsupported(value) => value,
+        };
+        if linear
+            .len()
+            .saturating_add(angular.len())
+            .saturating_add(units.time.len())
+            > 4096
+        {
+            return Err(OperationError::TooLarge);
+        }
+        let nodes = self
+            .history
+            .scene()
+            .nodes()
+            .iter()
+            .map(|node| {
+                Ok(NodeInspection {
+                    id: node.id().to_decimal(),
+                    transform_id: node.transform_id().to_decimal(),
+                    name: node.name().into(),
+                    transform: self.transform_input(node.transform())?,
+                    authoring_transform: node.transform().into(),
+                    shape_ids: self
+                        .history
+                        .scene()
+                        .dag_edges()
+                        .iter()
+                        .filter(|edge| edge.parent() == Some(node.transform_id()))
+                        .filter_map(|edge| {
+                            self.history
+                                .scene()
+                                .shape(edge.child())
+                                .ok()
+                                .map(|shape| shape.id().to_decimal())
+                        })
+                        .collect(),
+                    instance_paths: paths
+                        .iter()
+                        .filter(|target| target.node == node.id())
+                        .map(|target| target.path.iter().map(|id| id.to_decimal()).collect())
+                        .collect(),
+                })
+            })
+            .collect::<Result<Vec<_>, OperationError>>()?;
         Ok(SceneInspection {
             scene_token: self.scene_token.to_string(),
-            nodes: self
+            nodes,
+            shapes: self
                 .history
                 .scene()
-                .nodes()
+                .shapes()
                 .iter()
-                .map(|node| NodeInspection {
-                    id: node.id().to_decimal(),
-                    name: node.name().into(),
-                    transform: node.transform(),
-                    mesh: node.mesh().clone(),
+                .map(|shape| ShapeInspection {
+                    id: shape.id().to_decimal(),
+                    name: shape.name().into(),
+                    points: shape.mesh().point_count(),
+                    edges: shape.mesh().edges().len(),
+                    faces: shape.mesh().faces().len(),
+                    smoothing_known: shape
+                        .mesh()
+                        .edges()
+                        .iter()
+                        .all(|edge| edge.smooth().is_some()),
                 })
                 .collect(),
+            units: UnitsInspection {
+                linear: linear.into(),
+                angular: angular.into(),
+                time: units.time.clone(),
+            },
+            save_available: false,
+            closing: self.files.is_closing(),
+            viewport_backend: "cpu_geometry_preview",
+            depth_complete: false,
+            clipping_complete: false,
+            appearance_incomplete: self.history.scene().appearance_incomplete(),
+            pending_action: self.files.pending_inspection(),
             selected_node: self.selected.map(NodeId::to_decimal),
+            selected_instance_path: self
+                .selected_path
+                .iter()
+                .map(|id| id.to_decimal())
+                .collect(),
             can_undo: self.history.can_undo(),
             can_redo: self.history.can_redo(),
             dirty: self.is_dirty(),
@@ -224,13 +380,82 @@ impl Editor {
         })
     }
 
-    fn apply_operation(&mut self, operation: Operation) -> Result<OperationReply, OperationError> {
-        if let Operation::Select(Some(id)) = &operation {
+    fn selection_path(
+        &self,
+        id: NodeId,
+        provided: Option<Vec<NativeId>>,
+    ) -> Result<Vec<NativeId>, OperationError> {
+        self.history
+            .scene()
+            .node(id)
+            .map_err(OperationError::Scene)?;
+        if let Some(path) = provided {
+            if path.len() > azteccraft::native_scene::MAX_TRANSFORM_DEPTH {
+                return Err(OperationError::InvalidInput(
+                    "Instance path is too deep".into(),
+                ));
+            }
             self.history
                 .scene()
-                .node(*id)
+                .resolve_transform_path(id, &path)
                 .map_err(OperationError::Scene)?;
+            return Ok(path);
         }
+        let mut matches = self
+            .history
+            .scene()
+            .transform_paths()
+            .map_err(OperationError::Scene)?
+            .into_iter()
+            .filter(|target| target.node == id);
+        let first = matches
+            .next()
+            .ok_or_else(|| OperationError::InvalidInput("Object has no instance path".into()))?;
+        if matches.next().is_some() {
+            return Err(OperationError::AmbiguousSelection);
+        }
+        Ok(first.path)
+    }
+
+    fn apply_operation(&mut self, operation: Operation) -> Result<OperationReply, OperationError> {
+        if self.files.is_closing() {
+            return Err(OperationError::BusyEditing);
+        }
+        match &operation {
+            Operation::OpenScene { path } => {
+                let text = path.to_str().ok_or_else(|| {
+                    OperationError::InvalidInput("Scene path must be UTF-8".into())
+                })?;
+                if text.is_empty() || text.len() > 4096 || text.contains('\0') {
+                    return Err(OperationError::InvalidInput(
+                        "Scene path must contain 1 to 4096 bytes and no NUL".into(),
+                    ));
+                }
+                return self.open_candidate(path);
+            }
+            Operation::NewScene => return self.new_document(),
+            Operation::RequestClose => return self.close_document(),
+            Operation::ResolveFileAction {
+                pending_id,
+                decision,
+            } => return self.resolve_file_action(*pending_id, *decision),
+            _ => {}
+        }
+        let selected_path = match &operation {
+            Operation::Select {
+                node: Some(id),
+                instance_path,
+            } => Some(self.selection_path(*id, instance_path.clone())?),
+            Operation::Select {
+                node: None,
+                instance_path: Some(_),
+            } => {
+                return Err(OperationError::InvalidInput(
+                    "Clearing selection cannot include an instance path".into(),
+                ));
+            }
+            _ => None,
+        };
         if !self.commit_pending() {
             return Err(OperationError::InvalidInput(self.status.clone()));
         }
@@ -247,7 +472,7 @@ impl Editor {
                         .scene()
                         .nodes()
                         .iter()
-                        .any(|n| n.name() == format!("{base}{suffix}"))
+                        .any(|node| node.name() == format!("{base}{suffix}"))
                     {
                         suffix += 1;
                     }
@@ -256,20 +481,40 @@ impl Editor {
                 Command::Create { primitive, name }
             }
             Operation::Rename { id, name } => Command::Rename { id, name },
-            Operation::SetTransform { id, transform } => Command::SetTransform { id, transform },
+            Operation::SetTransform { id, transform } => {
+                let rotation = match self.history.scene().units().angular {
+                    AngularUnit::Degree => transform.rotation_degrees,
+                    AngularUnit::Radian => transform.rotation_degrees.map(f64::to_radians),
+                    AngularUnit::Unsupported(_) => {
+                        return Err(OperationError::InvalidInput(
+                            "Declared angular unit is unsupported".into(),
+                        ));
+                    }
+                };
+                Command::SetTransform {
+                    id,
+                    transform: NativeTransform {
+                        translation: transform.translation,
+                        rotation,
+                        scale: transform.scale,
+                    },
+                }
+            }
             Operation::ExtrudeFace {
-                id,
+                shape,
                 face_index,
                 distance,
             } => Command::ExtrudeFace {
-                id,
+                shape,
                 face_index,
                 distance,
             },
             Operation::Delete(id) => Command::Remove(id),
-            Operation::Select(selected) => {
-                let changed = self.selected != selected;
-                self.selected = selected;
+            Operation::Select { node, .. } => {
+                let path = selected_path.unwrap_or_default();
+                let changed = self.selected != node || self.selected_path != path;
+                self.selected = node;
+                self.selected_path = path;
                 self.sync_fields();
                 return Ok(if changed {
                     OperationReply::Changed
@@ -284,13 +529,41 @@ impl Editor {
                     self.history.undo()
                 };
                 self.sync_fields();
+                if let Some(id) = self.selected
+                    && self
+                        .history
+                        .scene()
+                        .resolve_transform_path(id, &self.selected_path)
+                        .is_err()
+                {
+                    self.selected = None;
+                    self.selected_path.clear();
+                    self.sync_fields();
+                }
                 return Ok(if changed {
                     OperationReply::Changed
                 } else {
                     OperationReply::Unchanged
                 });
             }
-            #[cfg(any(test, feature = "mcp"))]
+            Operation::FrameSelected => {
+                let id = self.selected.ok_or(OperationError::NoSelection)?;
+                let path = self.selection_path(
+                    id,
+                    (!self.selected_path.is_empty()).then(|| self.selected_path.clone()),
+                )?;
+                let view = ViewScene::from_native(self.history.scene(), 256 * 1024 * 1024)
+                    .map_err(|error| OperationError::File(error.to_string()))?;
+                let before = self.camera.clone();
+                self.camera
+                    .frame_view(&view, Some(&path), self.aspect)
+                    .map_err(OperationError::Camera)?;
+                return Ok(if self.camera == before {
+                    OperationReply::Unchanged
+                } else {
+                    OperationReply::Changed
+                });
+            }
             Operation::Orbit { .. } | Operation::Pan { .. } | Operation::Dolly { .. } => {
                 let before = self.camera.clone();
                 match operation {
@@ -306,28 +579,19 @@ impl Editor {
                     OperationReply::Changed
                 });
             }
-            Operation::FrameSelected => {
-                let id = self.selected.ok_or(OperationError::NoSelection)?;
-                let node = self
-                    .history
-                    .scene()
-                    .node(id)
-                    .map_err(OperationError::Scene)?;
-                let before = self.camera.clone();
-                self.camera
-                    .frame(node, self.aspect)
-                    .map_err(OperationError::Camera)?;
-                return Ok(if self.camera == before {
-                    OperationReply::Unchanged
-                } else {
-                    OperationReply::Changed
-                });
-            }
             #[cfg(any(test, feature = "mcp"))]
             Operation::Inspect => {
                 return Ok(OperationReply::Scene {
-                    inspection: self.inspect(false)?,
+                    inspection: Box::new(self.inspect(false)?),
                 });
+            }
+            Operation::OpenScene { .. }
+            | Operation::NewScene
+            | Operation::RequestClose
+            | Operation::ResolveFileAction { .. } => {
+                return Err(OperationError::InvalidInput(
+                    "File action was not dispatched".into(),
+                ));
             }
         };
         let outcome = self
@@ -336,6 +600,13 @@ impl Editor {
             .map_err(OperationError::Scene)?;
         if let EditOutcome::Created(id) = outcome {
             self.selected = Some(id);
+            self.selected_path = vec![
+                self.history
+                    .scene()
+                    .node(id)
+                    .map_err(OperationError::Scene)?
+                    .transform_id(),
+            ];
         }
         self.sync_fields();
         Ok(match outcome {
@@ -351,23 +622,14 @@ impl Editor {
         self.selected
             .and_then(|id| self.history.scene().node(id).ok())
             .is_some_and(|node| {
-                let t = node.transform();
-                let values = [
-                    t.translation.x,
-                    t.translation.y,
-                    t.translation.z,
-                    t.rotation_degrees.x,
-                    t.rotation_degrees.y,
-                    t.rotation_degrees.z,
-                    t.scale.x,
-                    t.scale.y,
-                    t.scale.z,
-                ];
-                node.name() != self.name
+                let values = node.transform().values();
+                self.name_intent
+                    || self.channel_intents.iter().any(|v| *v)
+                    || node.name() != self.name
                     || values
                         .iter()
                         .zip(&self.channels)
-                        .any(|(value, draft)| draft.parse::<f32>().ok() != Some(*value))
+                        .any(|(value, draft)| draft != &value.to_string())
             })
     }
 
@@ -402,45 +664,34 @@ impl Editor {
         let Some(id) = self.selected else {
             return true;
         };
-        let result = || -> Result<(Transform, bool, bool), String> {
+        if !self.has_draft() {
+            return true;
+        }
+        let result = || -> Result<Command, String> {
             let node = self.history.scene().node(id).map_err(|e| e.to_string())?;
-            let v: Vec<f32> = self
-                .channels
-                .iter()
-                .map(|v| v.parse::<f32>())
-                .collect::<Result<_, _>>()
-                .map_err(|_| "Enter a valid number in every transform channel".to_string())?;
-            let transform = Transform {
-                translation: Vec3::new(v[0], v[1], v[2]),
-                rotation_degrees: Vec3::new(v[3], v[4], v[5]),
-                scale: Vec3::new(v[6], v[7], v[8]),
-            };
-            let rename = node.name() != self.name;
-            let changed = node.transform() != transform;
-            let mut candidate = self.history.scene().clone();
-            candidate
-                .rename(id, &self.name)
-                .map_err(|e| e.to_string())?;
-            candidate
-                .set_transform(id, transform)
-                .map_err(|e| e.to_string())?;
-            Ok((transform, rename, changed))
+            let original = node.transform().values();
+            let mut channels = [None; 9];
+            for index in 0..9 {
+                if self.channel_intents[index]
+                    || self.channels[index] != original[index].to_string()
+                {
+                    channels[index] =
+                        Some(self.channels[index].parse::<f64>().map_err(|_| {
+                            "Enter a valid number in the edited channel".to_string()
+                        })?);
+                }
+            }
+            Ok(Command::EditNode {
+                id,
+                name: (self.name_intent || node.name() != self.name).then(|| self.name.clone()),
+                channels,
+            })
         };
-        let outcome = result().and_then(|(transform, rename, changed)| {
-            if rename {
-                self.history
-                    .execute(Command::Rename {
-                        id,
-                        name: self.name.clone(),
-                    })
-                    .map_err(|e| e.to_string())?;
-            }
-            if changed {
-                self.history
-                    .execute(Command::SetTransform { id, transform })
-                    .map_err(|e| e.to_string())?;
-            }
-            Ok(rename || changed)
+        let outcome = result().and_then(|command| {
+            self.history
+                .execute(command)
+                .map(|outcome| outcome != EditOutcome::Unchanged)
+                .map_err(|e| e.to_string())
         });
         match outcome {
             Ok(changed) => {
@@ -479,10 +730,7 @@ impl Editor {
                     ui.close();
                     self.open_dialog();
                 }
-                if ui.button("Save As...").clicked() {
-                    ui.close();
-                    self.save_dialog();
-                }
+                unsupported(ui, "Save As...");
                 unsupported(ui, "Export...");
                 ui.separator();
                 if ui.button("Close").clicked() {
@@ -597,22 +845,38 @@ impl Editor {
         ui.label(RichText::new("Outliner").strong());
         ui.separator();
         ui.weak("Scene root");
+        let paths = match self.history.scene().transform_paths() {
+            Ok(paths) => paths,
+            Err(error) => {
+                ui.colored_label(Color32::LIGHT_RED, error.to_string());
+                return;
+            }
+        };
         let mut choice = None;
         egui::ScrollArea::vertical().show(ui, |ui| {
-            for node in self.history.scene().nodes() {
-                if ui
-                    .selectable_label(
-                        self.selected == Some(node.id()),
-                        format!("◇  {}", node.name()),
-                    )
-                    .clicked()
-                {
-                    choice = Some(node.id());
-                }
+            for target in paths {
+                let Ok(node) = self.history.scene().node(target.node) else {
+                    continue;
+                };
+                ui.horizontal(|ui| {
+                    ui.add_space((target.path.len() - 1) as f32 * 12.0);
+                    if ui
+                        .selectable_label(
+                            self.selected == Some(target.node) && self.selected_path == target.path,
+                            format!("◇  {}", node.name()),
+                        )
+                        .clicked()
+                    {
+                        choice = Some(target);
+                    }
+                });
             }
         });
-        if let Some(id) = choice {
-            self.select(Some(id));
+        if let Some(target) = choice {
+            self.native_operation(Operation::Select {
+                node: Some(target.node),
+                instance_path: Some(target.path),
+            });
         }
         if self.history.scene().nodes().is_empty() {
             ui.weak("No objects. Create a primitive above.");
@@ -628,6 +892,7 @@ impl Editor {
         };
         ui.label("Object name");
         let response = ui.add(egui::TextEdit::singleline(&mut self.name).id(name_edit_id()));
+        self.name_intent |= response.changed();
         let mut apply = response.lost_focus();
         ui.separator();
         egui::Grid::new("transform_channels")
@@ -655,11 +920,17 @@ impl Editor {
                             .id(channel_edit_id(index))
                             .desired_width(100.0),
                     );
+                    self.channel_intents[index] |= response.changed();
                     apply |= response.lost_focus();
                     ui.end_row();
                 }
             });
-        ui.weak("Rotation in degrees | XYZ");
+        let angular = match &self.history.scene().units().angular {
+            AngularUnit::Degree => "degrees",
+            AngularUnit::Radian => "radians",
+            AngularUnit::Unsupported(unit) => unit,
+        };
+        ui.weak(format!("Rotation in {angular} | XYZ"));
         if apply {
             self.commit_pending();
         }
@@ -764,37 +1035,86 @@ impl Editor {
         egui::Panel::right("channels")
             .default_size(255.0)
             .size_range(230.0..=400.0)
-            .show(ui, |ui| self.channels(ui));
-        egui::CentralPanel::default().show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("persp");
-                ui.separator();
-                ui.weak("Alt + left: orbit | Middle: pan | Right / wheel: dolly");
+            .show(ui, |ui| {
+                ui.add_enabled_ui(!self.files.is_closing() && !self.files.is_modal(), |ui| {
+                    self.channels(ui)
+                });
             });
-            match crate::viewport_ui::show(
-                ui,
-                &mut self.camera,
-                self.history.scene(),
-                self.selected,
-            ) {
-                Ok(output) => {
-                    self.aspect = output.aspect;
-                    if let Some(selection) = output.selection {
-                        self.select(selection);
-                    }
-                }
-                Err(error) => {
-                    self.status = error.to_string();
-                    self.error = true;
-                }
-            }
-        });
+        egui::CentralPanel::default().show(ui, |ui| self.viewport(ui));
         self.file_modal(ui.ctx());
         ui.ctx()
             .send_viewport_cmd(egui::ViewportCommand::Title(self.document_title()));
         self.native_input_pending = false;
         #[cfg(feature = "mcp")]
         self.process_mcp(ui.ctx());
+    }
+
+    fn viewport(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("persp");
+            ui.separator();
+            ui.weak("Alt + left: orbit | Middle: pan | Right / wheel: dolly");
+        });
+        let token = self.scene_token;
+        let result = (|| -> Result<(), OperationError> {
+            let Some(mut input) =
+                crate::viewport_ui::capture(ui, &self.camera).map_err(OperationError::Camera)?
+            else {
+                return Ok(());
+            };
+            self.aspect = input.aspect();
+            let navigation = input.take_navigation();
+            let clickable = input.click_ndc();
+            if !self.files.is_modal() && (!navigation.is_empty() || clickable.is_some()) {
+                if !self.commit_pending() {
+                    return Err(OperationError::InvalidInput(self.status.clone()));
+                }
+                if self.scene_token != token {
+                    return Ok(());
+                }
+                for operation in navigation {
+                    self.apply_operation(operation)?;
+                }
+            }
+            if self.scene_token != token {
+                return Ok(());
+            }
+            let view = ViewScene::from_native(self.history.scene(), 256 * 1024 * 1024)
+                .map_err(|e| OperationError::File(e.to_string()))?;
+            if !self.files.is_modal()
+                && let Some(ndc) = clickable
+            {
+                let hit = self
+                    .camera
+                    .pick_view(&view, ndc, self.aspect)
+                    .map_err(|e| OperationError::File(e.to_string()))?;
+                let (node, instance_path) = if let Some(hit) = hit {
+                    let mut prefix = hit.path;
+                    prefix.pop();
+                    (Some(hit.transform), Some(prefix))
+                } else {
+                    (None, None)
+                };
+                self.apply_operation(Operation::Select {
+                    node,
+                    instance_path,
+                })?;
+            }
+            if self.scene_token != token {
+                return Ok(());
+            }
+            input
+                .paint(
+                    &self.camera,
+                    &view,
+                    self.selected.map(|_| self.selected_path.as_slice()),
+                )
+                .map_err(OperationError::Camera)
+        })();
+        if let Err(error) = result {
+            self.status = error.to_string();
+            self.error = true;
+        }
     }
 
     #[cfg(feature = "mcp")]
@@ -804,10 +1124,8 @@ impl Editor {
                 self.request_close();
                 ctx.request_repaint();
             }
-            if !self.files.close_approved() {
-                bridge.dispatch(self, ctx);
-                self.mcp = Some(bridge);
-            }
+            bridge.dispatch(self, ctx);
+            self.mcp = Some(bridge);
         }
     }
 }
@@ -927,7 +1245,7 @@ mod tests {
     #[test]
     fn remote_operations_share_native_scene_selection_history_and_camera() {
         let mut editor = Editor::default();
-        assert_eq!(crate::editor_operations::TOOL_NAMES.len(), 12);
+        assert_eq!(crate::editor_operations::TOOL_NAMES.len(), 16);
         let OperationReply::Created { node_id } = remote(
             &mut editor,
             Operation::Create {
@@ -948,28 +1266,57 @@ mod tests {
             },
         )
         .unwrap();
-        let transform = Transform {
-            translation: Vec3::new(4.0, 2.0, 1.0),
+        let transform = NativeTransform {
+            translation: [4.0, 2.0, 1.0],
             ..Default::default()
         };
+        let input = editor.transform_input(transform).unwrap();
         assert!(matches!(
-            remote(&mut editor, Operation::SetTransform { id, transform }).unwrap(),
+            remote(
+                &mut editor,
+                Operation::SetTransform {
+                    id,
+                    transform: input
+                }
+            )
+            .unwrap(),
             OperationReply::Changed
         ));
         assert!(matches!(
-            remote(&mut editor, Operation::SetTransform { id, transform }).unwrap(),
+            remote(
+                &mut editor,
+                Operation::SetTransform {
+                    id,
+                    transform: input
+                }
+            )
+            .unwrap(),
             OperationReply::Unchanged
         ));
         remote(&mut editor, Operation::FrameSelected).unwrap();
-        assert!(editor.camera.target().distance(transform.translation) < 0.01);
-        remote(&mut editor, Operation::Select(None)).unwrap();
+        assert!(editor.camera.target().distance(Vec3::new(4.0, 2.0, 1.0)) < 0.01);
+        remote(
+            &mut editor,
+            Operation::Select {
+                node: None,
+                instance_path: None,
+            },
+        )
+        .unwrap();
         assert_eq!(editor.selected, None);
-        remote(&mut editor, Operation::Select(Some(id))).unwrap();
+        remote(
+            &mut editor,
+            Operation::Select {
+                node: Some(id),
+                instance_path: None,
+            },
+        )
+        .unwrap();
         assert_eq!(editor.name, "edited");
         editor.history_step(false);
         assert_eq!(
             editor.history.scene().node(id).unwrap().transform(),
-            Transform::default()
+            NativeTransform::default()
         );
         remote(&mut editor, Operation::Redo).unwrap();
         assert_eq!(
@@ -985,8 +1332,7 @@ mod tests {
                 .node(id)
                 .unwrap()
                 .transform()
-                .translation
-                .x,
+                .translation[0],
             6.0
         );
         let OperationReply::Scene { inspection } = remote(&mut editor, Operation::Inspect).unwrap()
@@ -995,7 +1341,7 @@ mod tests {
         };
         assert_eq!(inspection.nodes.len(), 2);
         assert_eq!(inspection.nodes[0].id, node_id);
-        assert_eq!(inspection.nodes[0].transform.translation.x, 6.0);
+        assert_eq!(inspection.nodes[0].transform.translation[0], 6.0);
         assert!(inspection.dirty && inspection.can_undo);
         assert!(!inspection.has_draft);
         remote(&mut editor, Operation::Delete(id)).unwrap();
@@ -1077,7 +1423,13 @@ mod tests {
         let before = editor.history.scene().clone();
         let missing = NodeId::from_decimal("999").unwrap();
         assert!(matches!(
-            remote(&mut editor, Operation::Select(Some(missing))),
+            remote(
+                &mut editor,
+                Operation::Select {
+                    node: Some(missing),
+                    instance_path: None
+                }
+            ),
             Err(OperationError::Scene(_))
         ));
         assert!(matches!(
@@ -1090,9 +1442,10 @@ mod tests {
             ),
             Err(OperationError::Scene(_))
         ));
-        let transform = Transform {
-            scale: Vec3::splat(f32::INFINITY),
-            ..Default::default()
+        let transform = TransformInput {
+            scale: [f64::INFINITY; 3],
+            translation: [0.0; 3],
+            rotation_degrees: [0.0; 3],
         };
         assert!(matches!(
             remote(&mut editor, Operation::SetTransform { id, transform }),
@@ -1179,9 +1532,10 @@ mod tests {
         let mut editor = Editor::default();
         editor.create(Primitive::Cube);
         let id = editor.selected.unwrap();
+        let shape = editor.history.scene().shapes()[0].id();
         editor.channels[0] = "2".into();
         editor.execute(Command::ExtrudeFace {
-            id,
+            shape,
             face_index: 0,
             distance: 0.0,
         });
@@ -1190,11 +1544,10 @@ mod tests {
             editor
                 .history
                 .scene()
-                .node(id)
+                .shape(shape)
                 .unwrap()
                 .mesh()
-                .vertices()
-                .len(),
+                .point_count(),
             12
         );
         assert_eq!(
@@ -1204,8 +1557,7 @@ mod tests {
                 .node(id)
                 .unwrap()
                 .transform()
-                .translation
-                .x,
+                .translation[0],
             2.0
         );
         editor.history_step(false);
@@ -1213,17 +1565,16 @@ mod tests {
             editor
                 .history
                 .scene()
-                .node(id)
+                .shape(shape)
                 .unwrap()
                 .mesh()
-                .vertices()
-                .len(),
+                .point_count(),
             8
         );
         let before = editor.history.scene().clone();
         editor.channels[0] = "nan".into();
         editor.execute(Command::ExtrudeFace {
-            id,
+            shape,
             face_index: 0,
             distance: 1.0,
         });
@@ -1233,7 +1584,7 @@ mod tests {
         assert!(editor.history.can_redo());
         editor.sync_fields();
         editor.execute(Command::ExtrudeFace {
-            id,
+            shape,
             face_index: 99,
             distance: 1.0,
         });
@@ -1245,11 +1596,10 @@ mod tests {
             editor
                 .history
                 .scene()
-                .node(id)
+                .shape(shape)
                 .unwrap()
                 .mesh()
-                .vertices()
-                .len(),
+                .point_count(),
             12
         );
     }
@@ -1303,6 +1653,132 @@ mod tests {
     }
 
     #[test]
+    fn real_channel_text_keeps_f64_precision_and_untouched_slots_in_one_undo() {
+        let mut editor = Editor::default();
+        editor.create(Primitive::Cube);
+        let id = editor.selected.unwrap();
+        editor
+            .history
+            .execute(Command::SetTransform {
+                id,
+                transform: NativeTransform {
+                    translation: [0.0, 1.0000000000000004, 0.0],
+                    ..Default::default()
+                },
+            })
+            .unwrap();
+        editor.sync_fields();
+        let before = editor.history.scene().clone();
+        let ctx = egui::Context::default();
+        frame(&mut editor, &ctx, vec![]);
+        ctx.memory_mut(|memory| memory.request_focus(channel_edit_id(0)));
+        frame(&mut editor, &ctx, vec![]);
+        let command = egui::Modifiers::COMMAND;
+        frame(
+            &mut editor,
+            &ctx,
+            vec![
+                egui::Event::ModifiersChanged(command),
+                egui::Event::Key {
+                    key: Key::A,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: command,
+                },
+                egui::Event::Text("1.0000000000000002".into()),
+                key(Key::Enter),
+            ],
+        );
+        let translation = editor
+            .history
+            .scene()
+            .node(id)
+            .unwrap()
+            .transform()
+            .translation;
+        assert_eq!(translation[0].to_bits(), 1.0000000000000002_f64.to_bits());
+        assert_eq!(translation[1].to_bits(), 1.0000000000000004_f64.to_bits());
+        assert!(editor.history.undo());
+        assert_eq!(editor.history.scene(), &before);
+    }
+
+    #[test]
+    fn viewport_click_commits_draft_before_picking_its_new_geometry() {
+        let mut editor = Editor::default();
+        editor.create(Primitive::Cube);
+        let id = editor.selected.unwrap();
+        editor.camera = Camera::default();
+        let ctx = egui::Context::default();
+        let mut viewport_rect = egui::Rect::NOTHING;
+        let run = |editor: &mut Editor, events, rect: &mut egui::Rect| {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(800.0, 600.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    editor.viewport(ui);
+                    *rect = ui.min_rect();
+                },
+            );
+            output.textures_delta.clear();
+        };
+        run(&mut editor, vec![], &mut viewport_rect);
+        let new_center = glam::Vec3::new(2.0, 0.0, 0.0);
+        let ndc = editor
+            .camera
+            .project(new_center, editor.aspect)
+            .unwrap()
+            .unwrap();
+        let width = viewport_rect.width();
+        let height = width / editor.aspect;
+        let position = egui::pos2(
+            viewport_rect.left() + (ndc.x + 1.0) * 0.5 * width,
+            viewport_rect.bottom() - (ndc.y + 1.0) * 0.5 * height,
+        );
+        run(
+            &mut editor,
+            vec![egui::Event::PointerMoved(position)],
+            &mut viewport_rect,
+        );
+        editor.channels[0] = "2".into();
+        editor.channel_intents[0] = true;
+        for pressed in [true, false] {
+            run(
+                &mut editor,
+                vec![egui::Event::PointerButton {
+                    pos: position,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+                &mut viewport_rect,
+            );
+        }
+        assert_eq!(
+            editor
+                .history
+                .scene()
+                .node(id)
+                .unwrap()
+                .transform()
+                .translation[0],
+            2.0
+        );
+        assert_eq!(
+            editor.selected,
+            Some(id),
+            "fresh geometry must be hit at the new location"
+        );
+        assert!(!editor.has_draft());
+    }
+
+    #[test]
     fn enter_commits_once_and_selection_commits_draft_to_previous_object() {
         let mut editor = Editor::default();
         editor.create(Primitive::Cube);
@@ -1323,8 +1799,7 @@ mod tests {
                 .node(old)
                 .unwrap()
                 .transform()
-                .translation
-                .x,
+                .translation[0],
             2.0
         );
         editor.history_step(false);
@@ -1335,8 +1810,7 @@ mod tests {
                 .node(old)
                 .unwrap()
                 .transform()
-                .translation
-                .x,
+                .translation[0],
             0.0
         );
         editor.channels[0] = "4".into();
@@ -1348,13 +1822,12 @@ mod tests {
                 .node(old)
                 .unwrap()
                 .transform()
-                .translation
-                .x,
+                .translation[0],
             4.0
         );
         assert_eq!(
             editor.history.scene().node(next).unwrap().transform(),
-            Transform::default()
+            NativeTransform::default()
         );
         assert_eq!(editor.channels[0], "0");
     }
@@ -1374,13 +1847,12 @@ mod tests {
                 .node(old)
                 .unwrap()
                 .transform()
-                .translation
-                .y,
+                .translation[1],
             5.0
         );
         assert_eq!(
             editor.history.scene().node(next).unwrap().transform(),
-            Transform::default()
+            NativeTransform::default()
         );
         editor.channels[0] = "nan".into();
         let before = editor.history.scene().clone();

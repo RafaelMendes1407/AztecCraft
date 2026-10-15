@@ -7,6 +7,7 @@ use crate::{
 };
 use eframe::egui;
 use rmcp::ServiceExt;
+use rmcp::model::RequestId;
 use std::{io, sync::Arc, thread, time::Duration};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
@@ -21,6 +22,14 @@ struct EditorEnvelope {
     request: RemoteRequest,
     reply: oneshot::Sender<Result<OperationReply, OperationError>>,
     cancellation: CancellationToken,
+    request_id: RequestId,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CloseDelivery {
+    Waiting,
+    Flushed,
+    Failed,
 }
 
 pub(crate) struct UiBridge {
@@ -32,6 +41,13 @@ pub(crate) struct UiBridge {
 }
 
 impl UiBridge {
+    pub(crate) fn poll_close_delivery(&mut self) -> Option<CloseDelivery> {
+        let delivery = self.shared.poll_close_delivery();
+        if delivery == Some(CloseDelivery::Failed) {
+            self.close_requested = true;
+        }
+        delivery
+    }
     #[cfg(test)]
     pub(crate) fn test_read_observed(&self) -> bool {
         self.shared.read_observed()
@@ -126,9 +142,20 @@ impl UiBridge {
             let result = editor.remote_operation(envelope.request, context);
             let changed = matches!(
                 &result,
-                Ok(OperationReply::Created { .. } | OperationReply::Changed)
+                Ok(OperationReply::Created { .. }
+                    | OperationReply::Changed
+                    | OperationReply::DocumentApplied { .. }
+                    | OperationReply::PendingConfirmation { .. }
+                    | OperationReply::Cancelled { .. }
+                    | OperationReply::CloseRequested { .. })
             );
-            let _ = envelope.reply.send(result);
+            if matches!(&result, Ok(OperationReply::CloseRequested { .. })) {
+                self.shared
+                    .arm_close(envelope.request_id.clone(), &envelope.reply);
+            }
+            if envelope.reply.send(result).is_err() {
+                self.shared.fail_close(&envelope.request_id);
+            }
             if changed {
                 context.request_repaint();
             }
@@ -170,6 +197,7 @@ impl TestIngress {
                 request,
                 reply,
                 cancellation: CancellationToken::new(),
+                request_id: RequestId::Number(-1),
             })
             .map_err(|_| ())?;
         Ok(receiver)

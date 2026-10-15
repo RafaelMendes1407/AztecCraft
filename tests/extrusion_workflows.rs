@@ -1,5 +1,6 @@
 use azteccraft::{
     history::{Command, History},
+    native_scene::{NativeError, NativeScene},
     scene::{NodeId, Primitive, Scene, SceneError, Transform},
 };
 use glam::Vec3;
@@ -138,9 +139,13 @@ fn extrusion_uses_object_space_and_preserves_reflected_nonuniform_and_zero_trans
 
 #[test]
 fn failed_extrusions_preserve_scene_and_pending_redo() {
-    let (mut scene, id) = cube();
-    let plane = scene.create(Primitive::Plane, "plane").unwrap();
+    let mut scene = NativeScene::default();
+    let id = scene.create(Primitive::Cube, "cube").unwrap();
+    let cube_shape = scene.shapes()[0].id();
+    scene.create(Primitive::Plane, "plane").unwrap();
+    let plane_shape = scene.shapes()[1].id();
     let removed = scene.create(Primitive::Cube, "removed").unwrap();
+    let removed_shape = scene.shapes()[2].id();
     scene.remove(removed).unwrap();
     let mut history = History::new(scene);
     history
@@ -151,17 +156,47 @@ fn failed_extrusions_preserve_scene_and_pending_redo() {
         .unwrap();
     assert!(history.undo());
     let before = history.scene().clone();
-    for (node, face_index, distance, expected) in [
-        (removed, 0, 1.0, SceneError::MissingNode(removed)),
-        (id, 99, 1.0, SceneError::MissingFace(99)),
-        (plane, 0, 1.0, SceneError::UnsupportedAllFacesExtrusion),
-        (plane, 0, 0.0, SceneError::UnsupportedAllFacesExtrusion),
-        (id, 0, f32::NAN, SceneError::InvalidExtrusionDistance),
-        (id, 0, f32::INFINITY, SceneError::InvalidExtrusionDistance),
+    for (shape, face_index, distance, expected) in [
+        (
+            removed_shape,
+            0,
+            1.0,
+            NativeError::MissingShape(removed_shape),
+        ),
+        (
+            cube_shape,
+            99,
+            1.0,
+            NativeError::Legacy(SceneError::MissingFace(99)),
+        ),
+        (
+            plane_shape,
+            0,
+            1.0,
+            NativeError::Legacy(SceneError::UnsupportedAllFacesExtrusion),
+        ),
+        (
+            plane_shape,
+            0,
+            0.0,
+            NativeError::Legacy(SceneError::UnsupportedAllFacesExtrusion),
+        ),
+        (
+            cube_shape,
+            0,
+            f64::NAN,
+            NativeError::Legacy(SceneError::InvalidExtrusionDistance),
+        ),
+        (
+            cube_shape,
+            0,
+            f64::INFINITY,
+            NativeError::Legacy(SceneError::InvalidExtrusionDistance),
+        ),
     ] {
         assert_eq!(
             history.execute(Command::ExtrudeFace {
-                id: node,
+                shape,
                 face_index,
                 distance
             }),
@@ -197,40 +232,17 @@ fn undefined_normal_and_local_or_world_overflow_do_not_publish_candidates() {
         (large, f32::MAX, SceneError::InvalidMesh),
         (world_overflow, 1.0, SceneError::InvalidTransform),
     ] {
-        let mut history = History::new(scene);
-        history
-            .execute(Command::Rename {
-                id,
-                name: "future".into(),
-            })
-            .unwrap();
-        history.undo();
-        let before = history.scene().clone();
-        assert_eq!(
-            history.execute(Command::ExtrudeFace {
-                id,
-                face_index: 0,
-                distance
-            }),
-            Err(error)
-        );
-        assert_eq!(history.scene(), &before);
-        assert!(history.can_redo());
-        assert!(history.redo());
+        let mut scene = scene;
+        let before = scene.clone();
+        assert_eq!(scene.extrude_face(id, 0, distance), Err(error));
+        assert_eq!(scene, before);
     }
 }
 
 #[test]
-fn committed_example_matches_real_editing_history_and_closed_corner_topology() {
-    let (mut history, id) = common::extruded_corner();
-    let expected = history.scene().clone();
-    assert!(history.undo());
-    assert_eq!(
-        history.scene().node(id).unwrap().mesh().vertices().len(),
-        12
-    );
-    assert!(history.redo());
-    assert_eq!(history.scene(), &expected);
+fn committed_legacy_example_matches_closed_corner_topology_and_export_journey() {
+    let (mut scene, id) = common::extruded_corner();
+    let expected = scene.clone();
     let path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/extruded-cube.aztec");
     let loaded = azteccraft::document::load(&path).unwrap();
@@ -273,21 +285,21 @@ fn committed_example_matches_real_editing_history_and_closed_corner_topology() {
         }
         assert_eq!(seen.len(), links.len());
     }
-    history
-        .execute(Command::SetTransform {
+    scene
+        .set_transform(
             id,
-            transform: Transform {
+            Transform {
                 translation: Vec3::new(4.0, 5.0, 6.0),
                 rotation_degrees: Vec3::new(0.0, 0.0, 90.0),
                 scale: Vec3::new(-2.0, 3.0, 0.5),
             },
-        })
+        )
         .unwrap();
     let dir = tempfile::tempdir().unwrap();
     let native = dir.path().join("journey.aztec");
-    azteccraft::document::save_new(&native, history.scene()).unwrap();
+    azteccraft::document::save_new(&native, &scene).unwrap();
     let loaded = azteccraft::document::load(&native).unwrap();
-    assert_eq!(&loaded, history.scene());
+    assert_eq!(loaded, scene);
     let obj = dir.path().join("journey.obj");
     azteccraft::obj::export_new(&obj, &loaded).unwrap();
     assert!(std::fs::metadata(obj).unwrap().len() > 0);

@@ -1,9 +1,11 @@
+use super::CloseDelivery;
 use eframe::egui;
 use futures_util::{SinkExt, StreamExt};
 use rmcp::{
     RoleServer,
     model::{
         ClientJsonRpcMessage, ClientNotification, JsonRpcMessage, RequestId, ServerJsonRpcMessage,
+        ServerResult,
     },
     transport::{Transport, async_rw::JsonRpcMessageCodec},
 };
@@ -38,6 +40,13 @@ struct Accounting {
     requests: HashMap<RequestId, bool>,
     controls: HashMap<Control, usize>,
     initialized: bool,
+    close_delivery: Option<CloseState>,
+}
+
+enum CloseState {
+    Waiting(RequestId),
+    Flushed,
+    Failed,
 }
 
 pub(super) struct Shared {
@@ -80,6 +89,9 @@ impl Shared {
             .expect("MCP accounting lock poisoned");
         accounting.requests.clear();
         accounting.controls.clear();
+        if matches!(accounting.close_delivery, Some(CloseState::Waiting(_))) {
+            accounting.close_delivery = Some(CloseState::Failed);
+        }
         drop(accounting);
         self.repaint();
     }
@@ -103,6 +115,7 @@ impl Shared {
                 Ok(true)
             }
             JsonRpcMessage::Notification(notification) => {
+                let mut close_failed = false;
                 let control = match &notification.notification {
                     ClientNotification::InitializedNotification(_) => {
                         if accounting.initialized {
@@ -122,6 +135,11 @@ impl Shared {
                             return Ok(false);
                         }
                         *cancelled = true;
+                        if matches!(&accounting.close_delivery, Some(CloseState::Waiting(waiting)) if waiting == id)
+                        {
+                            accounting.close_delivery = Some(CloseState::Failed);
+                            close_failed = true;
+                        }
                         Control::Cancelled(id.clone())
                     }
                     _ => return Ok(false),
@@ -130,19 +148,88 @@ impl Shared {
                     return Err(());
                 }
                 *accounting.controls.entry(control).or_default() += 1;
+                drop(accounting);
+                if close_failed {
+                    self.repaint();
+                }
                 Ok(true)
             }
             _ => Ok(true),
         }
     }
 
-    fn wrote(&self, id: Option<RequestId>) {
+    fn wrote(&self, id: Option<RequestId>, successful_tool: bool) {
         if let Some(id) = id {
-            self.accounting
+            let mut accounting = self
+                .accounting
                 .lock()
-                .expect("MCP accounting lock poisoned")
-                .requests
-                .remove(&id);
+                .expect("MCP accounting lock poisoned");
+            let cancelled = accounting.requests.remove(&id);
+            let matches_close = matches!(&accounting.close_delivery, Some(CloseState::Waiting(waiting)) if waiting == &id);
+            if matches_close {
+                accounting.close_delivery = Some(
+                    if successful_tool && cancelled == Some(false) && self.alive() {
+                        CloseState::Flushed
+                    } else {
+                        CloseState::Failed
+                    },
+                );
+            }
+            drop(accounting);
+            if matches_close {
+                self.repaint();
+            }
+        }
+    }
+
+    pub(super) fn arm_close<T>(&self, id: RequestId, reply: &tokio::sync::oneshot::Sender<T>) {
+        let mut accounting = self
+            .accounting
+            .lock()
+            .expect("MCP accounting lock poisoned");
+        let failed =
+            !self.alive() || accounting.requests.get(&id) != Some(&false) || reply.is_closed();
+        accounting.close_delivery = Some(if failed {
+            CloseState::Failed
+        } else {
+            CloseState::Waiting(id)
+        });
+        drop(accounting);
+        if failed {
+            self.repaint();
+        }
+    }
+
+    pub(super) fn fail_close(&self, id: &RequestId) {
+        let mut accounting = self
+            .accounting
+            .lock()
+            .expect("MCP accounting lock poisoned");
+        let waiting = matches!(&accounting.close_delivery, Some(CloseState::Waiting(waiting)) if waiting == id);
+        if waiting {
+            accounting.close_delivery = Some(CloseState::Failed);
+        }
+        drop(accounting);
+        if waiting {
+            self.repaint();
+        }
+    }
+
+    pub(super) fn poll_close_delivery(&self) -> Option<CloseDelivery> {
+        let mut accounting = self
+            .accounting
+            .lock()
+            .expect("MCP accounting lock poisoned");
+        match accounting.close_delivery.as_ref()? {
+            CloseState::Waiting(_) => Some(CloseDelivery::Waiting),
+            CloseState::Flushed => {
+                accounting.close_delivery = None;
+                Some(CloseDelivery::Flushed)
+            }
+            CloseState::Failed => {
+                accounting.close_delivery = None;
+                Some(CloseDelivery::Failed)
+            }
         }
     }
 
@@ -240,6 +327,8 @@ where
                 JsonRpcMessage::Error(error) => error.id.clone(),
                 _ => None,
             };
+            let successful_tool = matches!(&message, JsonRpcMessage::Response(response)
+                if matches!(&response.result, ServerResult::CallToolResult(result) if result.is_error != Some(true)));
             if check_serialized_size(&message, MAX_EGRESS_BYTES - 1).is_err() {
                 eprintln!("MCP reply exceeds transport limit; closing connection");
                 shared.close();
@@ -255,7 +344,7 @@ where
                 .await
                 .map_err(io::Error::from);
             if result.is_ok() {
-                shared.wrote(id);
+                shared.wrote(id, successful_tool);
             } else {
                 shared.close();
             }
@@ -343,6 +432,223 @@ mod tests {
     }
 
     #[test]
+    fn close_delivery_rejects_before_arm_cancellation_absence_and_dead_transport() {
+        for condition in 0..3 {
+            let shared = Shared::new(egui::Context::default());
+            if condition != 1 {
+                shared.admit(&request(1)).unwrap();
+            }
+            if condition == 0 {
+                shared.admit(&cancelled(1)).unwrap();
+            } else if condition == 2 {
+                shared.close();
+            }
+            let (reply, _receiver) = tokio::sync::oneshot::channel::<()>();
+            shared.arm_close(RequestId::Number(1), &reply);
+            assert_eq!(shared.poll_close_delivery(), Some(CloseDelivery::Failed));
+            assert_eq!(shared.poll_close_delivery(), None);
+        }
+        let shared = Shared::new(egui::Context::default());
+        shared.admit(&request(1)).unwrap();
+        let (reply, _receiver) = tokio::sync::oneshot::channel::<()>();
+        shared.arm_close(RequestId::Number(1), &reply);
+        shared.admit(&cancelled(1)).unwrap();
+        assert_eq!(shared.poll_close_delivery(), Some(CloseDelivery::Failed));
+    }
+
+    fn tool_response(id: i64, error: bool) -> ServerJsonRpcMessage {
+        let mut result =
+            rmcp::model::CallToolResult::structured(json!({"outcome":"close_requested"}));
+        result.is_error = Some(error);
+        JsonRpcMessage::Response(rmcp::model::JsonRpcResponse {
+            jsonrpc: Default::default(),
+            id: RequestId::Number(id),
+            result: ServerResult::CallToolResult(result),
+        })
+    }
+
+    #[test]
+    fn old_closed_receiver_cannot_arm_a_reused_request_id() {
+        let shared = Shared::new(egui::Context::default());
+        shared.admit(&request(1)).unwrap();
+        let (reply, receiver) = tokio::sync::oneshot::channel::<()>();
+        drop(receiver);
+        shared.wrote(Some(RequestId::Number(1)), false);
+        shared.admit(&request(1)).unwrap();
+        shared.arm_close(RequestId::Number(1), &reply);
+        shared.wrote(Some(RequestId::Number(1)), true);
+        assert_eq!(shared.poll_close_delivery(), Some(CloseDelivery::Failed));
+    }
+
+    struct ControlledFlush {
+        bytes: Arc<Mutex<Vec<u8>>>,
+        entered: Arc<AtomicBool>,
+        completion: tokio::sync::oneshot::Receiver<Result<(), io::ErrorKind>>,
+    }
+
+    impl AsyncWrite for ControlledFlush {
+        fn poll_write(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+            bytes: &[u8],
+        ) -> std::task::Poll<io::Result<usize>> {
+            self.bytes.lock().unwrap().extend_from_slice(bytes);
+            std::task::Poll::Ready(Ok(bytes.len()))
+        }
+
+        fn poll_flush(
+            mut self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<io::Result<()>> {
+            self.entered.store(true, Ordering::Release);
+            match std::pin::Pin::new(&mut self.completion).poll(cx) {
+                std::task::Poll::Pending => std::task::Poll::Pending,
+                std::task::Poll::Ready(Ok(result)) => {
+                    std::task::Poll::Ready(result.map_err(io::Error::from))
+                }
+                std::task::Poll::Ready(Err(_)) => {
+                    std::task::Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()))
+                }
+            }
+        }
+
+        fn poll_shutdown(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<io::Result<()>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+    }
+
+    #[tokio::test]
+    async fn accepting_every_byte_does_not_approve_close_before_successful_flush() {
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            for succeeds in [false, true] {
+                let shared = Arc::new(Shared::new(egui::Context::default()));
+                shared.admit(&request(1)).unwrap();
+                let (reply, _receiver) = tokio::sync::oneshot::channel::<()>();
+                shared.arm_close(RequestId::Number(1), &reply);
+                let bytes = Arc::new(Mutex::new(Vec::new()));
+                let entered = Arc::new(AtomicBool::new(false));
+                let (completion, receiver) = tokio::sync::oneshot::channel();
+                let writer = ControlledFlush {
+                    bytes: bytes.clone(),
+                    entered: entered.clone(),
+                    completion: receiver,
+                };
+                let mut transport =
+                    BoundedTransport::new(tokio::io::empty(), writer, shared.clone());
+                let sending = tokio::spawn(transport.send(tool_response(1, false)));
+                while !entered.load(Ordering::Acquire) {
+                    tokio::task::yield_now().await;
+                }
+                let captured = bytes.lock().unwrap().clone();
+                let response: serde_json::Value = serde_json::from_slice(&captured).unwrap();
+                assert_eq!(response["id"], 1);
+                assert_eq!(shared.poll_close_delivery(), Some(CloseDelivery::Waiting));
+                completion
+                    .send(if succeeds {
+                        Ok(())
+                    } else {
+                        Err(io::ErrorKind::BrokenPipe)
+                    })
+                    .unwrap();
+                assert_eq!(sending.await.unwrap().is_ok(), succeeds);
+                assert_eq!(
+                    shared.poll_close_delivery(),
+                    Some(if succeeds {
+                        CloseDelivery::Flushed
+                    } else {
+                        CloseDelivery::Failed
+                    })
+                );
+            }
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn close_delivery_requires_the_matching_successful_flushed_tool_response() {
+        use tokio::io::{AsyncBufReadExt, AsyncReadExt};
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            let shared = Arc::new(Shared::new(egui::Context::default()));
+            shared.admit(&request(1)).unwrap();
+            shared.admit(&request(2)).unwrap();
+            let (reply, _receiver) = tokio::sync::oneshot::channel::<()>();
+            shared.arm_close(RequestId::Number(1), &reply);
+            let mut unrelated =
+                BoundedTransport::new(tokio::io::empty(), tokio::io::sink(), shared.clone());
+            unrelated.send(tool_response(2, false)).await.unwrap();
+            assert_eq!(shared.poll_close_delivery(), Some(CloseDelivery::Waiting));
+            let (writer, mut reader) = tokio::io::duplex(1);
+            let mut transport = BoundedTransport::new(tokio::io::empty(), writer, shared.clone());
+            let sending = tokio::spawn(transport.send(tool_response(1, false)));
+            let mut first = [0; 1];
+            reader.read_exact(&mut first).await.unwrap();
+            assert_eq!(shared.poll_close_delivery(), Some(CloseDelivery::Waiting));
+            let mut reader = tokio::io::BufReader::new(reader);
+            let mut complete = first.to_vec();
+            reader.read_until(b'\n', &mut complete).await.unwrap();
+            sending.await.unwrap().unwrap();
+            let reply: serde_json::Value = serde_json::from_slice(&complete).unwrap();
+            assert_eq!(reply["id"], 1);
+            assert_eq!(shared.poll_close_delivery(), Some(CloseDelivery::Flushed));
+            assert_eq!(shared.poll_close_delivery(), None);
+        })
+        .await
+        .unwrap();
+        for error in [true, false] {
+            let shared = Arc::new(Shared::new(egui::Context::default()));
+            shared.admit(&request(1)).unwrap();
+            let (reply, _receiver) = tokio::sync::oneshot::channel::<()>();
+            shared.arm_close(RequestId::Number(1), &reply);
+            let mut transport =
+                BoundedTransport::new(tokio::io::empty(), tokio::io::sink(), shared.clone());
+            if error {
+                transport.send(tool_response(1, true)).await.unwrap();
+            } else {
+                transport
+                    .send(JsonRpcMessage::Response(rmcp::model::JsonRpcResponse {
+                        jsonrpc: Default::default(),
+                        id: RequestId::Number(1),
+                        result: ServerResult::empty(()),
+                    }))
+                    .await
+                    .unwrap();
+            }
+            assert_eq!(shared.poll_close_delivery(), Some(CloseDelivery::Failed));
+        }
+    }
+
+    #[tokio::test]
+    async fn close_delivery_write_failure_and_cancelled_flush_never_approve_closure() {
+        use tokio::io::AsyncReadExt;
+        for cancelled_flush in [false, true] {
+            let shared = Arc::new(Shared::new(egui::Context::default()));
+            shared.admit(&request(1)).unwrap();
+            let (reply, _receiver) = tokio::sync::oneshot::channel::<()>();
+            shared.arm_close(RequestId::Number(1), &reply);
+            let (writer, mut reader) = tokio::io::duplex(1);
+            let mut transport = BoundedTransport::new(tokio::io::empty(), writer, shared.clone());
+            let sending = tokio::spawn(transport.send(tool_response(1, false)));
+            tokio::time::timeout(
+                std::time::Duration::from_secs(2),
+                reader.read_exact(&mut [0; 1]),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            if cancelled_flush {
+                shared.admit(&cancelled(1)).unwrap();
+            }
+            drop(reader);
+            assert!(sending.await.unwrap().is_err());
+            assert_eq!(shared.poll_close_delivery(), Some(CloseDelivery::Failed));
+        }
+    }
+
+    #[test]
     fn rpc_slots_remain_until_written_even_after_cancel_and_handler_completion() {
         let shared = Shared::new(egui::Context::default());
         for id in 0..MAX_REQUESTS as i64 {
@@ -352,7 +658,7 @@ mod tests {
         assert_eq!(shared.admit(&cancelled(0)), Ok(true));
         assert_eq!(shared.admit(&cancelled(0)), Ok(false));
         assert_eq!(shared.admit(&request(100)), Err(()));
-        shared.wrote(Some(RequestId::Number(1)));
+        shared.wrote(Some(RequestId::Number(1)), false);
         assert_eq!(shared.admit(&request(100)), Ok(true));
         assert_eq!(shared.admit(&request(100)), Err(()));
         shared.close();
@@ -366,14 +672,14 @@ mod tests {
         assert_eq!(shared.admit(&request(0)), Ok(true));
         assert_eq!(shared.admit(&cancelled(0)), Ok(true));
         let completion = shared.complete_control(Control::Cancelled(RequestId::Number(0)));
-        shared.wrote(Some(RequestId::Number(0)));
+        shared.wrote(Some(RequestId::Number(0)), false);
         assert_eq!(shared.accounting.lock().unwrap().controls.len(), 1);
         drop(completion);
         assert!(shared.accounting.lock().unwrap().controls.is_empty());
         for id in 1..=MAX_CONTROLS as i64 {
             assert_eq!(shared.admit(&request(id)), Ok(true));
             assert_eq!(shared.admit(&cancelled(id)), Ok(true));
-            shared.wrote(Some(RequestId::Number(id)));
+            shared.wrote(Some(RequestId::Number(id)), false);
         }
         assert_eq!(shared.admit(&request(100)), Ok(true));
         assert_eq!(shared.admit(&cancelled(100)), Err(()));
@@ -399,7 +705,7 @@ mod tests {
                 assert_eq!(shared.admit(&request(0)), Ok(true));
                 assert_eq!(shared.admit(&cancelled(0)), Ok(true));
                 pair.push(shared.complete_control(Control::Cancelled(RequestId::Number(0))));
-                shared.wrote(Some(RequestId::Number(0)));
+                shared.wrote(Some(RequestId::Number(0)), false);
             }
             assert_eq!(pending(), 2);
             drop(pair.remove(first_completed));
@@ -412,7 +718,7 @@ mod tests {
             assert_eq!(shared.admit(&request(0)), Ok(true));
             assert_eq!(shared.admit(&cancelled(0)), Ok(true));
             callbacks.push(shared.complete_control(Control::Cancelled(RequestId::Number(0))));
-            shared.wrote(Some(RequestId::Number(0)));
+            shared.wrote(Some(RequestId::Number(0)), false);
             let permits = shared
                 .accounting
                 .lock()
@@ -434,7 +740,7 @@ mod tests {
         assert_eq!(shared.admit(&request(0)), Ok(true));
         assert_eq!(shared.admit(&cancelled(0)), Ok(true));
         callbacks.push(shared.complete_control(Control::Cancelled(RequestId::Number(0))));
-        shared.wrote(Some(RequestId::Number(0)));
+        shared.wrote(Some(RequestId::Number(0)), false);
         assert_eq!(shared.admit(&request(0)), Ok(true));
         assert_eq!(shared.admit(&cancelled(0)), Err(()));
         shared.close();

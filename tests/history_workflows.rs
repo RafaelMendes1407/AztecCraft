@@ -1,6 +1,6 @@
 use azteccraft::history::{Command, EditOutcome, History};
-use azteccraft::scene::{NodeId, Primitive, Scene, SceneError, Transform};
-use glam::Vec3;
+use azteccraft::native_scene::{NativeError, NativeScene, NativeTransform};
+use azteccraft::scene::{NodeId, Primitive, SceneError};
 
 fn create(history: &mut History, name: &str) -> NodeId {
     match history
@@ -35,10 +35,10 @@ fn undo_and_redo_restore_every_authoring_state_in_order() {
     history
         .execute(Command::SetTransform {
             id: cube,
-            transform: Transform {
-                translation: Vec3::new(2.0, 3.0, 4.0),
-                rotation_degrees: Vec3::new(45.0, 30.0, 60.0),
-                scale: Vec3::new(-2.0, 3.0, 4.0),
+            transform: NativeTransform {
+                translation: [2.0, 3.0, 4.0],
+                rotation: [45.0, 30.0, 60.0],
+                scale: [-2.0, 3.0, 4.0],
             },
         })
         .unwrap();
@@ -90,9 +90,9 @@ fn failed_commands_preserve_scene_and_both_history_stacks() {
         },
         Command::SetTransform {
             id: cube,
-            transform: Transform {
-                scale: Vec3::splat(f32::NAN),
-                ..Transform::default()
+            transform: NativeTransform {
+                scale: [f64::NAN; 3],
+                ..NativeTransform::default()
             },
         },
     ] {
@@ -120,10 +120,13 @@ fn undo_create_then_branch_reserves_discarded_ids() {
     assert_ne!(a, c);
     assert!(!history.can_redo());
     assert!(!history.redo());
-    assert_eq!(history.scene().node(b), Err(SceneError::MissingNode(b)));
+    assert_eq!(
+        history.scene().node(b),
+        Err(NativeError::Legacy(SceneError::MissingNode(b)))
+    );
     assert_eq!(
         history.execute(Command::Remove(b)),
-        Err(SceneError::MissingNode(b))
+        Err(NativeError::Legacy(SceneError::MissingNode(b)))
     );
     assert!(history.undo());
     assert!(history.undo());
@@ -157,7 +160,7 @@ fn no_op_edits_do_not_consume_undo_or_invalidate_redo() {
         history
             .execute(Command::SetTransform {
                 id,
-                transform: Transform::default()
+                transform: NativeTransform::default()
             })
             .unwrap(),
         EditOutcome::Unchanged
@@ -171,7 +174,7 @@ fn no_op_edits_do_not_consume_undo_or_invalidate_redo() {
 
 #[test]
 fn loaded_scene_starts_without_history_and_missing_nodes_return_errors() {
-    let mut scene = Scene::default();
+    let mut scene = NativeScene::default();
     let id = scene.create(Primitive::Cube, "existing").unwrap();
     let mut history = History::new(scene.clone());
     assert_eq!(history.scene(), &scene);
@@ -183,14 +186,14 @@ fn loaded_scene_starts_without_history_and_missing_nodes_return_errors() {
             id,
             name: "missing".into()
         }),
-        Err(SceneError::MissingNode(id))
+        Err(NativeError::Legacy(SceneError::MissingNode(id)))
     );
     assert_eq!(
         history.execute(Command::SetTransform {
             id,
-            transform: Transform::default()
+            transform: NativeTransform::default()
         }),
-        Err(SceneError::MissingNode(id))
+        Err(NativeError::Legacy(SceneError::MissingNode(id)))
     );
     assert_eq!(history.scene(), &before);
     assert!(history.undo());
@@ -202,12 +205,13 @@ fn loaded_scene_starts_without_history_and_missing_nodes_return_errors() {
 #[test]
 fn zero_and_signed_extrusions_are_undoable_and_new_edits_replace_redo_without_reusing_ids() {
     let mut history = History::default();
-    let cube = create(&mut history, "cube");
+    create(&mut history, "cube");
+    let shape = history.scene().shapes()[0].id();
     let initial = history.scene().clone();
     assert_eq!(
         history
             .execute(Command::ExtrudeFace {
-                id: cube,
+                shape,
                 face_index: 0,
                 distance: 0.0
             })
@@ -217,7 +221,7 @@ fn zero_and_signed_extrusions_are_undoable_and_new_edits_replace_redo_without_re
     let zero = history.scene().clone();
     history
         .execute(Command::ExtrudeFace {
-            id: cube,
+            shape,
             face_index: 0,
             distance: -0.25,
         })
@@ -235,7 +239,7 @@ fn zero_and_signed_extrusions_are_undoable_and_new_edits_replace_redo_without_re
     assert!(history.undo());
     history
         .execute(Command::ExtrudeFace {
-            id: cube,
+            shape,
             face_index: 0,
             distance: 0.5,
         })
@@ -243,4 +247,81 @@ fn zero_and_signed_extrusions_are_undoable_and_new_edits_replace_redo_without_re
     assert!(!history.can_redo());
     let replacement = create(&mut history, "replacement");
     assert_ne!(replacement, discarded);
+}
+
+#[test]
+fn mixed_native_draft_is_one_precise_transaction_and_failure_preserves_redo() {
+    let mut history = History::default();
+    let id = create(&mut history, "cube");
+    let before = history.scene().clone();
+    let mut channels = [None; 9];
+    channels[0] = Some(16_777_216.25);
+    channels[5] = Some(-0.0);
+    assert_eq!(
+        history
+            .execute(Command::EditNode {
+                id,
+                name: Some("renamed".into()),
+                channels,
+            })
+            .unwrap(),
+        EditOutcome::Changed
+    );
+    let edited = history.scene().clone();
+    let node = edited.node(id).unwrap();
+    assert_eq!(node.name(), "renamed");
+    assert_eq!(
+        node.transform().translation[0].to_bits(),
+        16_777_216.25_f64.to_bits()
+    );
+    assert_eq!(node.transform().rotation[2].to_bits(), (-0.0_f64).to_bits());
+    assert!(history.undo());
+    assert_eq!(history.scene(), &before);
+    channels[8] = Some(f64::INFINITY);
+    assert!(
+        history
+            .execute(Command::EditNode {
+                id,
+                name: Some("must_not_apply".into()),
+                channels,
+            })
+            .is_err()
+    );
+    assert_eq!(history.scene(), &before);
+    assert!(history.can_redo());
+    assert!(history.redo());
+    assert_eq!(history.scene(), &edited);
+}
+
+#[test]
+fn native_corner_extrusion_restores_exact_shared_mesh_snapshots() {
+    let mut history = History::default();
+    create(&mut history, "corner");
+    let shape = history.scene().shapes()[0].id();
+    let original = history.scene().clone();
+    history
+        .execute(Command::ExtrudeFace {
+            shape,
+            face_index: 1,
+            distance: 0.5,
+        })
+        .unwrap();
+    let first = history.scene().clone();
+    history
+        .execute(Command::ExtrudeFace {
+            shape,
+            face_index: 7,
+            distance: 0.5,
+        })
+        .unwrap();
+    let corner = history.scene().clone();
+    assert_eq!(corner.shape(shape).unwrap().mesh().point_count(), 16);
+    assert!(history.undo());
+    assert_eq!(history.scene(), &first);
+    assert!(history.undo());
+    assert_eq!(history.scene(), &original);
+    assert!(history.redo());
+    assert_eq!(history.scene(), &first);
+    assert!(history.redo());
+    assert_eq!(history.scene(), &corner);
 }

@@ -1,14 +1,157 @@
+use crate::native_scene::{NativeError, NativeScene, binary};
 use crate::scene::{Scene, SceneError};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt,
-    fs::File,
+    fs::Metadata,
     io::{self, Read, Write},
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 pub const DOCUMENT_VERSION: u32 = 1;
 pub const MAX_DOCUMENT_BYTES: usize = 16 * 1024 * 1024;
+
+#[derive(Clone, Copy, Debug)]
+pub enum LinkStatus {
+    Direct,
+    Symlink,
+}
+
+#[derive(Clone)]
+pub struct SourceBaseline {
+    bytes: Arc<[u8]>,
+    metadata: Metadata,
+    link: LinkStatus,
+}
+impl fmt::Debug for SourceBaseline {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SourceBaseline")
+            .field("bytes", &self.bytes.len())
+            .field("file_length", &self.metadata.len())
+            .field("link", &self.link)
+            .finish()
+    }
+}
+#[derive(Clone, Debug, Default)]
+pub enum NativeOrigin {
+    #[default]
+    Untitled,
+    Binary(SourceBaseline),
+    Legacy(SourceBaseline),
+}
+impl NativeOrigin {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Untitled => "untitled",
+            Self::Binary(_) => "maya_binary",
+            Self::Legacy(_) => "legacy_aztec",
+        }
+    }
+    pub fn source_bytes(&self) -> Option<&Arc<[u8]>> {
+        match self {
+            Self::Untitled => None,
+            Self::Binary(s) | Self::Legacy(s) => Some(&s.bytes),
+        }
+    }
+}
+pub struct NativeDocument {
+    pub scene: NativeScene,
+    pub origin: NativeOrigin,
+}
+
+#[derive(Debug)]
+pub enum NativeLoadError {
+    Read(io::ErrorKind),
+    TooLarge,
+    UnsupportedFormat,
+    Legacy,
+    Native(NativeError),
+    Binary(binary::BinaryError),
+}
+impl fmt::Display for NativeLoadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Read(kind) => write!(f, "cannot read regular scene file: {kind:?}"),
+            Self::TooLarge => write!(f, "scene exceeds {MAX_DOCUMENT_BYTES} byte limit"),
+            Self::UnsupportedFormat => f.write_str("Open supports Maya binary .mb and legacy .aztec scenes; Maya ASCII is not available yet"),
+            Self::Legacy => f.write_str("invalid legacy scene document"),
+            Self::Native(error) => error.fmt(f),
+            Self::Binary(error) => error.fmt(f),
+        }
+    }
+}
+impl std::error::Error for NativeLoadError {}
+
+fn read_bytes(path: &Path) -> io::Result<(Vec<u8>, Metadata, LinkStatus)> {
+    #[cfg(not(unix))]
+    if !std::fs::metadata(path)?.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "document must be a regular file",
+        ));
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NONBLOCK);
+    }
+    let file = options.open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "document must be a regular file",
+        ));
+    }
+    let link = if std::fs::symlink_metadata(path)?.file_type().is_symlink() {
+        LinkStatus::Symlink
+    } else {
+        LinkStatus::Direct
+    };
+    let mut bytes = Vec::new();
+    file.take((MAX_DOCUMENT_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)?;
+    Ok((bytes, metadata, link))
+}
+
+pub fn load_native(path: &Path) -> Result<NativeDocument, NativeLoadError> {
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .ok_or(NativeLoadError::UnsupportedFormat)?;
+    let binary_format = extension.eq_ignore_ascii_case("mb");
+    if !binary_format && !extension.eq_ignore_ascii_case("aztec") {
+        return Err(NativeLoadError::UnsupportedFormat);
+    }
+    let (bytes, metadata, link) =
+        read_bytes(path).map_err(|error| NativeLoadError::Read(error.kind()))?;
+    if bytes.len() > MAX_DOCUMENT_BYTES {
+        return Err(NativeLoadError::TooLarge);
+    }
+    let bytes: Arc<[u8]> = bytes.into();
+    let scene = if binary_format {
+        binary::decode(bytes.clone()).map_err(NativeLoadError::Binary)?
+    } else {
+        NativeScene::from_legacy(decode_legacy(&bytes).map_err(|_| NativeLoadError::Legacy)?)
+            .map_err(NativeLoadError::Native)?
+    };
+    let source = SourceBaseline {
+        bytes,
+        metadata,
+        link,
+    };
+    Ok(NativeDocument {
+        scene,
+        origin: if binary_format {
+            NativeOrigin::Binary(source)
+        } else {
+            NativeOrigin::Legacy(source)
+        },
+    })
+}
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -18,28 +161,19 @@ struct Document<T> {
 }
 
 pub fn load(path: &Path) -> Result<Scene, DocumentError> {
-    let result = || -> io::Result<Vec<u8>> {
-        if !std::fs::metadata(path)?.is_file() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "document must be a regular file",
-            ));
-        }
-        let mut bytes = Vec::new();
-        File::open(path)?
-            .take((MAX_DOCUMENT_BYTES + 1) as u64)
-            .read_to_end(&mut bytes)?;
-        Ok(bytes)
-    };
-    let bytes = result().map_err(|source| DocumentError::Io {
+    let (bytes, _, _) = read_bytes(path).map_err(|source| DocumentError::Io {
         operation: "read document",
         path: path.into(),
         source,
     })?;
+    decode_legacy(&bytes)
+}
+
+fn decode_legacy(bytes: &[u8]) -> Result<Scene, DocumentError> {
     if bytes.len() > MAX_DOCUMENT_BYTES {
         return Err(DocumentError::TooLarge);
     }
-    let document: Document<Scene> = serde_json::from_slice(&bytes).map_err(DocumentError::Json)?;
+    let document: Document<Scene> = serde_json::from_slice(bytes).map_err(DocumentError::Json)?;
     if document.version != DOCUMENT_VERSION {
         return Err(DocumentError::UnsupportedVersion(document.version));
     }
@@ -142,5 +276,108 @@ impl std::error::Error for DocumentError {
             Self::Scene(source) => Some(source),
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod native_open_tests {
+    use super::*;
+    use crate::{view_scene::ViewScene, viewport::Camera};
+    use glam::Vec3;
+
+    #[cfg(unix)]
+    #[test]
+    fn fifo_open_refuses_without_waiting_for_a_writer() {
+        use std::{
+            process::{Command, Stdio},
+            time::{Duration, Instant},
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("pipe.mb");
+        assert!(
+            Command::new("mkfifo")
+                .arg(&path)
+                .status()
+                .unwrap()
+                .success()
+        );
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "document::native_open_tests::fifo_open_child",
+                "--ignored",
+            ])
+            .env("AZTECCRAFT_FIFO_TEST", path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                assert!(status.success(), "FIFO child must reject the special file");
+                break;
+            }
+            if Instant::now() >= deadline {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                panic!("opening a FIFO waited for a writer");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    #[ignore = "bounded child of the FIFO regression"]
+    fn fifo_open_child() {
+        let path = std::env::var_os("AZTECCRAFT_FIFO_TEST").unwrap();
+        assert!(matches!(
+            load_native(Path::new(&path)),
+            Err(NativeLoadError::Read(io::ErrorKind::InvalidInput))
+        ));
+    }
+
+    #[test]
+    #[ignore = "Requires an explicitly supplied private MB file"]
+    fn private_open_frame_bounds() {
+        let path = std::env::var_os("AZTECCRAFT_OPEN_TEST_FILE")
+            .expect("private fixture environment variable");
+        let document = load_native(Path::new(&path)).expect("private native decode");
+        let view = ViewScene::from_native(&document.scene, 256 * 1024 * 1024).expect("native view");
+        let mut camera = Camera::default();
+        let aspect = 1.19;
+        camera
+            .frame_view(&view, None, aspect)
+            .expect("initial frame");
+        let mut bounds = (Vec3::splat(f32::INFINITY), Vec3::splat(f32::NEG_INFINITY));
+        let mut ndc = bounds;
+        let mut vertices = 0;
+        let mut rejected = 0;
+        for point in view
+            .instances()
+            .iter()
+            .flat_map(|instance| instance.world_vertices())
+        {
+            vertices += 1;
+            bounds.0 = bounds.0.min(*point);
+            bounds.1 = bounds.1.max(*point);
+            match camera.project(*point, aspect).expect("finite projection") {
+                Some(point) => {
+                    ndc.0 = ndc.0.min(point);
+                    ndc.1 = ndc.1.max(point);
+                }
+                None => rejected += 1,
+            }
+        }
+        eprintln!(
+            "instances={} vertices={vertices} rejected={rejected} world={bounds:?} ndc={ndc:?} target={:?} eye={:?} distance={}",
+            view.instances().len(),
+            camera.target(),
+            camera.eye(),
+            camera.distance()
+        );
+        assert_eq!(rejected, 0);
+        assert!(ndc.0.x >= -1.001 && ndc.0.y >= -1.001 && ndc.1.x <= 1.001 && ndc.1.y <= 1.001);
     }
 }

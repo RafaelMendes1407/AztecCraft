@@ -1,6 +1,6 @@
 use crate::native_scene::{
-    AngularUnit, NativeError, NativeId, NativeMesh, NativeMeshShape, NativeScene, NativeTransform,
-    NativeTransformNode, Units,
+    InternalTransform, NativeError, NativeId, NativeMesh, NativeMeshShape, NativeScene,
+    NativeTransformNode,
 };
 use crate::scene::NodeId;
 use glam::{DMat4, DVec3, Vec3};
@@ -63,10 +63,9 @@ impl ViewScene {
                     }
                     parent_world
                         * local_matrix(
-                            node.transform(),
-                            node.rotate_pivot(),
-                            node.scale_pivot(),
-                            scene.units(),
+                            scene
+                                .internal_transform(node.id())
+                                .map_err(ViewError::Native)?,
                         )?
                 }
                 Record::Shape(_) => parent_world,
@@ -492,25 +491,11 @@ impl<'a> Graph<'a> {
     }
 }
 
-fn local_matrix(
-    transform: NativeTransform,
-    rotate_pivot: [f64; 3],
-    scale_pivot: [f64; 3],
-    units: &Units,
-) -> Result<DMat4, ViewError> {
-    let linear = units
-        .factors()
-        .map_err(|_| ViewError::UnsupportedTransform)?
-        .0;
-    let angular = match units.angular {
-        AngularUnit::Degree => std::f64::consts::PI / 180.0,
-        AngularUnit::Radian => 1.0,
-        AngularUnit::Unsupported(_) => return Err(ViewError::UnsupportedTransform),
-    };
-    let translate = DVec3::from_array(transform.translation) * linear;
-    let rp = DVec3::from_array(rotate_pivot) * linear;
-    let sp = DVec3::from_array(scale_pivot) * linear;
-    let rotation = DVec3::from_array(transform.rotation) * angular;
+fn local_matrix(transform: InternalTransform) -> Result<DMat4, ViewError> {
+    let translate = DVec3::from_array(transform.translation_cm);
+    let rp = DVec3::from_array(transform.rotate_pivot_cm);
+    let sp = DVec3::from_array(transform.scale_pivot_cm);
+    let rotation = DVec3::from_array(transform.rotation_radians);
     let matrix = DMat4::from_translation(translate)
         * DMat4::from_translation(rp)
         * DMat4::from_rotation_z(rotation.z)

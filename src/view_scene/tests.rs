@@ -1,11 +1,18 @@
 use super::*;
-use crate::native_scene::LinearUnit;
+use crate::native_scene::NativeTransform;
 use crate::native_scene::test_fixtures;
 use crate::scene::Primitive;
 use crate::viewport::Camera;
 use glam::Vec2;
 
 const VIEW_BUDGET: usize = 256 * 1024 * 1024;
+const IDENTITY: InternalTransform = InternalTransform {
+    translation_cm: [0.0; 3],
+    rotation_radians: [0.0; 3],
+    scale: [1.0; 3],
+    rotate_pivot_cm: [0.0; 3],
+    scale_pivot_cm: [0.0; 3],
+};
 
 fn front_camera() -> Camera {
     Camera::new(Vec3::ZERO, 0.0, 0.0, 5.0, 45_f32.to_radians(), 0.01, 100.0).unwrap()
@@ -13,19 +20,20 @@ fn front_camera() -> Camera {
 
 #[test]
 fn scale_pivot_is_fixed_and_rotation_uses_its_own_pivot() {
-    let units = Units::default();
     let pivot = DVec3::new(0.02773666381835227, -1.0603328943252563, 1.9979510307312012);
-    let transform = NativeTransform {
+    let transform = InternalTransform {
         scale: [1.2474601320620895; 3],
-        ..Default::default()
+        scale_pivot_cm: pivot.to_array(),
+        ..IDENTITY
     };
-    let matrix = local_matrix(transform, [0.0; 3], pivot.to_array(), &units).unwrap();
+    let matrix = local_matrix(transform).unwrap();
     assert!(matrix.transform_point3(pivot).distance(pivot) < 1e-14);
-    let rotation = NativeTransform {
-        rotation: [0.0, 0.0, 90.0],
-        ..Default::default()
+    let rotation = InternalTransform {
+        rotation_radians: [0.0, 0.0, std::f64::consts::FRAC_PI_2],
+        rotate_pivot_cm: [2.0, 3.0, 0.0],
+        ..IDENTITY
     };
-    let matrix = local_matrix(rotation, [2.0, 3.0, 0.0], [0.0; 3], &units).unwrap();
+    let matrix = local_matrix(rotation).unwrap();
     assert!(
         matrix
             .transform_point3(DVec3::new(3.0, 3.0, 0.0))
@@ -35,43 +43,37 @@ fn scale_pivot_is_fixed_and_rotation_uses_its_own_pivot() {
 }
 
 #[test]
-fn declared_channels_convert_once_but_mesh_coordinates_remain_centimeters() {
-    let units = Units {
-        linear: LinearUnit::Meter,
-        angular: AngularUnit::Radian,
-        time: "film".into(),
-    };
-    let transform = NativeTransform {
-        translation: [1.0, 0.0, 0.0],
+fn internal_centimeter_radian_channels_are_not_converted_again() {
+    let transform = InternalTransform {
+        translation_cm: [100.0, 0.0, 0.0],
         scale: [2.0, 1.0, 1.0],
-        ..Default::default()
+        scale_pivot_cm: [2.0, 0.0, 0.0],
+        ..IDENTITY
     };
-    let matrix = local_matrix(transform, [0.0; 3], [0.02, 0.0, 0.0], &units).unwrap();
+    let matrix = local_matrix(transform).unwrap();
     assert_eq!(
         world_point(matrix, DVec3::new(2.5, 0.0, 0.0)).unwrap(),
         Vec3::new(103.0, 0.0, 0.0)
     );
-    let transform = NativeTransform {
-        rotation: [0.0, 0.0, std::f64::consts::FRAC_PI_2],
-        ..Default::default()
+    let transform = InternalTransform {
+        rotation_radians: [0.0, 0.0, std::f64::consts::FRAC_PI_2],
+        ..IDENTITY
     };
-    let matrix = local_matrix(transform, [0.0; 3], [0.0; 3], &units).unwrap();
+    let matrix = local_matrix(transform).unwrap();
     assert!(matrix.transform_point3(DVec3::X).distance(DVec3::Y) < 1e-14);
 }
 
 #[test]
 fn parent_composition_retains_double_precision_before_world_conversion() {
-    let units = Units::default();
-    let parent = NativeTransform {
-        translation: [16_777_216.25, 0.0, 0.0],
-        ..Default::default()
+    let parent = InternalTransform {
+        translation_cm: [16_777_216.25, 0.0, 0.0],
+        ..IDENTITY
     };
-    let child = NativeTransform {
-        translation: [-16_777_216.0, 0.0, 0.0],
-        ..Default::default()
+    let child = InternalTransform {
+        translation_cm: [-16_777_216.0, 0.0, 0.0],
+        ..IDENTITY
     };
-    let world = local_matrix(parent, [0.0; 3], [0.0; 3], &units).unwrap()
-        * local_matrix(child, [0.0; 3], [0.0; 3], &units).unwrap();
+    let world = local_matrix(parent).unwrap() * local_matrix(child).unwrap();
     assert_eq!(
         world_point(world, DVec3::new(0.5, 0.0, 0.0)).unwrap(),
         Vec3::new(0.75, 0.0, 0.0)

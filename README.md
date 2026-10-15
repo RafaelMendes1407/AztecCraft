@@ -2,7 +2,7 @@
 
 AztecCraft is a Rust desktop 3D authoring project with the objective of reproducing Autodesk Maya 2026's interface and behavior, including modeling, animation, rigging, simulation, rendering, scripting and existing plug-in compatibility.
 
-The current prototype has a native desktop window for cube/plane creation, selection, numeric transforms, undo/redo and perspective navigation. New/Open/Save As are connected to validated JSON scene files, and a library API exports OBJ geometry. Overall Maya coverage is unmeasured.
+The current prototype has a native desktop window for cube/plane creation, selection, numeric transforms, undo/redo and perspective navigation. Open stages Maya binary scenes or legacy JSON documents into the authoritative native model. Native writing is unavailable during this transition; Save As is disabled. Overall Maya coverage is unmeasured.
 
 [Current capabilities](#current-capabilities) · [Build and test](#build-and-test) · [Roadmap](#roadmap-and-publication) · [Project documentation](.project-docs/INDEX.md)
 
@@ -11,15 +11,15 @@ The current prototype has a native desktop window for cube/plane creation, selec
 | Area | This checkout | Evidence or next step |
 | --- | --- | --- |
 | Scene data | Cube/plane creation, validated quad meshes, stable IDs, rename, remove and transform edits | [Scene workflow tests](tests/scene_workflows.rs) and [mesh validation tests](tests/mesh_workflows.rs) |
-| Transform math | Scale, fixed-axis XYZ Euler rotation in degrees, then translation, including zero/negative scales | [Coordinate conventions](.project-docs/development.md) and scene tests |
-| Invalid edits | Reject invalid names, non-finite transforms and transformed-coordinate overflow without changing the scene | Scene tests |
+| Transform math | Native f64 channels and pivots in declared units, with checked conversion to the derived viewport | [Native model](src/native_scene.rs) and view tests |
+| Invalid edits | Reject non-finite or unsupported edits atomically; finite native values outside viewport representation remain authoring data | Native model and history tests |
 | History | Undo/redo create, remove, rename, transform and single-face extrusion commands, with failed/no-op edits preserving history | [History workflow tests](tests/history_workflows.rs) |
-| Native scene files | JSON v1 for quad meshes, validated load, 16 MiB limit and create-new saves that preserve occupied destinations | [Document workflow tests](tests/document_workflows.rs) |
+| Native scene files | Bounded Maya binary decoding with retained source bytes; legacy JSON reads retained; native writing unavailable | [Document loader](src/document.rs) and [binary decoder](src/native_scene/binary.rs) |
 | Camera math | Orbit/pan/dolly, perspective projection, rays, nearest-geometry picking and framing | [Viewport workflow tests](tests/viewport_workflows.rs) |
 | Desktop shell and viewport | Create/select cube or plane, edit name/transform channels, undo/redo, delete and frame selected, with projected mesh drawing | [Native shell](src/app.rs) and [viewport UI](src/viewport_ui.rs) |
-| File actions in the window | New/Open/Save As, unsaved-change confirmation and error presentation | [File integration tests](src/file_ui.rs) and [scoped macOS native verification](.project-docs/native-verification.md); full panel navigation and other platforms remain pending |
+| File actions in the window | New/Open, staged validation, unsaved-change Discard/Cancel and error presentation; Save As explicitly unavailable | [File integration tests](src/file_ui.rs); updated native Open verification and other platforms remain pending |
 | OBJ export | Library API writes world-space polygon geometry to a new file | [OBJ workflow tests](tests/obj_workflows.rs), with GUI Export still disabled |
-| MCP | Optional stdio server controls twelve tools in its newly launched native editor window | [Tool contract and limits](.project-docs/mcp.md), with real Editor/official SDK tests; native protocol/window verification remains separate |
+| MCP | Optional stdio server controls sixteen tools in its newly launched native editor window | [Tool contract and limits](.project-docs/mcp.md), with real Editor/official SDK tests; native protocol/window verification remains separate |
 | Modeling | Core API extrudes one quad along its object-space normal, including signed/zero distances; native face UI and all-face extrusion pending | [Extrusion workflow tests](tests/extrusion_workflows.rs) |
 | UVs, animation and rigging | Full workflows pending | [Implementation plan](.project-docs/plan.md) |
 | Materials, simulation and rendering | Pending | Reference scenes and output comparisons required |
@@ -59,9 +59,9 @@ For MCP, build with `cargo build --release --locked --features mcp` and configur
 
 ## Architecture and platforms
 
-[src/scene.rs](src/scene.rs) owns validated scene state, [src/history.rs](src/history.rs) applies commands using scene snapshots, and [src/document.rs](src/document.rs) loads and saves native JSON through pinned `craft-atomic` create-new writes. [src/viewport.rs](src/viewport.rs) supplies camera math to [the desktop shell](src/app.rs) and [viewport UI](src/viewport_ui.rs). The scene model remains independent of the window so editing and file handling can be tested headlessly.
+[src/native_scene.rs](src/native_scene.rs) owns native authoring state and retained source data. [src/history.rs](src/history.rs) applies commands to that model, while [src/document.rs](src/document.rs) stages file candidates before replacement. [src/view_scene.rs](src/view_scene.rs) derives bounded geometry for camera math and the provisional CPU viewport. The legacy JSON and OBJ library utilities remain separate from native document writing.
 
-History is in-memory and unbounded, and isn't stored in scene files. Loading accepts finite quad geometry with valid distinct indices, preserving empty, unused, degenerate and non-manifold authoring data. Native topology editing is pending, and saving requires a new destination. The camera core doesn't provide a depth-tested renderer or establish Maya navigation parity. See [the detailed limits](.project-docs/development.md).
+History is in-memory and unbounded. Imported edits require proved ownership and refuse unsupported source changes. Native Save and Save As remain unavailable until a genuine Maya writer can preserve the document. The CPU geometry preview has incomplete depth ordering, clipping and appearance; it does not establish Maya rendering or navigation parity.
 
 Cross-platform desktop support and packaged launch behavior still need native evidence for macOS, Windows and Linux. The [CI matrix](.project-docs/builds.md) defines checks for those platforms, and a configured job doesn't establish a passing build. The eframe/egui UI remains provisional, with docking, focus, marking menus and Maya-style editing still to be compared against the reference.
 

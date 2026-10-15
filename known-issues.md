@@ -23,12 +23,28 @@ The original first-push restriction required 80–90% of all Maya 2026 functiona
 
 The [macOS packaged-debug verification record](.project-docs/native-verification.md) now covers cube creation, numeric editing, Save As/Open, unsaved-change cancellation/discard, no-clobber protection and malformed-open state preservation at source commit `6c96345`. Native file choices were supplied through held panels using OCU `choose_file`; full interactive panel navigation remains pending. Windows/Linux native interaction and packaged launch checks, GUI OBJ export and Maya comparison also remain pending. Subsequent builds need their own verification before these results are generalized.
 
+The native-model transition has separate provisional macOS evidence: five supplied
+Maya binary scenes opened and displayed geometry, including orbit navigation.
+An acute CPU tessellation defect was reproduced and corrected; material, depth
+and clipping fidelity remain incomplete. Imported-scene GUI editing and the new
+native lifecycle still require final independent native evidence. Earlier JSON
+Save As verification does not establish native Maya writing, which is unavailable.
+
 ## Core authoring limits
 
 **Severity:** medium
 **Area:** history, documents and viewport
 
-Undo/redo stores unbounded scene snapshots in memory, so memory grows with scene size and edit count. JSON v1 stores structurally valid quad geometry and allocator reservations, with a 16 MiB limit and create-new/no-clobber writes. Undo/redo stacks and camera state aren't persisted, and overwrite-save, recovery and autosave are pending. Native topology editing, non-quad faces and most external formats aren't supported. Degenerate, nonplanar, inconsistent-winding and non-manifold geometry is preserved as authoring data; validation doesn't repair geometry or guarantee rendering fidelity. The OBJ library API exports geometry only, with no import, UV, normal or material support, and GUI Export remains disabled.
+Undo/redo stores unbounded NativeScene snapshots, so memory grows with scene size
+and edit count. The native model retains separate transform/shape identities,
+instance hierarchy, f64 authoring channels and original source bytes. Triangle
+and quad derived views are supported; arbitrary loops/holes remain retained but
+unsupported for projection. Imported editing is limited to proved source-bound
+numeric changes; missing-record insertion and structural rewrites refuse safely.
+Native Maya Save/Save As, recovery, autosave and camera/history persistence remain
+pending. Legacy JSON v1 and OBJ remain separate library utilities; their geometry
+tests don't establish native persistence. GUI Export remains disabled. Structural
+validation doesn't repair geometry or guarantee rendering fidelity.
 
 The camera core is connected to the native viewport. Drawing sorts projected faces by average depth, and depth-tested rendering and reference navigation parity remain pending. These limits are described in [development instructions](.project-docs/development.md).
 

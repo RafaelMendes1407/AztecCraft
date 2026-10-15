@@ -215,9 +215,9 @@ fn projection_rejects_finite_world_point_when_ndc_division_overflows() {
 #[test]
 fn reloaded_extrusion_frames_and_picks_the_new_side_outside_original_cube() {
     let dir = tempfile::tempdir().unwrap();
-    let (history, id) = common::extruded_corner();
+    let (scene, id) = common::extruded_corner();
     let path = dir.path().join("corner.aztec");
-    azteccraft::document::save_new(&path, history.scene()).unwrap();
+    azteccraft::document::save_new(&path, &scene).unwrap();
     let loaded = azteccraft::document::load(&path).unwrap();
     let mut camera = front_camera();
     camera.frame(loaded.node(id).unwrap(), 1.0).unwrap();

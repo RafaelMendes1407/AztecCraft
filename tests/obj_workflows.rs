@@ -257,25 +257,20 @@ fn zero_scale_exports_finite_degenerate_geometry_with_original_topology() {
 #[test]
 fn saved_extrusion_exports_reflected_cap_and_side_geometry_with_global_offsets() {
     let dir = tempfile::tempdir().unwrap();
-    let (mut history, id) = common::extruded_corner();
-    history
-        .execute(azteccraft::history::Command::SetTransform {
+    let (mut scene, id) = common::extruded_corner();
+    scene
+        .set_transform(
             id,
-            transform: Transform {
+            Transform {
                 translation: Vec3::new(4.0, 5.0, 6.0),
                 rotation_degrees: Vec3::new(0.0, 0.0, 90.0),
                 scale: Vec3::new(-2.0, 3.0, 0.5),
             },
-        })
+        )
         .unwrap();
-    history
-        .execute(azteccraft::history::Command::Create {
-            primitive: Primitive::Plane,
-            name: "other".into(),
-        })
-        .unwrap();
+    scene.create(Primitive::Plane, "other").unwrap();
     let native = dir.path().join("extruded.aztec");
-    azteccraft::document::save_new(&native, history.scene()).unwrap();
+    azteccraft::document::save_new(&native, &scene).unwrap();
     let loaded = azteccraft::document::load(&native).unwrap();
     let output = dir.path().join("extruded.obj");
     export_new(&output, &loaded).unwrap();
@@ -316,15 +311,9 @@ fn saved_extrusion_exports_reflected_cap_and_side_geometry_with_global_offsets()
 #[test]
 fn zero_extrusion_and_unused_vertices_export_without_cleanup() {
     let dir = tempfile::tempdir().unwrap();
-    let (mut history, id) = common::extruded_corner();
-    history
-        .execute(azteccraft::history::Command::ExtrudeFace {
-            id,
-            face_index: 1,
-            distance: 0.0,
-        })
-        .unwrap();
-    let mut value = serde_json::to_value(history.scene()).unwrap();
+    let (mut scene, id) = common::extruded_corner();
+    scene.extrude_face(id, 1, 0.0).unwrap();
+    let mut value = serde_json::to_value(&scene).unwrap();
     value["nodes"][0]["mesh"]["vertices"]
         .as_array_mut()
         .unwrap()

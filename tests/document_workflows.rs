@@ -64,7 +64,8 @@ fn exhausted_loaded_allocator_preserves_scene_history_and_saved_reservations() {
     save_new(&saved, &scene).unwrap();
     assert_eq!(load(&saved).unwrap(), before);
     let id = scene.nodes()[0].id();
-    let mut history = History::new(scene);
+    let mut history =
+        History::new(azteccraft::native_scene::NativeScene::from_legacy(scene).unwrap());
     history
         .execute(Command::Rename {
             id,
@@ -78,7 +79,9 @@ fn exhausted_loaded_allocator_preserves_scene_history_and_saved_reservations() {
             primitive: Primitive::Cube,
             name: "new".into()
         }),
-        Err(azteccraft::scene::SceneError::IdsExhausted)
+        Err(azteccraft::native_scene::NativeError::Legacy(
+            azteccraft::scene::SceneError::IdsExhausted
+        ))
     );
     assert_eq!(history.scene(), &before);
     assert!(!history.can_undo());
@@ -237,29 +240,23 @@ fn edited_and_empty_quad_meshes_round_trip_without_geometry_cleanup() {
 #[test]
 fn extruded_and_zero_distance_topology_round_trips_and_rejects_malformed_edits() {
     let dir = tempfile::tempdir().unwrap();
-    let (mut history, id) = common::extruded_corner();
-    history
-        .execute(Command::ExtrudeFace {
-            id,
-            face_index: 1,
-            distance: 0.0,
-        })
-        .unwrap();
+    let (mut scene, id) = common::extruded_corner();
+    scene.extrude_face(id, 1, 0.0).unwrap();
     let path = dir.path().join("extruded.aztec");
-    save_new(&path, history.scene()).unwrap();
+    save_new(&path, &scene).unwrap();
     let bytes = fs::read(&path).unwrap();
     let loaded = load(&path).unwrap();
-    assert_eq!(&loaded, history.scene());
+    assert_eq!(loaded, scene);
     assert_eq!(loaded.node(id).unwrap().mesh().vertices().len(), 20);
     assert_eq!(loaded.node(id).unwrap().mesh().faces().len(), 18);
-    assert!(save_new(&path, history.scene()).is_err());
+    assert!(save_new(&path, &scene).is_err());
     assert_eq!(fs::read(&path).unwrap(), bytes);
     let malformed = dir.path().join("malformed.aztec");
     for face in [json!([0, 1, 2, 20]), json!([0, 1, 1, 3])] {
-        let mut document = value(history.scene());
+        let mut document = value(&scene);
         document["scene"]["nodes"][0]["mesh"]["faces"][1] = face;
         fs::write(&malformed, document.to_string()).unwrap();
         assert!(load(&malformed).is_err());
-        assert_eq!(history.scene(), &loaded);
+        assert_eq!(scene, loaded);
     }
 }

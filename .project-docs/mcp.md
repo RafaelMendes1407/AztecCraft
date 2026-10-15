@@ -1,6 +1,6 @@
 # Native editor MCP
 
-The optional MCP server controls the new native Editor window launched by its client. Tools use that window's scene, history, selection and camera. It cannot attach to an already running instance. This prototype exposes twelve tools; it does not establish Maya scripting, plug-in or full-functionality compatibility.
+The optional MCP server controls the new native Editor window launched by its client. Tools use that window's canonical native scene, history, selection and camera. It cannot attach to an already running instance. This prototype exposes sixteen tools; it does not establish Maya scripting, plug-in or full-functionality compatibility.
 
 ## Build and launch
 
@@ -25,7 +25,7 @@ An example subprocess configuration, subject to the client's own configuration f
 }
 ```
 
-On Windows the executable is `azteccraft.exe`. No socket, HTTP service or file-path tool is exposed. The local subprocess launcher is the authority boundary. Stdout is reserved for MCP messages; diagnostics use stderr.
+On Windows the executable is `azteccraft.exe`. No socket or HTTP service is exposed. The local subprocess launcher is the authority boundary, including access to local files through `open_scene`. Stdout is reserved for MCP messages; diagnostics use stderr.
 
 Pinned rmcp 3.5.1 handles protocol decoding, discovery, initialization and request metadata. Official SDK tests exercise MCP 2026-07-28 Discover and legacy 2025-11-25 initialization. Cancellation tests exercise the legacy request-cancellation path. These tests do not establish compatibility with every MCP client.
 
@@ -35,11 +35,11 @@ Call `inspect_scene` first. Every other tool requires `scene_token`, a UUID stri
 
 | Tool | Arguments besides `scene_token` | Result |
 | --- | --- | --- |
-| `inspect_scene` | No arguments; no token required | Committed nodes, selected ID, history availability, dirty/draft/focus/modal flags and camera |
+| `inspect_scene` | No arguments; no token required | Committed node/shape metadata, units, instance paths, selected identity, history, pending action, dirty/draft/focus/modal/closing flags and camera |
 | `create_primitive` | `primitive`: `cube` or `plane`; optional `name` | Created `node_id`; selects the new node |
-| `select_node` | Optional `node_id`; null or omission clears selection | Changed or unchanged selection |
+| `select_node` | Optional `node_id` and `instance_path`, at most 256 decimal NativeId strings | Full root-to-transform prefix; ambiguous objects require a path. Null or omitted node clears selection and cannot include a path |
 | `rename_node` | `node_id`, `name` | Changed or unchanged authoring state |
-| `set_transform` | `node_id`, `translation`, `rotation_degrees`, `scale`, each an array of three finite numbers | Changed or unchanged authoring state |
+| `set_transform` | `node_id`, `translation`, `rotation_degrees`, `scale`, each an array of three finite f64 numbers | Translation in declared scene units, rotation in degrees, dimensionless scale |
 | `delete_node` | `node_id` | Changed authoring state |
 | `undo` | None | Changed or unchanged history state |
 | `redo` | None | Changed or unchanged history state |
@@ -47,10 +47,14 @@ Call `inspect_scene` first. Every other tool requires `scene_token`, a UUID stri
 | `orbit_camera` | `radians`: two finite numbers, yaw and pitch deltas | Changed or unchanged camera; pitch clamps near the poles |
 | `pan_camera` | `world_units`: two finite numbers, camera right and up displacement in scene world units | Changed or unchanged camera target and eye |
 | `dolly_camera` | `factor`: positive finite distance multiplier | Changed or unchanged camera distance; below one moves closer |
+| `new_scene` | None | New empty document immediately, or a pending confirmation when dirty |
+| `open_scene` | `path`: 1 to 4096 UTF-8 bytes, no NUL | Supported `.mb` or legacy `.aztec` candidate; applies immediately or stages an immutable candidate for confirmation |
+| `resolve_file_action` | `pending_action_id`: UUID; `decision`: `cancel` or `discard` | Resolve only that exact pending action with the current scene token; no Save decision |
+| `request_close` | None | Native close guard; dirty documents require confirmation, and approved remote closure waits for its own successful response flush |
 
-Transforms use the [existing coordinate conventions](development.md): scale, fixed-axis XYZ Euler degrees, then translation. Core validation rejects invalid names, nonfinite values and coordinate overflow. Node inspection includes its name, transform and mesh vertices/faces.
+Transforms use the [existing coordinate conventions](development.md). The `rotation_degrees` input and normalized transform inspection always use degrees; `authoring_transform.rotation` retains the document's declared angular units, reported in `units`. Translation retains declared linear units. Camera navigation uses centimeter view space. Inspection exposes shape counts and smoothing capability, without mesh arrays, source bytes or private file paths. This is bounded metadata inspection, not a geometry dump.
 
-Successful tool results provide `structuredContent` and equivalent text content. The structured result has `outcome`: `scene`, `created`, `changed` or `unchanged`. A scene result nests fields under `inspection`; a created result includes `node_id`. Authoring mutations share native undo history. Selection and camera operations do not create authoring undo entries or mark the document dirty. Navigation arguments use camera units, not pointer pixels. Invalid resulting camera ranges return `camera_error` without changing the camera; finite JSON numbers outside the camera's f32 range are also rejected by camera validation.
+Successful tool results provide `structuredContent` and equivalent text content. Authoring outcomes are `scene`, `created`, `changed` or `unchanged`; file lifecycle outcomes are `document_applied`, `pending_confirmation`, `cancelled` and `close_requested`. A scene result nests fields under `inspection`; a created result includes `node_id`. Authoring mutations share native undo history. Selection and camera operations do not create authoring undo entries or mark the document dirty. Navigation arguments use camera units, not pointer pixels. Invalid resulting camera ranges return `camera_error` without changing the camera; finite JSON numbers outside the camera's f32 range are also rejected by camera validation.
 
 Example tool arguments after inspection:
 
@@ -62,15 +66,17 @@ Example tool arguments after inspection:
 }
 ```
 
-Each new Editor and each successful native New/Open replaces the scene token. Save, normal edits, undo and redo retain it. The token identifies a document generation, not an edit revision or credential. Reinspect after a stale token, deleted ID, cancellation, timeout or lost acknowledgement; do not automatically retry a mutation.
+Each new Editor and each applied New/Open replaces the scene token. A `document_applied` reply carries the new token. A dirty file action returns `pending_confirmation` with the old token, `pending_action_id` and kind; inspection exposes that same id and kind. Cancel clears only the matching pending action and retains the token. Discard applies the exact staged candidate once, even if its source file changes while the modal is open. Stale or replayed action ids refuse without effects. Normal edits, undo and redo retain the token. The token identifies a document generation, not an edit revision or credential. Reinspect after a stale token, deleted ID, cancellation, timeout or lost acknowledgement; do not automatically retry a mutation.
 
 ## Human edits, errors and limits
 
-Remote mutations return `busy_editing` while a native text field is focused, a differing draft exists, or a modal dialog is open. This includes valid uncommitted drafts. They do not commit unrelated human edits. Inspection remains available and reports these states without returning draft text. Native inputs are processed before queued remote requests at the end of each UI frame, and remote changes request repaint.
+Remote mutations return `busy_editing` while a native text field is focused, a differing draft exists, or a modal dialog is open. This includes valid uncommitted drafts. They do not commit unrelated human edits. `resolve_file_action` is the sole modal exception; text focus, drafts, pending native input and scene-token checks still apply. Inspection remains available and reports these states without returning draft text. Native inputs are processed before queued remote requests at the end of each UI frame, and remote changes request repaint.
+
+Approved remote closure reports `closing: true` while waiting for its matching successful JSON-RPC response to flush. Ordinary mutations refuse during closure; readonly inspection stays available. An unrelated response, error, cancellation, deadline or failed write cannot authorize exit. Failed delivery withdraws approval, preserves document state and suppresses an automatic disconnect retry; an explicit native Close remains available. The resolver response owns this delivery barrier when Discard approves a pending Close. A flushed response establishes transport delivery, not proof that a client processed it.
 
 Hidden/minimized windows dispatch through eframe's UI-thread logic callback without painting or forcing foreground. Visible windows still dispatch only after that frame's native UI input. Interactive native input retained while hidden sets the inspection flag `native_input_pending` and blocks remote mutation until visible UI processes it. Harmless focus changes and unheld pointer motion do not block idle hidden requests. Native Close while input is pending is canceled; restore/process the input and retry Close.
 
-Tool failures set `isError` and return `error.code` plus `error.message`. Codes include `busy_editing`, `stale_scene`, `too_large`, `no_selection`, `invalid_input`, `scene_error`, `camera_error`, `busy`, `unavailable` and `cancelled`. `busy` covers queue saturation and the five-second UI reply deadline. The SDK may suppress a cancelled response. Cancellation before application skips a queued request; cancellation after a synchronous operation starts cannot undo it. Inspect to reconcile the result.
+Tool failures set `isError` and return `error.code` plus `error.message`. Codes include `busy_editing`, `stale_scene`, `stale_pending_action`, `ambiguous_selection`, `too_large`, `no_selection`, `invalid_input`, `scene_error`, `file_error`, `camera_error`, `busy`, `unavailable` and `cancelled`. File errors redact private paths. `busy` covers queue saturation and the five-second UI reply deadline. The SDK may suppress a cancelled response. Cancellation before application skips a queued request; cancellation after a synchronous operation starts cannot undo it. Inspect to reconcile the result.
 
 Prototype bounds are 64 KiB per ingress JSON line, 4096 UTF-8 bytes per input name, at most 16 retained RPC slots and 16 pending supported notification callbacks, 16 queued editor requests, and eight requests dispatched per frame. RPC admission remains held until reply write or connection close; callback permits remain held until completion/drop or close, including reused request IDs. A cancelled request whose reply the SDK suppresses retains its RPC slot until connection close. Enough abandoned calls can exhaust admission and close the session. A new connection launches a new Editor window; it cannot attach to the old window.
 
@@ -82,7 +88,7 @@ The [known first-click text defect](../known-issues.md#first-click-text-input-ca
 
 ## Shutdown and verification
 
-Ingress EOF or protocol failure closes the bridge immediately, skips queued mutations and invokes the existing native close guard before SDK handler draining. A clean editor closes. Unsaved committed scenes, including valid drafts committed by native close handling, prompt the existing Save/Discard/Cancel confirmation without autosave. An invalid draft keeps the GUI open with a validation error; the user must fix or cancel that edit before Close/Save can reach confirmation. This deliberately departs from MCP's recommendation to exit promptly for a dirty document. A client can forcibly terminate its subprocess and lose unsaved work; universal shutdown compatibility is not claimed. Cancelling native close does not revive an EOF-closed protocol connection.
+Ingress EOF or protocol failure closes the bridge immediately, skips queued mutations and invokes the existing native close guard before SDK handler draining, except after a failed remote-close delivery attempt as described above. A clean editor closes. Unsaved committed scenes, including valid drafts committed by native close handling, prompt Discard/Cancel confirmation; Save is visibly unavailable while native writing is pending. An invalid draft keeps the GUI open with a validation error; the user must fix or cancel that edit before Close can reach confirmation. This deliberately departs from MCP's recommendation to exit promptly for a dirty document. A client can forcibly terminate its subprocess and lose unsaved work; universal shutdown compatibility is not claimed. Cancelling native close does not revive an EOF-closed protocol connection.
 
 Approved native close cancels protocol work and uses a one-second bounded runtime shutdown rather than waiting indefinitely on silent stdin. The subprocess regression holds stdin open and checks bounded cleanup. Tests also cover actual Editor input/order/history, official SDK tool journeys, both lifecycles, cancellation, deadlines, floods, framing and stalled output. They use real Editor/egui state without an OS window. Native protocol/window verification and cross-platform graphical interaction remain separate evidence requirements.
 
@@ -103,17 +109,19 @@ No-default core builds remain independent of desktop and MCP dependencies. See [
 
 Every existing and new user-facing capability and its relevant state must be accessible through MCP, including while catch-up is in progress. Each applicable feature slice includes its typed operation, MCP schema/handler and inspection changes, real Editor protocol tests and documentation before the completed feature gate. The feature owner coordinates protected editor boundaries and adapter review with the MCP owner. Do not advertise a tool before the operation exists or leave MCP support as a permanent later backlog.
 
-The current catalog omits component selection/extrusion, file actions, GUI Export, materials, animation, simulation and scripting. Native face selection/extrusion support must include its MCP capability updates in that same completed feature slice. Core-only APIs and unsupported controls do not imply an advertised MCP tool.
+The current catalog omits component selection/extrusion, file writing, GUI Export, materials, animation, simulation and scripting. Native face selection/extrusion support must include its MCP capability updates in that same completed feature slice. Core-only APIs and unsupported controls do not imply an advertised MCP tool. The current binary decoder refuses shared-instance MB input, and the native UI cannot create instances; SDK ambiguity behavior has no reachable producer in this slice. Canonical path/ambiguity checks and reachable explicit-path protocol tests do not establish full instanced-file support.
 
 Nine verified tools establish the initial server foundation, not catch-up with every existing operation. Existing capabilities without tools need reviewed follow-up slices; their absence does not defer MCP support for new applicable features, including the native face slice.
 
 | Existing capability | Current MCP exposure |
 | --- | --- |
 | Object create/select/rename/transform/delete, history and framing | Nine tools listed above, including inspection |
-| Native New/Open/Save As | No tool; document lifecycle, human-edit guards and file bounds need a dedicated slice |
+| Native New/Open and pending confirmation | `new_scene`, `open_scene` and `resolve_file_action` share native candidate and lifecycle handlers |
+| Native Close | `request_close` and matching pending resolution use the native close guard and response-delivery barrier |
+| Native Save/Save As | Unavailable while native writing is pending; no file writes or lossy JSON fallback |
 | Core OBJ export | No tool; file authority and create-new/no-clobber behavior need a dedicated slice |
 | Core mesh extrusion | No tool; native face selection/extrusion, component inspection and protocol support belong in the completed native face slice |
-| Interactive camera orbit/pan/dolly | Three navigation tools use typed editor operations in MCP builds; live camera state is inspectable. Native pointer gestures still call the camera directly until the shared native producer integration is verified |
+| Interactive camera orbit/pan/dolly | Three navigation tools use the same typed operations as native captured gestures; live camera state is inspectable |
 
 Initial catch-up remains incomplete while these implemented capabilities lack their reviewed MCP support. Full Maya parity remains a separate unmet objective.
 
