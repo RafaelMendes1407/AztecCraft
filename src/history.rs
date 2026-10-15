@@ -2,6 +2,9 @@ use crate::{
     native_scene::{NativeError, NativeId, NativeScene, NativeTransform},
     scene::{NodeId, Primitive},
 };
+mod move_transaction;
+use move_transaction::MoveTransaction;
+pub use move_transaction::{MoveError, MoveFinish, MoveId, MoveProvenance, MoveState};
 
 #[derive(Clone, Debug)]
 pub enum Command {
@@ -46,6 +49,9 @@ pub struct History {
     scene: NativeScene,
     undo: Vec<NativeScene>,
     redo: Vec<NativeScene>,
+    active_move: Option<MoveTransaction>,
+    next_move_id: u64,
+    move_scene_token: Option<uuid::Uuid>,
 }
 
 impl History {
@@ -54,6 +60,9 @@ impl History {
             scene,
             undo: Vec::new(),
             redo: Vec::new(),
+            active_move: None,
+            next_move_id: 0,
+            move_scene_token: None,
         }
     }
 
@@ -68,6 +77,9 @@ impl History {
     }
 
     pub fn execute(&mut self, command: Command) -> Result<EditOutcome, NativeError> {
+        if self.active_move.is_some() {
+            return Err(NativeError::BusyManipulation);
+        }
         let mut candidate = self.scene.clone();
         let outcome = match command {
             Command::Create { primitive, name } => {
@@ -112,6 +124,9 @@ impl History {
     }
 
     pub fn undo(&mut self) -> bool {
+        if self.active_move.is_some() {
+            return false;
+        }
         let Some(previous) = self.undo.pop() else {
             return false;
         };
@@ -121,6 +136,9 @@ impl History {
     }
 
     pub fn redo(&mut self) -> bool {
+        if self.active_move.is_some() {
+            return false;
+        }
         let Some(next) = self.redo.pop() else {
             return false;
         };
