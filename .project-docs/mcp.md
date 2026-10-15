@@ -1,6 +1,6 @@
 # Native editor MCP
 
-The optional MCP server controls the new native Editor window launched by its client. Tools use that window's canonical native scene, history, selection, camera and viewport grid setting. It cannot attach to an already running instance. This candidate exposes twenty-four tools; it does not establish Maya scripting, plug-in or full-functionality compatibility.
+The optional MCP server controls the new native Editor window launched by its client. Tools use that window's canonical native scene, history, selection, camera and viewport grid setting. It cannot attach to an already running instance. This candidate exposes twenty-eight tools; it does not establish Maya scripting, plug-in or full-functionality compatibility.
 
 The Save integration in this working branch is provisional. Its ordinary vendored
 atomic engine and document adapter have separate consumer checks. Current
@@ -55,7 +55,11 @@ Call `inspect_scene` first. Every other tool requires `scene_token`, a UUID stri
 
 | Tool | Arguments besides `scene_token` | Result |
 | --- | --- | --- |
-| `inspect_scene` | No arguments; no token required | Committed mesh/curve metadata, typed document origin, retained-source counts/read-only reason, units, instance paths, selected identity, history, pending action, dirty/draft/focus/modal/closing flags and camera |
+| `inspect_scene` | No arguments; no token required | Committed mesh/curve metadata including Move preview, typed document origin, retained-source counts/read-only reason, units, instance paths, selected identity, history, pending action, dirty/draft/focus/modal/closing flags and camera |
+| `set_active_tool` | `tool`: `select` or `move` | Activate a supported native tool through shared guards |
+| `begin_move` | `node_id`, full `instance_path` (1 to 256 decimal IDs), `axis`: `x`, `y` or `z` | Begin a remote-owned translation of the exact selected transform; returns `move_id` |
+| `update_move` | `move_id`: decimal string; `distance`: finite absolute f64 | Preview World distance from begin in declared linear units |
+| `finish_move` | `move_id`; `finish`: `commit` or `cancel` | One Undo at commit, or exact begin-state restoration |
 | `create_primitive` | `primitive`: `cube` or `plane`; optional `name` | Created `node_id`; selects the new node |
 | `select_node` | Optional `node_id` and `instance_path`, at most 256 decimal NativeId strings | Full root-to-transform prefix; ambiguous objects require a path. Null or omitted node clears selection and cannot include a path |
 | `set_selection_mode` | Required `mode`: `object` or `face` | Changes the transient selection mask; a valid remembered face remains inactive in Object mode |
@@ -178,7 +182,7 @@ checked History command.
 
 Successful tool results provide `structuredContent` and equivalent text content. Authoring outcomes are `scene`, `created`, `changed` or `unchanged`; file lifecycle outcomes are `document_applied`, `pending_confirmation`, `cancelled`, `close_requested`, `saved`, `save_uncertain` and `save_reconciled`. A scene result nests fields under `inspection`; a created result includes `node_id`. Authoring mutations share native undo history. Selection and camera operations do not create authoring undo entries or mark the document dirty. Navigation arguments use camera units, not pointer pixels. Invalid resulting camera ranges return `camera_error` without changing the camera; finite JSON numbers outside the camera's f32 range are also rejected by camera validation.
 
-The tools `set_grid_visibility`, `select_node`, `set_selection_mode` and `select_face` set an absolute state, so repeating a call returns unchanged; their MCP annotations carry `idempotentHint: true`. No other tool does.
+The tools `set_grid_visibility`, `set_active_tool`, `select_node`, `set_selection_mode` and `select_face` set an absolute state, so repeating a call returns unchanged; their MCP annotations carry `idempotentHint: true`. No other tool does.
 
 `set_grid_visibility` requires an explicit JSON boolean and the current scene
 token. Missing, null, string, numeric and unknown fields refuse; there is no
@@ -277,7 +281,7 @@ Approved remote closure reports `closing: true` while waiting for its matching s
 
 Hidden/minimized windows dispatch through eframe's UI-thread logic callback without painting or forcing foreground. Visible windows still dispatch only after that frame's native UI input. Interactive native input retained while hidden sets the inspection flag `native_input_pending` and blocks remote mutation until visible UI processes it. Harmless focus changes and unheld pointer motion do not block idle hidden requests. Native Close while input is pending is canceled; restore/process the input and retry Close.
 
-Tool failures set `isError` and return `error.code` plus `error.message`. Codes include `busy_editing`, `stale_scene`, `stale_pending_action`, `ambiguous_selection`, `too_large`, `no_selection`, `invalid_input`, `scene_error`, `file_error`, `camera_error`, `busy`, `unavailable` and `cancelled`. File errors redact private paths. Save errors use fixed codes save_unsupported, invalid_destination, source_changed, destination_exists, save_cancelled, save_io and save_encode. `busy` covers queue saturation and the five-second UI reply deadline. The SDK may suppress a cancelled response. Cancellation before application skips a queued request; cancellation after a synchronous operation starts cannot undo it. Inspect to reconcile the result.
+Tool failures set `isError` and return `error.code` plus `error.message`. Codes include `busy_manipulation`, `stale_move`, `move_owner`, `move_error`, `busy_editing`, `stale_scene`, `stale_pending_action`, `ambiguous_selection`, `too_large`, `no_selection`, `invalid_input`, `scene_error`, `file_error`, `camera_error`, `busy`, `unavailable` and `cancelled`. File errors redact private paths. Save errors use fixed codes save_unsupported, invalid_destination, source_changed, destination_exists, save_cancelled, save_io and save_encode. `busy` covers queue saturation and the five-second UI reply deadline. The SDK may suppress a cancelled response. Cancellation before application skips a queued request; cancellation after a synchronous operation starts cannot undo it. Inspect to reconcile the result.
 
 Prototype bounds are 64 KiB per ingress JSON line, 4096 UTF-8 bytes per input name, at most 16 retained RPC slots and 16 pending supported notification callbacks, 16 queued editor requests, and eight requests dispatched per frame. RPC admission remains held until reply write or connection close; callback permits remain held until completion/drop or close, including reused request IDs. A cancelled request whose reply the SDK suppresses retains its RPC slot until connection close. Enough abandoned calls can exhaust admission and close the session. A new connection launches a new Editor window; it cannot attach to the old window.
 
@@ -324,6 +328,7 @@ Nine verified tools establish the initial server foundation, not catch-up with e
 | Core OBJ export | No tool; file authority and create-new/no-clobber behavior need a dedicated slice |
 | Native Face/Center selection | `set_selection_mode`, `select_face` and selection inspection share authoritative typed state; other component masks and multi-face gestures are unsupported |
 | Core mesh extrusion | `extrude_face` exposes the checked single-quad History command with an explicit current face target; native face-extrusion UI remains unsupported |
+| Native Select/Move tool and World-axis object translation | Four typed Move tools share the native transaction and guards; bounded tool/active preview/capture state is inspectable. Candidate native/SDK verification remains pending |
 | Interactive camera orbit/pan/dolly | Three navigation tools use the same typed operations as native captured gestures; live camera state is inspectable |
 | Viewport Grid visibility | `set_grid_visibility` shares the checkable native Grid button's typed setter; `grid_visible` exposes the authoritative session state. Fixed grid only; options, global/additional panels and persistence are unsupported |
 | GPU geometry viewport | `inspect_scene` exposes live backend/error/depth/clipping/appearance state; camera and object selection share the native frame consumer. Materials and complete appearance remain unsupported |
@@ -335,3 +340,51 @@ Initial catch-up remains incomplete while these implemented capabilities lack th
 - [MCP stdio transport](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/stdio)
 - [MCP tool results](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)
 - [Pinned official Rust SDK](https://docs.rs/rmcp/3.5.1/rmcp/)
+
+## World-axis Move candidate
+
+Select and Move are real native tools, activated with their vector buttons or
+unmodified Q/W outside text fields and dialogs. Move supports one selected full
+transform instance in object mode, with World X/Y/Z shafts only. Rotation, scale,
+plane/center handles, components, snapping, alternate orientations and modified
+drags remain unsupported. Unsupported transforms, driven data, selected pivots,
+unstable parents and source translations without retained existing words refuse
+the gesture. This is a bounded application policy, not verified Maya parity.
+
+The four Move tools share native Editor operations and one canonical History
+transaction. `begin_move` returns a decimal `move_id` bound to the current scene
+token and remote ownership. Numeric begin may retain the Select tool. Updates
+supply absolute World distance from begin in the document's declared linear unit,
+not an increment. A commit produces at most one Undo entry; zero commits and
+cancellation preserve the existing Redo branch. Native geometry uses centimeters
+directly, with one checked conversion for declared SDK distances.
+
+During a gesture, inspection reads the live authoritative preview. Unrelated
+remote mutations, Save, Undo/Redo and camera operations return
+`busy_manipulation`. Only matching remote-owned updates/finish are accepted;
+remote calls cannot finish a native drag. Viewport Grid visibility, selection mode and
+Face selection are likewise refused with `busy_manipulation` while any Move is
+active. Human Escape, tool/selection/selection-mode/lifecycle
+changes cancel a native drag before their existing native guard path. Move is
+Object-mode only: while Face selection is active `begin_move` returns
+`invalid_input`, native handles are not drawn or hit, and `inspection.move_tool`
+reports numeric Move unavailable with the reason. Native captured mapping,
+camera, DPI, modifier, focus or release loss cancels and consumes the pointer
+sequence. A finite geometric refusal, or a refused final preview update, on a valid explicit
+release commits the last validated preview, with a visible refusal and last-valid
+status; it never
+applies a substitute motion.
+
+`inspection.move_tool` reports the active tool, World/object-translation class,
+canonical numeric availability/reason, and any active ID/target/axis/provenance
+and distance in `inspection.units.linear`. Its optional `viewport` is explicitly
+labelled `last_native_viewport_capture`. It separates visible axis geometry and
+unavailable reasons from the last captured pointer's optional hit. Missing or
+stale capture is unavailable. Visible geometry is not a global pickability or
+Ready claim, especially in tiny viewports and the excluded center region.
+Baseline Scalars and source bytes are never exposed.
+
+This source candidate includes native-event and official-SDK regression tests.
+Their execution, native framebuffer/desktop proof and current-parent publication
+remain separate completion gates until recorded below; source wiring alone is
+not verification.

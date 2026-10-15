@@ -717,3 +717,92 @@ fn fractional_offset_viewport_uses_one_physical_projection_for_clicks_and_paint(
     }
     assert_eq!(native, before);
 }
+
+#[test]
+fn fractional_capture_click_handle_and_submission_share_the_same_physical_aspect() {
+    use azteccraft::{move_handles::WorldHandles, native_scene::WorldAxis};
+    let mut scene = NativeScene::default();
+    scene.create(Primitive::Cube, "cube").unwrap();
+    let view = ViewScene::from_native(&scene, 1024 * 1024).unwrap();
+    let camera = camera();
+    for (scale, origin, size) in [(1.25, [20, 10], [119, 103]), (2.5, [41, 21], [237, 206])] {
+        let context = egui::Context::default();
+        let renderer = renderer_handle();
+        let mut last = None;
+        let mut pointer = Pos2::ZERO;
+        for phase in 0..3 {
+            let events = match phase {
+                0 => vec![],
+                1 => vec![
+                    Event::PointerMoved(pointer),
+                    Event::PointerButton {
+                        pos: pointer,
+                        button: PointerButton::Primary,
+                        pressed: true,
+                        modifiers: Modifiers::NONE,
+                    },
+                ],
+                _ => vec![Event::PointerButton {
+                    pos: pointer,
+                    button: PointerButton::Primary,
+                    pressed: false,
+                    modifiers: Modifiers::NONE,
+                }],
+            };
+            let mut input = raw(phase as f64 / 60.0, Modifiers::NONE, events);
+            input
+                .viewports
+                .get_mut(&egui::ViewportId::ROOT)
+                .unwrap()
+                .native_pixels_per_point = Some(scale);
+            let mut output = context.run_ui(input, |ui| {
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_max(
+                    egui::pos2(16.3, 8.3),
+                    egui::pos2(111.1, 90.7),
+                )));
+                let captured = capture(&mut child, &camera).unwrap().unwrap();
+                pointer = captured.rect.center() + egui::vec2(20.0 / scale, 0.0);
+                captured
+                    .paint(
+                        Some(&renderer),
+                        &camera,
+                        &view,
+                        SelectionFeedback::Object(None),
+                        true,
+                    )
+                    .unwrap();
+                last = Some(captured);
+            });
+            output.textures_delta.clear();
+        }
+        let input = last.unwrap();
+        assert_eq!(input.physical_origin, origin);
+        assert_eq!(input.physical_size, size);
+        let aspect = size[0] as f32 / size[1] as f32;
+        assert_eq!(input.aspect().to_bits(), aspect.to_bits());
+        let ndc = input.click_ndc().unwrap();
+        assert!((ndc.x - 40.0 / size[0] as f32).abs() < 2e-6);
+        assert!(ndc.y.abs() < 2e-6);
+        let capture = input.move_capture(&camera).unwrap();
+        let pixel = capture
+            .pointer_pixel(Vec2::new(pointer.x, pointer.y))
+            .unwrap();
+        let handles = WorldHandles::new(&capture, glam::DVec3::ZERO).unwrap();
+        assert_eq!(handles.hit_test(pixel), Some(WorldAxis::X));
+        let actual_ray = camera.ray(ndc, input.aspect()).unwrap();
+        let expected_ray = camera.ray(ndc, aspect).unwrap();
+        assert_eq!(actual_ray, expected_ray);
+        let submission = recorded_submission(&renderer);
+        let matrix = camera.projection_matrix(aspect).unwrap() * camera.view_matrix();
+        let instance = &view.instances()[0];
+        for (vertex, index) in submission.vertices[..3]
+            .iter()
+            .zip(instance.faces().last().unwrap().triangles().flatten())
+        {
+            assert_eq!(
+                vertex[..4],
+                (matrix * instance.world_vertices()[index].extend(1.0)).to_array()
+            );
+        }
+    }
+}

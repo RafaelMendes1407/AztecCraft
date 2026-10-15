@@ -126,6 +126,9 @@ impl Editor {
         destination: SaveDestination<'_>,
         may_install: &dyn Fn() -> bool,
     ) -> Result<OperationReply, OperationError> {
+        if self.history.active_move().is_some() {
+            return Err(OperationError::BusyManipulation);
+        }
         if !self.commit_pending() {
             return Err(OperationError::InvalidInput(self.status.clone()));
         }
@@ -197,6 +200,9 @@ impl Editor {
         &mut self,
         action: FileAction,
     ) -> Result<OperationReply, OperationError> {
+        if self.history.active_move().is_some() {
+            return Err(OperationError::BusyManipulation);
+        }
         if self.files.is_modal() {
             return Err(OperationError::BusyEditing);
         }
@@ -233,6 +239,11 @@ impl Editor {
         self.request_file_action(FileAction::Close)
     }
     pub(super) fn open_dialog(&mut self) {
+        if let Err(error) = self.cancel_move() {
+            self.status = error.to_string();
+            self.error = true;
+            return;
+        }
         if self.files.is_modal() {
             return;
         }
@@ -247,6 +258,11 @@ impl Editor {
         }
     }
     pub(super) fn save_as_dialog(&mut self) {
+        if self.history.active_move().is_some() {
+            self.status = OperationError::BusyManipulation.to_string();
+            self.error = true;
+            return;
+        }
         if self.files.is_modal() || !self.files.save_as_available() {
             return;
         }
@@ -323,6 +339,9 @@ impl Editor {
         self.files.path = path;
         self.files.uncertain = None;
         self.history = History::new(scene);
+        self.active_tool = crate::editor_operations::ActiveTool::Select;
+        self.native_move = None;
+        self.move_viewport = None;
         self.selected = None;
         self.selected_path.clear();
         self.remembered_face = None;
@@ -350,6 +369,9 @@ impl Editor {
         decision: FileDecision,
         may_install: &dyn Fn() -> bool,
     ) -> Result<OperationReply, OperationError> {
+        if self.history.active_move().is_some() {
+            return Err(OperationError::BusyManipulation);
+        }
         if self.files.pending.as_ref().is_none_or(|p| p.id != id) {
             return Err(OperationError::StalePendingAction);
         }
@@ -693,6 +715,7 @@ mod tests {
         assert!(matches!(
             editor
                 .apply_operation_guarded(
+                    azteccraft::history::MoveProvenance::Native,
                     Operation::SaveSceneAs {
                         path: destination.clone()
                     },
@@ -767,7 +790,11 @@ mod tests {
         let guard = || relocate_completed_stage_once(&parent, &moved, &expected, &relocated);
         assert!(matches!(
             editor
-                .apply_operation_guarded(Operation::SaveScene, &guard)
+                .apply_operation_guarded(
+                    azteccraft::history::MoveProvenance::Native,
+                    Operation::SaveScene,
+                    &guard
+                )
                 .unwrap(),
             OperationReply::SaveUncertain { .. }
         ));
@@ -964,7 +991,11 @@ mod tests {
             let relocated = Cell::new(false);
             let guard = || relocate_completed_stage_once(&parent, &moved, &expected, &relocated);
             let reply = editor
-                .apply_operation_guarded(Operation::SaveScene, &guard)
+                .apply_operation_guarded(
+                    azteccraft::history::MoveProvenance::Native,
+                    Operation::SaveScene,
+                    &guard,
+                )
                 .unwrap();
             assert!(relocated.get());
             assert!(matches!(
@@ -1196,6 +1227,7 @@ mod tests {
         let guard = || std::fs::read(&source).ok().as_deref() != Some(expected.as_slice());
         let reply = editor
             .apply_operation_guarded(
+                azteccraft::history::MoveProvenance::Native,
                 Operation::ResolveFileAction {
                     pending_id: pending,
                     decision: FileDecision::Save,
@@ -1294,7 +1326,11 @@ mod tests {
             let guard = || relocate_completed_stage_once(&parent, &moved, &expected, &relocated);
             assert!(matches!(
                 editor
-                    .apply_operation_guarded(Operation::SaveScene, &guard)
+                    .apply_operation_guarded(
+                        azteccraft::history::MoveProvenance::Native,
+                        Operation::SaveScene,
+                        &guard
+                    )
                     .unwrap(),
                 OperationReply::SaveUncertain { dirty: true, .. }
             ));

@@ -3,11 +3,13 @@ use super::{
     transport::{Control, Shared, check_serialized_size},
 };
 use crate::editor_operations::{
-    FaceSelectionTarget, FileDecision, MAX_NAME_BYTES, MAX_RESULT_BYTES, Operation, OperationError,
-    OperationReply, RemoteRequest, SelectionMode, TOOL_NAMES, TransformInput,
+    ActiveTool, FaceSelectionTarget, FileDecision, MAX_NAME_BYTES, MAX_RESULT_BYTES, MoveDistance,
+    Operation, OperationError, OperationReply, RemoteRequest, SelectionMode, TOOL_NAMES,
+    TransformInput,
 };
 use azteccraft::{
-    native_scene::{FaceTarget, NativeId},
+    history::{MoveError, MoveFinish, MoveId},
+    native_scene::{FaceTarget, NativeId, TransformTarget, WorldAxis},
     scene::{NodeId, Primitive},
 };
 use rmcp::{
@@ -34,6 +36,54 @@ struct InspectArgs {}
 #[serde(deny_unknown_fields)]
 struct MutationArgs {
     scene_token: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ActiveToolArgs {
+    scene_token: String,
+    tool: ActiveTool,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum AxisInput {
+    X,
+    Y,
+    Z,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct BeginMoveArgs {
+    scene_token: String,
+    node_id: String,
+    #[schemars(length(min = 1, max = 256))]
+    instance_path: Vec<String>,
+    axis: AxisInput,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct UpdateMoveArgs {
+    scene_token: String,
+    move_id: String,
+    distance: f64,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum FinishInput {
+    Commit,
+    Cancel,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct FinishMoveArgs {
+    scene_token: String,
+    move_id: String,
+    finish: FinishInput,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -218,6 +268,17 @@ fn native_id(value: &str) -> Result<NativeId, ErrorData> {
     })
 }
 
+fn move_id(value: &str) -> Result<MoveId, ErrorData> {
+    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(ErrorData::invalid_params(
+            "move_id must be an unsigned decimal string",
+            None,
+        ));
+    }
+    MoveId::from_decimal(value)
+        .map_err(|_| ErrorData::invalid_params("move_id must fit an unsigned 64-bit integer", None))
+}
+
 fn parse_request(name: &str, arguments: JsonObject) -> Result<RemoteRequest, ErrorData> {
     if arguments
         .get("name")
@@ -236,6 +297,72 @@ fn parse_request(name: &str, arguments: JsonObject) -> Result<RemoteRequest, Err
                 expected_scene_token: None,
                 operation: Operation::Inspect,
             });
+        }
+        "set_active_tool" => {
+            let args: ActiveToolArgs = decode(arguments)?;
+            (
+                token(&args.scene_token)?,
+                Operation::SetActiveTool(args.tool),
+            )
+        }
+        "begin_move" => {
+            let args: BeginMoveArgs = decode(arguments)?;
+            if !(1..=256).contains(&args.instance_path.len()) {
+                return Err(ErrorData::invalid_params(
+                    "instance_path must contain 1 to 256 IDs",
+                    None,
+                ));
+            }
+            let path = args
+                .instance_path
+                .into_iter()
+                .map(|value| native_id(&value))
+                .collect::<Result<Vec<_>, _>>()?;
+            let axis = match args.axis {
+                AxisInput::X => WorldAxis::X,
+                AxisInput::Y => WorldAxis::Y,
+                AxisInput::Z => WorldAxis::Z,
+            };
+            (
+                token(&args.scene_token)?,
+                Operation::BeginMove {
+                    target: TransformTarget {
+                        node: node_id(&args.node_id)?,
+                        path,
+                    },
+                    axis,
+                },
+            )
+        }
+        "update_move" => {
+            let args: UpdateMoveArgs = decode(arguments)?;
+            if !args.distance.is_finite() {
+                return Err(ErrorData::invalid_params(
+                    "Move distance must be finite",
+                    None,
+                ));
+            }
+            (
+                token(&args.scene_token)?,
+                Operation::UpdateMove {
+                    id: move_id(&args.move_id)?,
+                    distance: MoveDistance::Declared(args.distance),
+                },
+            )
+        }
+        "finish_move" => {
+            let args: FinishMoveArgs = decode(arguments)?;
+            let finish = match args.finish {
+                FinishInput::Commit => MoveFinish::Commit,
+                FinishInput::Cancel => MoveFinish::Cancel,
+            };
+            (
+                token(&args.scene_token)?,
+                Operation::FinishMove {
+                    id: move_id(&args.move_id)?,
+                    finish,
+                },
+            )
         }
         "create_primitive" => {
             let args: CreateArgs = decode(arguments)?;
@@ -539,9 +666,13 @@ fn catalog() -> Vec<Tool> {
         .map(|name| {
             let (description, input_schema) = match name {
                 "inspect_scene" => (
-                    "Inspect committed editor state, document origin, bounded canonical curve IDs/names/class/counts/domain, retained-source counts and read-only reason, pending human edits and source-appearance readiness. Curve draw_available means at least one visible instance prepared as draw geometry; it does not claim GPU health or framebuffer success. No CV arrays or script bodies are exposed",
+                    "Inspect committed editor state, including an active Move preview, document origin, bounded canonical curve IDs/names/class/counts/domain, retained-source counts and read-only reason, pending human edits and source-appearance readiness. Curve draw_available means at least one visible instance prepared as draw geometry; it does not claim GPU health or framebuffer success. No CV arrays or script bodies are exposed",
                     schema::<InspectArgs>(),
                 ),
+                "set_active_tool" => ("Select the native Select or World-axis Move tool; unsupported tools are not exposed", schema::<ActiveToolArgs>()),
+                "begin_move" => ("Begin one remote-owned World-axis translation of the exact selected transform instance. Numeric motion may begin while Select is active; this does not change tools", schema::<BeginMoveArgs>()),
+                "update_move" => ("Preview a finite absolute World-axis distance from begin in declared scene linear units. Matching scene token and remote-owned Move ID are required", schema::<UpdateMoveArgs>()),
+                "finish_move" => ("Commit one undoable Move edit or cancel to the exact begin authoring state. Only the matching remote-owned Move ID may finish", schema::<FinishMoveArgs>()),
                 "create_primitive" => (
                     "Create a cube or plane in the live editor",
                     schema::<CreateArgs>(),
@@ -642,7 +773,11 @@ fn catalog() -> Vec<Tool> {
                     .read_only(name == "inspect_scene")
                     .idempotent(matches!(
                         name,
-                        "set_grid_visibility" | "select_node" | "set_selection_mode" | "select_face"
+                        "set_grid_visibility"
+                            | "set_active_tool"
+                            | "select_node"
+                            | "set_selection_mode"
+                            | "select_face"
                     ))
                     .open_world(false),
             )
@@ -688,6 +823,14 @@ fn tool_reply(reply: Result<OperationReply, OperationError>) -> CallToolResult {
         Err(error) => {
             let code = match &error {
                 OperationError::BusyEditing => "busy_editing",
+                OperationError::BusyManipulation => "busy_manipulation",
+                OperationError::Move(error) => match error {
+                    MoveError::StaleScene => "stale_scene",
+                    MoveError::StaleMove => "stale_move",
+                    MoveError::WrongOwner => "move_owner",
+                    MoveError::Busy => "busy_manipulation",
+                    _ => "move_error",
+                },
                 OperationError::StaleScene => "stale_scene",
                 OperationError::TooLarge => "too_large",
                 OperationError::NoSelection => "no_selection",
@@ -847,6 +990,73 @@ mod tests {
     }
 
     #[test]
+    fn move_schemas_reject_unsupported_axes_tools_ids_and_extra_fields() {
+        let token = Uuid::new_v4().to_string();
+        for (name, args) in [
+            (
+                "set_active_tool",
+                json!({"scene_token":token,"tool":"rotate"}),
+            ),
+            (
+                "set_active_tool",
+                json!({"scene_token":token,"tool":"move","owner":"native"}),
+            ),
+            (
+                "begin_move",
+                json!({"scene_token":token,"node_id":"1","instance_path":[],"axis":"x"}),
+            ),
+            (
+                "begin_move",
+                json!({"scene_token":token,"node_id":"1","instance_path":["1"],"axis":"xy"}),
+            ),
+            (
+                "begin_move",
+                json!({"scene_token":token,"node_id":"1","instance_path":vec!["1";257],"axis":"z"}),
+            ),
+            (
+                "begin_move",
+                json!({"scene_token":token,"node_id":1,"instance_path":["1"],"axis":"x"}),
+            ),
+            (
+                "update_move",
+                json!({"scene_token":token,"move_id":"+1","distance":1}),
+            ),
+            (
+                "update_move",
+                json!({"scene_token":token,"move_id":"18446744073709551616","distance":1}),
+            ),
+            (
+                "update_move",
+                json!({"scene_token":token,"move_id":1,"distance":1}),
+            ),
+            (
+                "finish_move",
+                json!({"scene_token":token,"move_id":"1","finish":"release"}),
+            ),
+            (
+                "finish_move",
+                json!({"scene_token":token,"move_id":"1","finish":"commit","owner":"native"}),
+            ),
+        ] {
+            assert!(
+                parse_request(name, args.as_object().unwrap().clone()).is_err(),
+                "{name}: {args}"
+            );
+        }
+        let valid = json!({"scene_token":token,"move_id":"18446744073709551615","distance":-1.0000000000000002});
+        let request = parse_request("update_move", valid.as_object().unwrap().clone()).unwrap();
+        let Operation::UpdateMove {
+            id,
+            distance: MoveDistance::Declared(value),
+        } = request.operation
+        else {
+            panic!()
+        };
+        assert_eq!(id.to_decimal(), "18446744073709551615");
+        assert_eq!(value.to_bits(), (-1.0000000000000002f64).to_bits());
+    }
+
+    #[test]
     fn advertised_catalogue_schemas_and_handlers_match_exactly() {
         let tools = catalog();
         assert_eq!(
@@ -865,6 +1075,12 @@ mod tests {
             );
             let args = match tool.name.as_ref() {
                 "inspect_scene" => json!({}),
+                "set_active_tool" => json!({"scene_token":token,"tool":"move"}),
+                "begin_move" => {
+                    json!({"scene_token":token,"node_id":"1","instance_path":["1"],"axis":"x"})
+                }
+                "update_move" => json!({"scene_token":token,"move_id":"1","distance":1.25}),
+                "finish_move" => json!({"scene_token":token,"move_id":"1","finish":"cancel"}),
                 "create_primitive" => json!({"scene_token":token,"primitive":"cube"}),
                 "select_node" => json!({"scene_token":token,"node_id":null}),
                 "set_selection_mode" => json!({"scene_token":token,"mode":"face"}),
@@ -898,7 +1114,11 @@ mod tests {
         for tool in catalog() {
             let expected = matches!(
                 tool.name.as_ref(),
-                "set_grid_visibility" | "select_node" | "set_selection_mode" | "select_face"
+                "set_grid_visibility"
+                    | "set_active_tool"
+                    | "select_node"
+                    | "set_selection_mode"
+                    | "select_face"
             );
             assert_eq!(
                 tool.annotations.unwrap().idempotent_hint == Some(true),

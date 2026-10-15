@@ -202,7 +202,11 @@ impl ViewportRenderer {
         if let Some(error) = self.terminal_error() {
             return Err(RenderError::Backend(error));
         }
-        if !rect.is_finite() || rect.width() <= 0.0 || rect.height() <= 0.0 {
+        if !rect.is_finite()
+            || rect.width() <= 0.0
+            || rect.height() <= 0.0
+            || physical_size.contains(&0)
+        {
             return Err(RenderError::Camera(InvalidCameraInput));
         }
         let submission = Submission::new(
