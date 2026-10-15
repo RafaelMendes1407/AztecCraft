@@ -250,6 +250,7 @@ impl Editor {
             | Operation::SelectFace { .. }
             | Operation::SetSelectionMode(_)
             | Operation::FrameSelected
+            | Operation::SetActiveTool(_)
             | Operation::SetGridVisible { .. } => None,
             Operation::Orbit { .. } | Operation::Pan { .. } | Operation::Dolly { .. } => None,
             Operation::Undo => Some("Undo"),

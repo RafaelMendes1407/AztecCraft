@@ -1330,6 +1330,17 @@ fn native_face_mode_switch_cancels_an_active_native_move_and_remote_move_blocks_
 }
 
 #[test]
+fn native_tool_switch_reports_no_scene_edit_status() {
+    let (mut editor, _, _) = setup(1.0);
+    editor.status = "sentinel".into();
+    editor.native_operation(Operation::SetActiveTool(ActiveTool::Select));
+    assert_eq!(editor.active_tool, ActiveTool::Select);
+    assert_eq!(editor.status, "sentinel");
+    editor.native_operation(Operation::SetActiveTool(ActiveTool::Select));
+    assert_eq!(editor.status, "sentinel");
+}
+
+#[test]
 fn hover_and_active_painter_states_use_the_same_actual_axis_hit() {
     let (mut editor, context, rect) = setup(1.0);
     let shaft_color = |output: &egui::FullOutput| {

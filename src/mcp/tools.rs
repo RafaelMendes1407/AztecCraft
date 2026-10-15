@@ -773,7 +773,11 @@ fn catalog() -> Vec<Tool> {
                     .read_only(name == "inspect_scene")
                     .idempotent(matches!(
                         name,
-                        "set_grid_visibility" | "select_node" | "set_selection_mode" | "select_face"
+                        "set_grid_visibility"
+                            | "set_active_tool"
+                            | "select_node"
+                            | "set_selection_mode"
+                            | "select_face"
                     ))
                     .open_world(false),
             )
@@ -1110,7 +1114,11 @@ mod tests {
         for tool in catalog() {
             let expected = matches!(
                 tool.name.as_ref(),
-                "set_grid_visibility" | "select_node" | "set_selection_mode" | "select_face"
+                "set_grid_visibility"
+                    | "set_active_tool"
+                    | "select_node"
+                    | "set_selection_mode"
+                    | "select_face"
             );
             assert_eq!(
                 tool.annotations.unwrap().idempotent_hint == Some(true),
