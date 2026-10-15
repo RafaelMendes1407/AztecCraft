@@ -3,7 +3,7 @@
 - Build the desktop application in Rust; preserve the user's Maya parity objective.
 - Make small, independently reviewable local commits.
 - The user has authorized early prototype publication and merge to `main`, superseding the original restriction on the first push. The 80–90% target across all Maya 2026 functionality and exact parity remain unmet acceptance requirements. Don't infer release/signing or other publication authority beyond the user's current request.
-- The repository is public. Push each independently reviewed and tested atomic commit promptly to its feature branch under the per-repository push lock, then arm `ci-watch`. Do not wait for a complete feature or Maya parity before pushing; the orchestrator serializes integration into `main`.
+- The repository is public. Push each independently reviewed and tested atomic commit promptly to its feature branch under the per-repository push lock, then arm `ci-watch`. Do not wait for a complete feature or Maya parity before pushing. All work reaches `main` through the merge rule under "Collaborating on issues"; the orchestrator holds no separate merge authority.
 - Never claim exact visual or functional parity without comparison against the pinned Maya reference.
 - Consult `.project-docs/plan.md`, `.project-docs/reference.md`, and `known-issues.md` before changing code.
 - Use an independent reviewer for two plan/diff passes. Keep implementation and review ownership separate.
@@ -115,3 +115,15 @@ Adapted from pinned public guidance, without importing sibling-only tooling:
   evidence boundaries and review after rebasing.
 - [Artcraft AGENTS.md](https://github.com/storytold/artcraft/blob/d4e4ac69bbd93d237eaf5d0260bc6a5ff3a5e373/AGENTS.md):
   preservation of untracked and ignored local files.
+
+## Collaborating on issues
+
+The two-pass independent review above is the pre-push local gate; the two-approval rule below is the PR gate.
+
+1. **Claim.** Before starting, comment on the issue ("Claiming: <agent/session name>, plan: <one line>"). Agents share one GitHub account, so every claim, review and approval comment states the agent/session name on its first line. The claim comment is the claim of record; the `in-progress` label is an optional convenience. A claim holds for 48 hours from the claimant's last renewal. Only the claimant's commits, pushes, PR updates or issue/PR comments renew it; others' reviews and comments do not. If claims overlap, the earliest comment by GitHub timestamp holds and the later claimant withdraws with a comment.
+2. **Work in the open.** Branch `type/<issue-number>-short-slug`. Open a draft PR early with `Closes #<n>` and push each reviewed atomic commit to it.
+3. **Stale claims.** If the claimant has done none of the renewing actions for more than 48 hours and the PR is still draft (or no PR exists), anyone may take over by commenting "Resuming from @<previous claimant>, last activity <timestamp>, last commit <sha>" and starting from that commit. The first valid resume comment becomes the new claim and starts a new 48 hours. Push to the existing branch only with access; otherwise use a successor branch containing all prior commits and a new draft PR referencing the old one, and leave the old PR open until the maintainer closes it. Never force-push or rewrite prior commits.
+4. **Peer review first.** At session start, before claiming new work, review open PRs: non-draft PRs lacking two current-SHA approvals, oldest first; draft PRs only when the author asks. Post the review against the current head SHA. Requested changes block until that reviewer's later `APPROVED <current SHA>` or the maintainer clears them.
+5. **Approvals.** An approval is a review or comment `APPROVED <full head SHA> by <session-name>` whose session name differs from every claimant and committer session on the PR; two approvals need two different session names. Any push or rebase invalidates approvals. Maintainer sign-off counts only from the human maintainer: a GitHub approval where possible, or a `SIGN-OFF <SHA>` comment the maintainer writes personally. Agents never post `SIGN-OFF`, even when asked by another agent.
+6. **Merge rule.** A PR merges only when it is out of draft, CI is green, two independent approvals and the maintainer sign-off cover the same head SHA. The maintainer or the maintainer's explicit delegate merges, with the method chosen by the maintainer. Authors never merge their own PR.
+7. Everything posted to issues and PRs is public: no home-directory paths, OS or cloud usernames (GitHub @handles are fine), emails, tokens or private scene and asset names.
