@@ -48,6 +48,7 @@ pub enum PendingActionStatus {
 pub enum DocumentOrigin {
     Untitled,
     MayaBinary,
+    MayaAscii,
     LegacyAztec,
 }
 
@@ -219,6 +220,10 @@ pub struct SceneInspection {
     pub scene_token: String,
     pub nodes: Vec<NodeInspection>,
     pub shapes: Vec<ShapeInspection>,
+    pub curves: Vec<CurveInspection>,
+    pub retained_source_bytes: usize,
+    pub retained_source_records: usize,
+    pub read_only_reason: Option<String>,
     pub units: UnitsInspection,
     pub save_available: bool,
     pub save_as_available: bool,
@@ -325,6 +330,20 @@ pub struct MaterialInspection {
     pub editing_available: bool,
     pub rendering_available: bool,
 }
+
+#[derive(Debug, Serialize)]
+#[cfg(any(test, feature = "mcp"))]
+pub struct CurveInspection {
+    pub id: String,
+    pub name: String,
+    pub degree: u32,
+    pub form: azteccraft::native_scene::CurveForm,
+    pub control_vertices: usize,
+    pub knots: usize,
+    pub domain: [f64; 2],
+    pub read_only: bool,
+    pub draw_available: bool,
+}
 #[derive(Debug, Serialize)]
 #[cfg(any(test, feature = "mcp"))]
 pub struct PendingInspection {
@@ -420,6 +439,14 @@ pub fn check_inspection_size(
             return Err(OperationError::TooLarge);
         }
     }
+    for curve in scene.curves() {
+        estimated_bytes = estimated_bytes
+            .saturating_add(512)
+            .saturating_add(curve.name().len().saturating_mul(6));
+        if estimated_bytes > limit {
+            return Err(OperationError::TooLarge);
+        }
+    }
     estimated_bytes = estimated_bytes.saturating_add(scene.dag_edges().len().saturating_mul(24));
     if estimated_bytes > limit {
         return Err(OperationError::TooLarge);
@@ -431,6 +458,33 @@ pub fn check_inspection_size(
 mod tests {
     use super::*;
     use azteccraft::{native_scene::NativeScene, scene::Scene};
+
+    #[test]
+    fn curve_inspection_preflight_bounds_names_and_fixed_fields_before_cloning() {
+        let curve = CurveInspection {
+            id: u64::MAX.to_string(),
+            name: String::new(),
+            degree: u32::MAX,
+            form: azteccraft::native_scene::CurveForm::Open,
+            control_vertices: usize::MAX,
+            knots: usize::MAX,
+            domain: [-f64::MAX, f64::MAX],
+            read_only: true,
+            draw_available: true,
+        };
+        assert!(serde_json::to_vec(&curve).unwrap().len() <= 512);
+        let mut source = String::from(
+            "//Maya ASCII 2016 scene\nrequires maya \"2016\"; currentUnit -l centimeter -a degree -t film; createNode transform -n \"root\";",
+        );
+        for index in 0..100 {
+            source.push_str(&format!(" createNode nurbsCurve -n \"c{index}_{}\" -p \"root\"; setAttr \".cc\" -type \"nurbsCurve\" 3 1 0 no 3 6 0 0 0 1 1 1 4 0 0 0 1 1 0 2 -1 0 3 0 0;","x".repeat(650)));
+        }
+        let scene = azteccraft::native_scene::ascii::decode(source.into_bytes().into()).unwrap();
+        assert!(matches!(
+            check_inspection_size(&scene),
+            Err(OperationError::TooLarge)
+        ));
+    }
 
     #[test]
     fn appearance_summary_preflight_bounds_the_largest_fixed_dto() {

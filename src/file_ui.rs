@@ -1,8 +1,6 @@
 use super::Editor;
 #[cfg(any(test, feature = "mcp"))]
-use crate::editor_operations::DocumentOrigin;
-#[cfg(any(test, feature = "mcp"))]
-use crate::editor_operations::PendingInspection;
+use crate::editor_operations::{DocumentOrigin, PendingInspection};
 use crate::editor_operations::{
     FileActionKind, FileDecision, Operation, OperationError, OperationReply, PendingActionStatus,
 };
@@ -85,6 +83,7 @@ impl FileState {
         match self.origin {
             NativeOrigin::Untitled => DocumentOrigin::Untitled,
             NativeOrigin::Binary(_) => DocumentOrigin::MayaBinary,
+            NativeOrigin::Ascii(_) => DocumentOrigin::MayaAscii,
             NativeOrigin::Legacy(_) => DocumentOrigin::LegacyAztec,
         }
     }
@@ -238,7 +237,8 @@ impl Editor {
             return;
         }
         if let Some(path) = rfd::FileDialog::new()
-            .set_title("Open Maya binary or legacy scene")
+            .set_title("Open Maya or legacy scene")
+            .add_filter("Maya static cubic ASCII scene", &["ma"])
             .add_filter("Maya binary scene", &["mb"])
             .add_filter("Legacy AztecCraft scene", &["aztec"])
             .pick_file()
@@ -545,6 +545,7 @@ fn camera_for_scene(scene: &NativeScene, aspect: f32) -> Result<Camera, Operatio
         .instances()
         .iter()
         .any(|instance| !instance.world_vertices().is_empty())
+        || !view.curve_instances().is_empty()
     {
         camera
             .frame_view(&view, None, aspect)
@@ -1354,6 +1355,13 @@ mod tests {
         ));
     }
 
+    mod ascii_fixture {
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/support/maya_ascii.rs"
+        ));
+    }
+
     #[test]
     fn face_lifecycle_preserves_imported_source_and_cancelled_files_but_clears_replacement_ids() {
         let directory = tempfile::tempdir().unwrap();
@@ -1541,6 +1549,199 @@ mod tests {
             assert!(editor.history.can_undo());
             assert!(!editor.history.can_redo());
             assert!(editor.is_dirty());
+        }
+    }
+
+    #[test]
+    fn ascii_failed_native_open_preserves_draft_history_selection_and_camera() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("bad.ma");
+        let source = String::from_utf8(ascii_fixture::specimen())
+            .unwrap()
+            .replace("12 0 0", "100000000 0 0");
+        std::fs::write(&path, &source).unwrap();
+        let mut editor = Editor::default();
+        editor.create(Primitive::Cube);
+        let id = editor.selected.unwrap();
+        editor
+            .apply_operation(Operation::Rename {
+                id,
+                name: "undone".into(),
+            })
+            .unwrap();
+        editor.apply_operation(Operation::Undo).unwrap();
+        editor.name = "human draft".into();
+        let before = editor.history.scene().clone();
+        let camera = editor.camera.clone();
+        let selected = (editor.selected, editor.selected_path.clone());
+        let fields = (editor.name.clone(), editor.channels.clone());
+        let token = editor.scene_token;
+        assert!(editor.open_candidate(&path).is_err());
+        assert_eq!(editor.history.scene(), &before);
+        assert_eq!(editor.camera, camera);
+        assert_eq!((editor.selected, editor.selected_path.clone()), selected);
+        assert_eq!((editor.name, editor.channels), fields);
+        assert_eq!(editor.scene_token, token);
+        assert!(editor.history.can_undo() && editor.history.can_redo());
+        assert!(!editor.files.is_modal());
+        assert_eq!(std::fs::read(path).unwrap(), source.as_bytes());
+    }
+
+    #[test]
+    fn ascii_pending_open_keeps_staged_source_and_reframes_after_resize() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("curve.ma");
+        let source = ascii_fixture::specimen();
+        std::fs::write(&path, &source).unwrap();
+        let mut editor = Editor::default();
+        editor.create(Primitive::Cube);
+        let before = editor.history.scene().clone();
+        let token = editor.scene_token;
+        let OperationReply::PendingConfirmation {
+            pending_action_id, ..
+        } = editor.open_candidate(&path).unwrap()
+        else {
+            panic!("expected pending Open")
+        };
+        assert_eq!(editor.history.scene(), &before);
+        assert_eq!(editor.scene_token, token);
+        std::fs::write(&path, b"changed after staging").unwrap();
+        editor.aspect = 0.1;
+        editor
+            .resolve_file_action(
+                Uuid::parse_str(&pending_action_id).unwrap(),
+                FileDecision::Discard,
+            )
+            .unwrap();
+        assert_ne!(editor.scene_token, token);
+        assert_eq!(editor.files.origin.source_bytes().unwrap().as_ref(), source);
+        assert_eq!(editor.files.document_origin(), DocumentOrigin::MayaAscii);
+        assert!(!editor.is_dirty() && !editor.history.can_undo());
+        assert!(editor.selected.is_none() && editor.selected_path.is_empty());
+        let view = ViewScene::from_native(editor.history.scene(), 256 * 1024 * 1024).unwrap();
+        for point in view.curve_instances()[0].segments().iter().flatten() {
+            let ndc = editor
+                .camera
+                .project(*point, editor.aspect)
+                .unwrap()
+                .unwrap();
+            assert!(ndc.x.abs() < 1.0 && ndc.y.abs() < 1.0);
+        }
+        assert_eq!(std::fs::read(path).unwrap(), b"changed after staging");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_acknowledges_binary_and_revalidates_queued_ascii_without_rewriting_it() {
+        for changed in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let binary = directory.path().join("current.mb");
+            let ascii = directory.path().join("queued.ma");
+            std::fs::write(&binary, binary_fixture::specimen()).unwrap();
+            let original = ascii_fixture::specimen();
+            std::fs::write(&ascii, &original).unwrap();
+            let mut editor = Editor::default();
+            editor
+                .apply_operation(Operation::OpenScene {
+                    path: binary.clone(),
+                })
+                .unwrap();
+            let id = editor.history.scene().nodes()[0].id();
+            let mut transform = editor
+                .transform_input(editor.history.scene().node(id).unwrap().transform())
+                .unwrap();
+            transform.translation[0] += 1.0;
+            editor
+                .apply_operation(Operation::SetTransform { id, transform })
+                .unwrap();
+            let before = editor.history.scene().clone();
+            let token = editor.scene_token;
+            let camera = editor.camera.clone();
+            let OperationReply::PendingConfirmation {
+                pending_action_id, ..
+            } = editor
+                .apply_operation(Operation::OpenScene {
+                    path: ascii.clone(),
+                })
+                .unwrap()
+            else {
+                panic!("expected queued ASCII Open");
+            };
+            let pending = Uuid::parse_str(&pending_action_id).unwrap();
+            let arrival = if changed {
+                b"changed after staging".to_vec()
+            } else {
+                original.clone()
+            };
+            std::fs::write(&ascii, &arrival).unwrap();
+            editor.aspect = 0.1;
+            let reply = editor
+                .apply_operation(Operation::ResolveFileAction {
+                    pending_id: pending,
+                    decision: FileDecision::Save,
+                })
+                .unwrap();
+            let saved = document::load_native(&binary).unwrap();
+            assert_eq!(
+                saved.scene.node(id).unwrap().transform().translation,
+                transform.translation
+            );
+            if changed {
+                assert!(matches!(
+                    reply,
+                    OperationReply::Saved {
+                        dirty: false,
+                        pending_action_status: PendingActionStatus::SourceChanged,
+                        ..
+                    }
+                ));
+                assert_eq!(editor.scene_token, token);
+                assert_eq!(editor.history.scene(), &before);
+                assert_eq!(editor.files.saved, before);
+                assert_eq!(editor.camera, camera);
+                let queued = editor.files.pending.as_ref().unwrap();
+                assert_eq!(queued.id, pending);
+                assert!(queued.source_changed);
+                let FileAction::Open { document, .. } = &queued.action else {
+                    panic!("expected retained ASCII candidate");
+                };
+                assert_eq!(document.origin.source_bytes().unwrap().as_ref(), original);
+                assert_eq!(document.scene.curves().len(), 1);
+                assert!(matches!(
+                    editor.apply_operation(Operation::ResolveFileAction {
+                        pending_id: pending,
+                        decision: FileDecision::Discard,
+                    }),
+                    Err(OperationError::NativeSave(NativeSaveError::SourceChanged))
+                ));
+                editor
+                    .apply_operation(Operation::ResolveFileAction {
+                        pending_id: pending,
+                        decision: FileDecision::Cancel,
+                    })
+                    .unwrap();
+                assert!(editor.files.pending.is_none());
+                assert_eq!(editor.history.scene(), &before);
+                assert_eq!(editor.scene_token, token);
+                assert!(!editor.is_dirty());
+            } else {
+                assert!(matches!(reply, OperationReply::DocumentApplied { .. }));
+                assert_ne!(editor.scene_token, token);
+                assert_eq!(editor.files.document_origin(), DocumentOrigin::MayaAscii);
+                assert!(!editor.files.save_available() && !editor.files.save_as_available());
+                let view =
+                    ViewScene::from_native(editor.history.scene(), 256 * 1024 * 1024).unwrap();
+                assert_eq!(view.curve_instances().len(), 1);
+                for point in view.curve_instances()[0].segments().iter().flatten() {
+                    let ndc = editor
+                        .camera
+                        .project(*point, editor.aspect)
+                        .unwrap()
+                        .unwrap();
+                    assert!(ndc.x.abs() < 1.0 && ndc.y.abs() < 1.0);
+                }
+            }
+            assert_eq!(std::fs::read(ascii).unwrap(), arrival);
         }
     }
 
