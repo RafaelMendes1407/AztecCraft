@@ -5031,6 +5031,10 @@ mod tests {
     }
 }
 
+#[cfg(test)]
+#[path = "snapshots.rs"]
+mod snapshots;
+
 #[cfg(all(test, feature = "mcp"))]
 #[path = "mcp_editor_tests.rs"]
 mod mcp_editor_tests;

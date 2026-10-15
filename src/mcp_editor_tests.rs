@@ -4298,6 +4298,19 @@ mod official_client {
     }
 
     #[tokio::test]
+    async fn sdk_tool_catalog_matches_committed_snapshot() {
+        let context = egui::Context::default();
+        let (_editor, client, server) = start(&context).await;
+        let catalog = client.peer().list_tools(None).await.unwrap();
+        assert!(catalog.next_cursor.is_none());
+        let mut text = serde_json::to_string_pretty(&catalog.tools).unwrap();
+        text.push('\n');
+        crate::app::snapshots::assert_snapshot("mcp_tool_catalog.json", &text);
+        client.cancel().await.unwrap();
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
     async fn strict_sdk_requests_and_core_errors_preserve_live_editor_state() {
         let context = egui::Context::default();
         let (mut editor, client, server) = start(&context).await;
