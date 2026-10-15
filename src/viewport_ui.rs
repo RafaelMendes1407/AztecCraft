@@ -1,6 +1,7 @@
 use crate::editor_operations::Operation;
 use crate::viewport_renderer::{RenderError, SelectionFeedback, ViewportRenderer};
 use azteccraft::{
+    move_handles::{HandleError, ViewportCapture},
     native_scene::{FaceTarget, NativeId},
     scene::NodeId,
     view_scene::{ViewError, ViewScene},
@@ -28,10 +29,23 @@ impl SelectionRefusal {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct MovePointer {
+    pub position: Option<Vec2>,
+    pub pressed: bool,
+    pub released: bool,
+    pub down: bool,
+    pub modified: bool,
+    pub focused: bool,
+    pub gone: bool,
+}
+
 pub struct ViewportInput {
     painter: Painter,
     rect: Rect,
+    physical_origin: [i32; 2],
     physical_size: [u32; 2],
+    move_pointer: MovePointer,
     click_ndc: Option<Vec2>,
     click_points: Option<Vec2>,
     pixels_per_point: f32,
@@ -139,10 +153,35 @@ pub fn capture(
             unsupported_selection = Some(SelectionRefusal::ModifiedClick);
         }
     }
+    let move_pointer = ui.input(|input| MovePointer {
+        position: input
+            .pointer
+            .latest_pos()
+            .map(|point| Vec2::new(point.x, point.y)),
+        pressed: response.contains_pointer()
+            && input.pointer.button_pressed(PointerButton::Primary),
+        released: input.pointer.button_released(PointerButton::Primary),
+        down: input.pointer.button_down(PointerButton::Primary),
+        modified: !input.modifiers.is_none()
+            || input.events.iter().any(|event| match event {
+                egui::Event::ModifiersChanged(modifiers)
+                | egui::Event::PointerButton { modifiers, .. }
+                | egui::Event::Key { modifiers, .. }
+                | egui::Event::MouseWheel { modifiers, .. } => !modifiers.is_none(),
+                _ => false,
+            }),
+        focused: input.focused,
+        gone: input
+            .events
+            .iter()
+            .any(|event| matches!(event, egui::Event::PointerGone)),
+    });
     Ok(Some(ViewportInput {
         painter,
         rect,
+        physical_origin: [pixels.left_px, pixels.top_px],
         physical_size: [pixels.width_px as u32, pixels.height_px as u32],
+        move_pointer,
         click_ndc,
         click_points,
         pixels_per_point: scale,
@@ -154,6 +193,26 @@ pub fn capture(
 impl ViewportInput {
     pub fn aspect(&self) -> f32 {
         self.physical_size[0] as f32 / self.physical_size[1] as f32
+    }
+    pub fn move_capture(&self, camera: &Camera) -> Result<ViewportCapture, HandleError> {
+        ViewportCapture::new(
+            camera,
+            self.physical_origin,
+            self.physical_size,
+            self.pixels_per_point,
+        )
+    }
+    pub fn move_pointer(&self) -> MovePointer {
+        self.move_pointer
+    }
+    pub fn painter(&self) -> &Painter {
+        &self.painter
+    }
+    pub fn rect(&self) -> Rect {
+        self.rect
+    }
+    pub fn pixels_per_point(&self) -> f32 {
+        self.pixels_per_point
     }
     pub fn click_ndc(&self) -> Option<Vec2> {
         self.click_ndc

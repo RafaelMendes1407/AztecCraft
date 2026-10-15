@@ -109,6 +109,10 @@ impl ViewportCapture {
         })
     }
 
+    pub fn same_camera(&self, camera: &Camera) -> bool {
+        self.camera.same_capture(camera)
+    }
+
     pub fn same_mapping(&self, other: &Self) -> bool {
         self.camera.same_capture(&other.camera)
             && self.physical_origin == other.physical_origin
@@ -314,6 +318,10 @@ impl AxisDrag {
             axis,
             begin_parameter,
         })
+    }
+
+    pub fn same_capture(&self, current_capture: &ViewportCapture) -> bool {
+        self.capture.same_mapping(current_capture)
     }
 
     pub fn distance_cm(

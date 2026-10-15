@@ -475,3 +475,27 @@ geometry/visibility counts and source Arc identity. Independent external ranges
 also check parent bindings, units, scalar origins and exact internal words,
 retained f32 base-point bits and exact f64 sparse-offset sums.
 Its library success does not constitute a native Open or appearance proof.
+
+## World-axis Move source candidate
+
+The native toolbox now has Select/Move vector buttons and unmodified Q/W.
+World-only X/Y/Z drags use the same exact selected instance and canonical History
+transaction as the four Move MCP tools. Preview changes are authoritative,
+Channel Box fields remain synchronized and locked during the transaction, and a
+release commits at most one Undo entry. Escape and capture/lifecycle changes
+restore the exact begin authoring intent. Physical viewport origin/size, camera
+projection and fractional DPI mapping are captured and compared before update or
+release; renderer submission uses the same captured physical aspect.
+
+Only object translation is implemented. Plane/center handles, components,
+rotation/scale manipulation, snapping and alternate orientations remain
+unsupported. Missing source translation leaves, selected pivots, driven data and
+unstable or unrepresentable transforms refuse editing. Pixel sizes, ray thresholds
+and last-valid release behavior are provisional application policies.
+
+Source-only tests were authored for real Q/W/buttons and egui pointer paths,
+absolute XYZ and outside-viewport motion, one Undo, stationary release under
+window/DPI changes, cancellation/source-word preservation, strict SDK parameters
+and actual SDK preview/commit/cancel/Save/reopen. Runtime, native framebuffer and
+desktop verification are pending on this candidate; no full Maya parity or
+current-parent publication is claimed by this paragraph.

@@ -14,10 +14,21 @@ pub enum Icon {
 }
 
 pub fn button(ui: &mut Ui, label: &str, icon: Icon, enabled: bool) -> Response {
+    tool_button(ui, label, icon, enabled, false)
+}
+
+pub fn tool_button(
+    ui: &mut Ui,
+    label: &str,
+    icon: Icon,
+    enabled: bool,
+    selected: bool,
+) -> Response {
     ui.add_enabled_ui(enabled, |ui| {
         let id = ui.make_persistent_id(("tool_icon", label));
         let atom = egui::Atom::custom(id, egui::vec2(20.0, 20.0));
         let output = egui::Button::new((atom, label))
+            .selected(selected)
             .gap(6.0)
             .wrap_mode(egui::TextWrapMode::Extend)
             .atom_ui(ui);
@@ -27,14 +38,6 @@ pub fn button(ui: &mut Ui, label: &str, icon: Icon, enabled: bool) -> Response {
         output.response
     })
     .inner
-}
-
-pub fn select_indicator(ui: &mut Ui) {
-    ui.horizontal(|ui| {
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
-        draw(&ui.painter_at(rect), rect, Icon::Select);
-        ui.label("Select").on_hover_text("Object selection mode");
-    });
 }
 
 pub fn toolbox_width(ui: &Ui) -> f32 {

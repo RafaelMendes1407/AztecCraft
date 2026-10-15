@@ -186,3 +186,20 @@ The revised hidden logic path and retained-input guard pass actual trait-callbac
 **Area:** native document lifecycle
 
 Pinned winit 0.30.13 gives the default Quit menu item the `terminate:` action and Command-Q equivalent (macOS menu.rs:66–73). Its application termination callback calls window-exit notification and internal exit (app_state.rs:65–71,166–172), while window Close separately queues CloseRequested (window_delegate.rs:144–148). Native testing of Command-Q with a synthetic dirty scene remains pending; no data loss has been demonstrated. The hidden-dispatch change guards viewport Close and does not establish interception of application termination.
+
+## Bounded World-axis Move candidate
+
+Move currently implements one selected object transform, World X/Y/Z arrows and
+one guarded preview transaction through native UI and MCP. Plane/center/component
+handles, snapping, other orientations and Rotate/Scale tools are unavailable.
+Selected pivots, driven data, unsupported/unstable parents and translations with
+unproved retained source words reject editing. MA and general source authoring
+remain subject to their existing read-only/source guards. The 72-physical-pixel
+geometry and near-parallel threshold are application policies, not Maya parity.
+
+Native/SDK tests for this candidate pass locally: the workspace and
+mcp-test-client suites ran green on 2026-10-15. Native framebuffer/desktop and
+genuine source-bound Save consumer checks remain open.
+The prior changed-parent full MCP-client run observed an unchanged transport
+notification-flood outer-timeout failure; its single isolated reproduction
+passed. The full run remains failed and the timing cause unproved.

@@ -70,7 +70,7 @@ impl Default for Units {
 }
 
 impl Units {
-    fn linear_factor(&self) -> Result<f64, NativeError> {
+    pub fn linear_factor(&self) -> Result<f64, NativeError> {
         Ok(match self.linear {
             LinearUnit::Centimeter => 1.0,
             LinearUnit::Millimeter => 0.1,

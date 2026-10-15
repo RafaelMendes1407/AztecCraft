@@ -1,13 +1,15 @@
+use crate::editor_operations::{
+    ActiveTool, Operation, OperationError, OperationReply, SelectionMode,
+};
 #[cfg(any(test, feature = "mcp"))]
 use crate::editor_operations::{
     CameraInspection, FaceSelectionPolicy, FaceSelectionTarget, NodeInspection, RemoteRequest,
     SceneInspection, ShapeInspection, TransformInput, UnitsInspection,
 };
-use crate::editor_operations::{Operation, OperationError, OperationReply, SelectionMode};
 #[cfg(any(test, feature = "mcp"))]
 use azteccraft::native_scene::{LinearUnit, NativeTransform};
 use azteccraft::{
-    history::{Command, EditOutcome, History},
+    history::{Command, EditOutcome, History, MoveProvenance},
     native_scene::{AngularUnit, FaceTarget, NativeId},
     scene::{NodeId, Primitive},
     view_scene::ViewScene,
@@ -20,6 +22,8 @@ use uuid::Uuid;
 
 #[path = "file_ui.rs"]
 mod files;
+#[path = "move_ui.rs"]
+mod manipulation;
 
 struct MaterialDraft {
     scene_token: Uuid,
@@ -53,6 +57,11 @@ pub struct Editor {
     remembered_face: Option<FaceTarget>,
     camera: Camera,
     grid_visible: bool,
+    active_tool: ActiveTool,
+    native_move: Option<manipulation::NativeMove>,
+    move_viewport: Option<manipulation::MoveViewportFeedback>,
+    move_consumed_frame: bool,
+    move_suppress_primary: bool,
     renderer: Option<crate::viewport_renderer::ViewportRenderer>,
     viewport_error: Option<crate::viewport_renderer::ViewportError>,
     name: String,
@@ -81,6 +90,11 @@ impl Default for Editor {
             remembered_face: None,
             camera: Camera::default(),
             grid_visible: true,
+            active_tool: ActiveTool::Select,
+            native_move: None,
+            move_viewport: None,
+            move_consumed_frame: false,
+            move_suppress_primary: false,
             renderer: None,
             viewport_error: None,
             name: String::new(),
@@ -295,6 +309,15 @@ impl Editor {
         if request.expected_scene_token != Some(self.scene_token) {
             return Err(OperationError::StaleScene);
         }
+        if let Some(active) = self.history.active_move()
+            && (active.provenance != MoveProvenance::Remote
+                || !matches!(
+                    request.operation,
+                    Operation::UpdateMove { .. } | Operation::FinishMove { .. }
+                ))
+        {
+            return Err(OperationError::BusyManipulation);
+        }
         if self.files.is_closing()
             || (self.files.is_modal()
                 && !matches!(request.operation, Operation::ResolveFileAction { .. }))
@@ -304,7 +327,7 @@ impl Editor {
         {
             return Err(OperationError::BusyEditing);
         }
-        self.apply_operation_guarded(request.operation, may_install)
+        self.apply_operation_guarded(MoveProvenance::Remote, request.operation, may_install)
     }
 
     #[cfg(any(test, feature = "mcp"))]
@@ -431,6 +454,7 @@ impl Editor {
             && viewport_error != Some(crate::viewport_renderer::ViewportError::BackendFailed);
         Ok(SceneInspection {
             scene_token: self.scene_token.to_string(),
+            move_tool: self.inspect_move()?,
             nodes,
             retained_source_bytes: self.history.scene().retained_source_bytes(),
             retained_source_records: self.history.scene().retained_source_records(),
@@ -595,14 +619,16 @@ impl Editor {
     }
 
     fn apply_operation(&mut self, operation: Operation) -> Result<OperationReply, OperationError> {
-        self.apply_operation_guarded(operation, &|| true)
+        self.apply_operation_guarded(MoveProvenance::Native, operation, &|| true)
     }
 
     fn apply_operation_guarded(
         &mut self,
+        provenance: MoveProvenance,
         operation: Operation,
         may_install: &dyn Fn() -> bool,
     ) -> Result<OperationReply, OperationError> {
+        self.guard_move_dispatch(&operation, provenance)?;
         if self.files.is_closing() {
             return Err(OperationError::BusyEditing);
         }
@@ -643,6 +669,17 @@ impl Editor {
             } => return self.resolve_file_action_guarded(*pending_id, *decision, may_install),
             _ => {}
         }
+        if self.files.is_modal()
+            && matches!(
+                operation,
+                Operation::SetActiveTool(_)
+                    | Operation::BeginMove { .. }
+                    | Operation::UpdateMove { .. }
+                    | Operation::FinishMove { .. }
+            )
+        {
+            return Err(OperationError::BusyEditing);
+        }
         let selected_path = match &operation {
             Operation::Select {
                 node: Some(id),
@@ -678,10 +715,24 @@ impl Editor {
                     .map_err(OperationError::Scene)?;
             }
         }
-        if !self.commit_pending() {
+        if !matches!(
+            operation,
+            Operation::UpdateMove { .. } | Operation::FinishMove { .. }
+        ) && !self.commit_pending()
+        {
             return Err(OperationError::InvalidInput(self.status.clone()));
         }
         let command = match operation {
+            Operation::SetActiveTool(tool) => return self.set_active_tool(tool),
+            Operation::BeginMove { target, axis } => {
+                return self.begin_editor_move(&target, axis, provenance);
+            }
+            Operation::UpdateMove { id, distance } => {
+                return self.update_editor_move(id, distance, provenance);
+            }
+            Operation::FinishMove { id, finish } => {
+                return self.finish_editor_move(id, finish, provenance);
+            }
             #[cfg(any(test, feature = "mcp"))]
             Operation::SetMaterialDiffuse { shape, value } => {
                 Command::SetMaterialDiffuse { shape, value }
@@ -988,11 +1039,27 @@ impl Editor {
             })
     }
 
-    fn shortcuts(&mut self, ctx: &egui::Context) {
+    fn shortcuts(&mut self, ctx: &egui::Context) -> Option<ActiveTool> {
         if ctx.egui_wants_keyboard_input() || egui::Popup::is_any_open(ctx) || self.files.is_modal()
         {
-            return;
+            return None;
         }
+        let tool_intent = ctx.input(|i| {
+            i.events.iter().find_map(|event| match event {
+                egui::Event::Key {
+                    key,
+                    pressed: true,
+                    repeat: false,
+                    modifiers,
+                    ..
+                } if modifiers.is_none() => match key {
+                    Key::Q => Some(ActiveTool::Select),
+                    Key::W => Some(ActiveTool::Move),
+                    _ => None,
+                },
+                _ => None,
+            })
+        });
         let (undo, redo, frame, save, save_as) = ctx.input(|i| {
             (
                 i.modifiers.command && !i.modifiers.shift && i.key_pressed(Key::Z),
@@ -1017,9 +1084,15 @@ impl Editor {
         if save_as && self.files.save_as_available() {
             self.save_as_dialog();
         }
+        tool_intent
     }
 
     fn commit_pending(&mut self) -> bool {
+        if self.history.active_move().is_some() {
+            self.status = OperationError::BusyManipulation.to_string();
+            self.error = true;
+            return false;
+        }
         if self
             .material_draft
             .as_ref()
@@ -1124,6 +1197,11 @@ impl Editor {
     fn cancel_on_escape(&mut self, ctx: &egui::Context) {
         // egui clears text focus before this pass, so cancellation cannot rely on has_focus.
         if ctx.input(|i| i.key_pressed(Key::Escape)) {
+            if let Err(error) = self.cancel_move() {
+                self.status = error.to_string();
+                self.error = true;
+                return;
+            }
             self.sync_fields();
             self.status = "Edit cancelled".into();
             self.error = false;
@@ -1621,6 +1699,16 @@ impl eframe::App for Editor {
 
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if ctx.input(|input| input.viewport().visible()) == Some(false) {
+            self.move_viewport = None;
+            if self
+                .history
+                .active_move()
+                .is_some_and(|active| active.provenance == MoveProvenance::Native)
+                && let Err(error) = self.cancel_move()
+            {
+                self.status = error.to_string();
+                self.error = true;
+            }
             self.handle_close(ctx);
             #[cfg(feature = "mcp")]
             self.process_mcp(ctx);
@@ -1657,11 +1745,12 @@ impl Editor {
             None
         };
         let mut delete_intent = keyboard_admitted && delete;
+        self.move_consumed_frame = false;
         self.handle_close(ui.ctx());
         if !self.files.is_modal() {
             self.cancel_on_escape(ui.ctx());
         }
-        self.shortcuts(ui.ctx());
+        let tool_intent = self.shortcuts(ui.ctx());
         egui::Panel::top("menu_shelf").show(ui, |ui| {
             self.menus(ui, &mut selection_intent, &mut delete_intent)
         });
@@ -1689,9 +1778,27 @@ impl Editor {
             .show(ui, |ui| {
                 ui.label("Tools");
                 ui.separator();
-                crate::tool_icons::select_indicator(ui);
+                for (label, icon, tool) in [
+                    (
+                        "Select",
+                        crate::tool_icons::Icon::Select,
+                        ActiveTool::Select,
+                    ),
+                    ("Move", crate::tool_icons::Icon::Move, ActiveTool::Move),
+                ] {
+                    if crate::tool_icons::tool_button(
+                        ui,
+                        label,
+                        icon,
+                        !self.files.is_closing() && !self.files.is_modal(),
+                        self.active_tool == tool,
+                    )
+                    .clicked()
+                    {
+                        self.native_operation(Operation::SetActiveTool(tool));
+                    }
+                }
                 for (label, icon) in [
-                    ("Move", crate::tool_icons::Icon::Move),
                     ("Rotate", crate::tool_icons::Icon::Rotate),
                     ("Scale", crate::tool_icons::Icon::Scale),
                 ] {
@@ -1708,15 +1815,19 @@ impl Editor {
             .default_size(255.0)
             .size_range(230.0..=400.0)
             .show(ui, |ui| {
-                ui.add_enabled_ui(!self.files.is_closing() && !self.files.is_modal(), |ui| {
-                    self.channels(ui, &mut delete_intent)
-                });
+                ui.add_enabled_ui(
+                    !self.files.is_closing()
+                        && !self.files.is_modal()
+                        && self.history.active_move().is_none(),
+                    |ui| self.channels(ui, &mut delete_intent),
+                );
             });
         egui::CentralPanel::default().show(ui, |ui| {
             self.viewport(
                 ui,
                 frame_token,
                 selection_intent,
+                tool_intent,
                 delete_intent,
                 frame_admitted,
             )
@@ -1733,6 +1844,7 @@ impl Editor {
         ui: &mut egui::Ui,
         frame_token: Uuid,
         selection_intent: Option<SelectionModeIntent>,
+        tool_intent: Option<ActiveTool>,
         delete_intent: bool,
         frame_admitted: bool,
     ) {
@@ -1754,6 +1866,12 @@ impl Editor {
             ui.weak("Alt + left: orbit | Middle: pan | Right / wheel: dolly");
         });
         let captured = crate::viewport_ui::capture(ui, &self.camera);
+        if !matches!(&captured, Ok(Some(_)))
+            && let Err(error) = self.missing_move_viewport()
+        {
+            self.status = error.to_string();
+            self.error = true;
+        }
         if let Ok(Some(input)) = &captured {
             self.aspect = input.aspect();
         }
@@ -1764,6 +1882,16 @@ impl Editor {
                 visible: !self.grid_visible,
             });
         }
+        if let Some(tool) = tool_intent
+            && frame_token == self.scene_token
+            && !self.move_consumed_frame
+            && !self.files.is_modal()
+            && !self.files.is_closing()
+            && !ui.ctx().egui_wants_keyboard_input()
+            && !egui::Popup::is_any_open(ui.ctx())
+        {
+            self.native_operation(Operation::SetActiveTool(tool));
+        }
         let result = (|| -> Result<(), OperationError> {
             let Some(mut input) = captured.map_err(|error| {
                 self.viewport_error = Some(crate::viewport_renderer::ViewportError::CameraInput);
@@ -1772,6 +1900,7 @@ impl Editor {
             else {
                 return Ok(());
             };
+            let consumed = self.handle_move_input(&input, frame_token)?;
             let navigation = input.take_navigation();
             let current_document = self.scene_token == frame_token;
             let can_select = admitted
@@ -1780,11 +1909,11 @@ impl Editor {
                 && !self.files.is_closing()
                 && !text_edit_focused(ui.ctx())
                 && !egui::Popup::is_any_open(ui.ctx());
-            let clickable = input.click_ndc().filter(|_| can_select);
+            let clickable = input.click_ndc().filter(|_| can_select && !consumed);
             let selection_intent = selection_intent.filter(|_| can_select);
             let delete_intent = delete_intent && can_select;
             let selection_refusal = input.unsupported_selection().filter(|_| can_select);
-            let navigation = if current_document {
+            let navigation = if current_document && !consumed {
                 navigation
             } else {
                 Vec::new()
@@ -1878,6 +2007,7 @@ impl Editor {
                 self.grid_visible,
             );
             self.viewport_error = painted.as_ref().err().map(|error| error.category());
+            self.paint_move(&input);
             match painted {
                 Ok(()) | Err(crate::viewport_renderer::RenderError::Uninitialized) => Ok(()),
                 Err(error) => Err(OperationError::File(error.to_string())),
@@ -3507,7 +3637,7 @@ mod tests {
     #[test]
     fn remote_operations_share_native_scene_selection_history_and_camera() {
         let mut editor = Editor::default();
-        assert_eq!(crate::editor_operations::TOOL_NAMES.len(), 24);
+        assert_eq!(crate::editor_operations::TOOL_NAMES.len(), 28);
         let OperationReply::Created { node_id } = remote(
             &mut editor,
             Operation::Create {
@@ -4631,7 +4761,7 @@ mod tests {
                         events,
                         ..Default::default()
                     },
-                    |ui| editor.viewport(ui, token, None, false, true),
+                    |ui| editor.viewport(ui, token, None, None, false, true),
                 );
                 for shape in &output.shapes {
                     if let egui::Shape::Text(text) = &shape.shape
@@ -4735,7 +4865,7 @@ mod tests {
                     ..Default::default()
                 },
                 |ui| {
-                    editor.viewport(ui, editor.scene_token, None, false, true);
+                    editor.viewport(ui, editor.scene_token, None, None, false, true);
                     *rect = ui.min_rect();
                 },
             );

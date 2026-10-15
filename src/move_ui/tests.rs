@@ -1,0 +1,1297 @@
+use super::*;
+use eframe::egui::{self, Event, Key, Modifiers, PointerButton, Pos2, Rect, Shape};
+
+fn raw(size: egui::Vec2, origin: Pos2, scale: f32, events: Vec<Event>) -> egui::RawInput {
+    let mut input = egui::RawInput {
+        screen_rect: Some(Rect::from_min_size(origin, size)),
+        events,
+        ..Default::default()
+    };
+    let viewport = input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap();
+    viewport.native_pixels_per_point = Some(scale);
+    viewport.minimized = Some(false);
+    viewport.occluded = Some(false);
+    input
+}
+
+fn frame(
+    editor: &mut Editor,
+    context: &egui::Context,
+    mut input: egui::RawInput,
+) -> egui::FullOutput {
+    eframe::App::raw_input_hook(editor, context, &mut input);
+    let mut native_frame = eframe::Frame::_new_kittest();
+    let mut output = context.run_ui(input, |ui| {
+        eframe::App::logic(editor, ui.ctx(), &mut native_frame);
+        eframe::App::ui(editor, ui, &mut native_frame);
+    });
+    output.textures_delta.clear();
+    output
+}
+
+fn key(key: Key) -> Event {
+    Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    }
+}
+
+fn button(position: Pos2, pressed: bool) -> Vec<Event> {
+    vec![
+        Event::PointerMoved(position),
+        Event::PointerButton {
+            pos: position,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        },
+    ]
+}
+
+fn viewport(output: &egui::FullOutput) -> Rect {
+    output
+        .shapes
+        .iter()
+        .find_map(|shape| match &shape.shape {
+            Shape::Callback(callback) => Some(callback.rect),
+            _ => None,
+        })
+        .expect("actual viewport callback")
+}
+
+fn setup(scale: f32) -> (Editor, egui::Context, Rect) {
+    let mut editor = Editor {
+        renderer: Some(crate::viewport_renderer::tests::renderer_handle()),
+        camera: azteccraft::viewport::Camera::new(
+            glam::Vec3::ZERO,
+            0.0,
+            0.0,
+            10.0,
+            90_f32.to_radians(),
+            0.01,
+            100.0,
+        )
+        .unwrap(),
+        ..Editor::default()
+    };
+    editor.create(azteccraft::scene::Primitive::Cube);
+    let context = egui::Context::default();
+    let output = frame(
+        &mut editor,
+        &context,
+        raw(
+            egui::vec2(1440.0, 900.0),
+            Pos2::ZERO,
+            scale,
+            vec![key(Key::W)],
+        ),
+    );
+    assert_eq!(editor.active_tool, ActiveTool::Move);
+    let rect = viewport(&output);
+    frame(
+        &mut editor,
+        &context,
+        raw(
+            egui::vec2(1440.0, 900.0),
+            Pos2::ZERO,
+            scale,
+            vec![Event::Key {
+                key: Key::W,
+                physical_key: None,
+                pressed: false,
+                repeat: false,
+                modifiers: Modifiers::NONE,
+            }],
+        ),
+    );
+    (editor, context, rect)
+}
+
+fn press_x(editor: &mut Editor, context: &egui::Context, rect: Rect, scale: f32) -> Pos2 {
+    let position = rect.center() + egui::vec2(40.0 / scale, 0.0);
+    frame(
+        editor,
+        context,
+        raw(
+            egui::vec2(1440.0, 900.0),
+            Pos2::ZERO,
+            scale,
+            button(position, true),
+        ),
+    );
+    assert!(editor.native_move.is_some(), "{}", editor.status);
+    assert_eq!(
+        editor.history.active_move().unwrap().provenance,
+        MoveProvenance::Native
+    );
+    position
+}
+
+#[test]
+fn real_w_q_and_vector_buttons_activate_tools_and_leave_unsupported_tools_disabled() {
+    let (mut editor, context, _) = setup(1.0);
+    let output = frame(
+        &mut editor,
+        &context,
+        raw(
+            egui::vec2(1440.0, 900.0),
+            Pos2::ZERO,
+            1.0,
+            vec![key(Key::Q)],
+        ),
+    );
+    assert_eq!(editor.active_tool, ActiveTool::Select);
+    let label = output
+        .shapes
+        .iter()
+        .find_map(|shape| match &shape.shape {
+            Shape::Text(text) if text.galley.job.text == "Move" => {
+                Some(text.pos + text.galley.size() * 0.5)
+            }
+            _ => None,
+        })
+        .unwrap();
+    frame(
+        &mut editor,
+        &context,
+        raw(
+            egui::vec2(1440.0, 900.0),
+            Pos2::ZERO,
+            1.0,
+            button(label, true),
+        ),
+    );
+    frame(
+        &mut editor,
+        &context,
+        raw(
+            egui::vec2(1440.0, 900.0),
+            Pos2::ZERO,
+            1.0,
+            button(label, false),
+        ),
+    );
+    assert_eq!(editor.active_tool, ActiveTool::Move);
+    context.memory_mut(|memory| memory.request_focus(crate::app::name_edit_id()));
+    frame(
+        &mut editor,
+        &context,
+        raw(egui::vec2(1440.0, 900.0), Pos2::ZERO, 1.0, vec![]),
+    );
+    frame(
+        &mut editor,
+        &context,
+        raw(
+            egui::vec2(1440.0, 900.0),
+            Pos2::ZERO,
+            1.0,
+            vec![key(Key::Q)],
+        ),
+    );
+    assert_eq!(editor.active_tool, ActiveTool::Move);
+    assert!(editor.history.active_move().is_none());
+}
+
+#[test]
+fn real_axis_press_absolute_motion_release_makes_one_undo_at_fractional_dpi() {
+    for scale in [1.0, 1.25, 2.0] {
+        let (mut editor, context, rect) = setup(scale);
+        let node = editor.selected.unwrap();
+        let before = editor.history.scene().clone();
+        let camera = editor.camera.clone();
+        let selected_path = editor.selected_path.clone();
+        let begin = press_x(&mut editor, &context, rect, scale);
+        for distance in [0.5, 1.0, -1.0, 2.0] {
+            let position = begin + egui::vec2(rect.height() * distance / 20.0, 0.0);
+            frame(
+                &mut editor,
+                &context,
+                raw(
+                    egui::vec2(1440.0, 900.0),
+                    Pos2::ZERO,
+                    scale,
+                    vec![Event::PointerMoved(position)],
+                ),
+            );
+            let translation = editor
+                .history
+                .scene()
+                .node(node)
+                .unwrap()
+                .transform()
+                .translation;
+            assert!(
+                (translation[0] - f64::from(distance)).abs() < 2e-5,
+                "{translation:?}"
+            );
+            assert_eq!(translation[1].to_bits(), 0.0f64.to_bits());
+            assert_eq!(translation[2].to_bits(), 0.0f64.to_bits());
+            assert!(!editor.has_draft());
+        }
+        let end = begin + egui::vec2(rect.height() / 10.0, 0.0);
+        frame(
+            &mut editor,
+            &context,
+            raw(
+                egui::vec2(1440.0, 900.0),
+                Pos2::ZERO,
+                scale,
+                button(end, false),
+            ),
+        );
+        assert!(editor.history.active_move().is_none());
+        assert!(editor.native_move.is_none());
+        assert_eq!(editor.camera, camera);
+        assert_eq!(editor.selected_path, selected_path);
+        let after = editor.history.scene().clone();
+        editor.history_step(false);
+        assert_eq!(editor.history.scene(), &before);
+        editor.history_step(false);
+        assert!(editor.history.scene().nodes().is_empty());
+        editor.history_step(true);
+        assert_eq!(editor.history.scene(), &before);
+        editor.history_step(true);
+        assert_eq!(editor.history.scene(), &after);
+    }
+}
+
+#[test]
+fn stationary_release_in_changed_window_origin_size_or_dpi_cancels_without_fallthrough() {
+    for (size, origin, scale) in [
+        (egui::vec2(1500.0, 900.0), Pos2::ZERO, 1.0),
+        (egui::vec2(1440.0, 900.0), egui::pos2(1.3, 0.7), 1.0),
+        (egui::vec2(1440.0, 900.0), Pos2::ZERO, 1.25),
+    ] {
+        let (mut editor, context, rect) = setup(1.0);
+        let node = editor.selected.unwrap();
+        editor
+            .apply_operation(Operation::Rename {
+                id: node,
+                name: "renamed".into(),
+            })
+            .unwrap();
+        editor.history_step(false);
+        let before = editor.history.scene().clone();
+        let camera = editor.camera.clone();
+        let path = editor.selected_path.clone();
+        let begin = press_x(&mut editor, &context, rect, 1.0);
+        let position = begin + egui::vec2(rect.height() / 10.0, 0.0);
+        frame(
+            &mut editor,
+            &context,
+            raw(
+                egui::vec2(1440.0, 900.0),
+                Pos2::ZERO,
+                1.0,
+                vec![Event::PointerMoved(position)],
+            ),
+        );
+        assert_ne!(editor.history.scene(), &before);
+        frame(
+            &mut editor,
+            &context,
+            raw(size, origin, scale, button(position, false)),
+        );
+        assert!(editor.history.active_move().is_none());
+        assert_eq!(editor.history.scene(), &before);
+        assert_eq!(editor.camera, camera);
+        assert_eq!(editor.selected, Some(node));
+        assert_eq!(editor.selected_path, path);
+        assert!(!editor.has_draft());
+        assert!(editor.history.can_undo());
+        assert!(editor.history.can_redo());
+        editor.history_step(true);
+        assert_eq!(editor.history.scene().node(node).unwrap().name(), "renamed");
+        editor.history_step(false);
+        assert_eq!(editor.history.scene(), &before);
+    }
+}
+
+#[test]
+fn escape_modifiers_focus_and_pointer_loss_cancel_real_captured_gestures() {
+    for interruption in 0..4 {
+        let (mut editor, context, rect) = setup(1.0);
+        let before = editor.history.scene().clone();
+        let camera = editor.camera.clone();
+        let begin = press_x(&mut editor, &context, rect, 1.0);
+        let position = begin + egui::vec2(rect.height() / 10.0, 0.0);
+        frame(
+            &mut editor,
+            &context,
+            raw(
+                egui::vec2(1440.0, 900.0),
+                Pos2::ZERO,
+                1.0,
+                vec![Event::PointerMoved(position)],
+            ),
+        );
+        let mut input = raw(
+            egui::vec2(1440.0, 900.0),
+            Pos2::ZERO,
+            1.0,
+            match interruption {
+                0 => vec![key(Key::Escape)],
+                1 => vec![Event::ModifiersChanged(Modifiers::SHIFT)],
+                2 => vec![Event::WindowFocused(false)],
+                _ => vec![Event::PointerGone],
+            },
+        );
+        if interruption == 2 {
+            input.focused = false;
+        }
+        frame(&mut editor, &context, input);
+        assert!(
+            editor.history.active_move().is_none(),
+            "{interruption}: {}",
+            editor.status
+        );
+        assert_eq!(editor.history.scene(), &before);
+        assert_eq!(editor.camera, camera);
+        frame(
+            &mut editor,
+            &context,
+            raw(
+                egui::vec2(1440.0, 900.0),
+                Pos2::ZERO,
+                1.0,
+                button(position, false),
+            ),
+        );
+        assert_eq!(editor.history.scene(), &before);
+        assert!(editor.native_move.is_none());
+    }
+}
+
+#[test]
+fn real_q_cancels_preview_before_tool_switch_and_remote_cannot_finish_native_move() {
+    let (mut editor, context, rect) = setup(1.0);
+    let before = editor.history.scene().clone();
+    let begin = press_x(&mut editor, &context, rect, 1.0);
+    let id = editor.history.active_move().unwrap().id;
+    let position = begin + egui::vec2(rect.height() / 10.0, 0.0);
+    frame(
+        &mut editor,
+        &context,
+        raw(
+            egui::vec2(1440.0, 900.0),
+            Pos2::ZERO,
+            1.0,
+            vec![Event::PointerMoved(position)],
+        ),
+    );
+    let preview = editor.history.scene().clone();
+    let reply = editor.remote_operation(
+        crate::editor_operations::RemoteRequest {
+            expected_scene_token: Some(editor.scene_token),
+            operation: Operation::FinishMove {
+                id,
+                finish: MoveFinish::Commit,
+            },
+        },
+        &context,
+    );
+    assert!(matches!(reply, Err(OperationError::BusyManipulation)));
+    assert_eq!(editor.history.scene(), &preview);
+    frame(
+        &mut editor,
+        &context,
+        raw(
+            egui::vec2(1440.0, 900.0),
+            Pos2::ZERO,
+            1.0,
+            vec![key(Key::Q)],
+        ),
+    );
+    assert_eq!(editor.active_tool, ActiveTool::Select);
+    assert!(editor.history.active_move().is_none());
+    assert_eq!(editor.history.scene(), &before);
+    frame(
+        &mut editor,
+        &context,
+        raw(
+            egui::vec2(1440.0, 900.0),
+            Pos2::ZERO,
+            1.0,
+            button(position, false),
+        ),
+    );
+    assert_eq!(editor.history.scene(), &before);
+}
+
+#[test]
+fn real_xyz_drag_samples_reach_independent_world_positions_and_can_leave_the_viewport() {
+    for axis in [WorldAxis::X, WorldAxis::Y, WorldAxis::Z] {
+        let (mut editor, context, _) = setup(1.0);
+        editor.camera = azteccraft::viewport::Camera::new(
+            glam::Vec3::ZERO,
+            0.6,
+            0.4,
+            10.0,
+            90_f32.to_radians(),
+            0.01,
+            100.0,
+        )
+        .unwrap();
+        let output = frame(
+            &mut editor,
+            &context,
+            raw(egui::vec2(1440.0, 900.0), Pos2::ZERO, 1.0, vec![]),
+        );
+        let rect = viewport(&output);
+        let aspect = editor.aspect;
+        let screen = |world: glam::Vec3| {
+            let ndc = editor.camera.project(world, aspect).unwrap().unwrap();
+            egui::pos2(
+                rect.left() + (ndc.x + 1.0) * rect.width() * 0.5,
+                rect.top() + (1.0 - ndc.y) * rect.height() * 0.5,
+            )
+        };
+        let direction = axis.direction().as_vec3();
+        let begin = screen(direction * 0.8);
+        let end = screen(direction * 2.8);
+        frame(
+            &mut editor,
+            &context,
+            raw(
+                egui::vec2(1440.0, 900.0),
+                Pos2::ZERO,
+                1.0,
+                button(begin, true),
+            ),
+        );
+        assert_eq!(editor.history.active_move().unwrap().axis, axis);
+        frame(
+            &mut editor,
+            &context,
+            raw(
+                egui::vec2(1440.0, 900.0),
+                Pos2::ZERO,
+                1.0,
+                vec![Event::PointerMoved(end)],
+            ),
+        );
+        frame(
+            &mut editor,
+            &context,
+            raw(
+                egui::vec2(1440.0, 900.0),
+                Pos2::ZERO,
+                1.0,
+                button(end, false),
+            ),
+        );
+        let actual =
+            glam::DVec3::from_array(editor.history.scene().nodes()[0].transform().translation);
+        assert!(
+            (actual - axis.direction() * 2.0).length() < 5e-5,
+            "{axis:?}: {actual:?}"
+        );
+        assert!(editor.history.active_move().is_none());
+    }
+    let (mut editor, context, rect) = setup(1.0);
+    let begin = press_x(&mut editor, &context, rect, 1.0);
+    let outside = egui::pos2(rect.right() + 50.0, begin.y);
+    let expected = f64::from((outside.x - begin.x) * 20.0 / rect.height());
+    frame(
+        &mut editor,
+        &context,
+        raw(
+            egui::vec2(1440.0, 900.0),
+            Pos2::ZERO,
+            1.0,
+            vec![Event::PointerMoved(outside)],
+        ),
+    );
+    assert!((editor.history.scene().nodes()[0].transform().translation[0] - expected).abs() < 5e-5);
+    frame(
+        &mut editor,
+        &context,
+        raw(
+            egui::vec2(1440.0, 900.0),
+            Pos2::ZERO,
+            1.0,
+            button(outside, false),
+        ),
+    );
+    assert!(editor.history.active_move().is_none());
+    assert!((editor.history.scene().nodes()[0].transform().translation[0] - expected).abs() < 5e-5);
+}
+
+#[test]
+fn projection_replacement_and_missing_viewport_cancel_before_release_commit() {
+    for missing in [false, true] {
+        let (mut editor, context, rect) = setup(1.0);
+        let before = editor.history.scene().clone();
+        let begin = press_x(&mut editor, &context, rect, 1.0);
+        let end = begin + egui::vec2(rect.height() / 10.0, 0.0);
+        frame(
+            &mut editor,
+            &context,
+            raw(
+                egui::vec2(1440.0, 900.0),
+                Pos2::ZERO,
+                1.0,
+                vec![Event::PointerMoved(end)],
+            ),
+        );
+        let size = if missing {
+            egui::vec2(1.0, 1.0)
+        } else {
+            egui::vec2(1440.0, 900.0)
+        };
+        if !missing {
+            editor.camera = azteccraft::viewport::Camera::new(
+                glam::Vec3::ZERO,
+                0.0,
+                0.0,
+                10.0,
+                75_f32.to_radians(),
+                0.01,
+                100.0,
+            )
+            .unwrap();
+        }
+        let camera = editor.camera.clone();
+        frame(
+            &mut editor,
+            &context,
+            raw(size, Pos2::ZERO, 1.0, button(end, false)),
+        );
+        assert!(editor.history.active_move().is_none());
+        assert_eq!(editor.history.scene(), &before);
+        assert_eq!(editor.camera, camera);
+    }
+}
+
+#[test]
+fn editor_move_guards_preserve_drafts_modal_close_tokens_and_failed_open_baseline() {
+    use crate::editor_operations::{FileDecision, RemoteRequest};
+    for condition in 0..6 {
+        for operation in 0..4 {
+            let mut editor = Editor::default();
+            editor.create(azteccraft::scene::Primitive::Cube);
+            let context = egui::Context::default();
+            let target = editor.selected_move_target().unwrap();
+            let token = editor.scene_token;
+            let before = editor.history.scene().clone();
+            match condition {
+                0 => editor.channels[0] = "human".into(),
+                1 => context.memory_mut(|memory| memory.request_focus(crate::app::name_edit_id())),
+                2 => editor.native_input_pending = true,
+                3 => {
+                    editor.apply_operation(Operation::NewScene).unwrap();
+                }
+                4 => {
+                    let OperationReply::PendingConfirmation {
+                        pending_action_id, ..
+                    } = editor.apply_operation(Operation::RequestClose).unwrap()
+                    else {
+                        panic!()
+                    };
+                    editor
+                        .apply_operation(Operation::ResolveFileAction {
+                            pending_id: Uuid::parse_str(&pending_action_id).unwrap(),
+                            decision: FileDecision::Discard,
+                        })
+                        .unwrap();
+                }
+                _ => (),
+            }
+            let request = match operation {
+                0 => Operation::SetActiveTool(ActiveTool::Move),
+                1 => Operation::BeginMove {
+                    target,
+                    axis: WorldAxis::X,
+                },
+                2 => Operation::UpdateMove {
+                    id: MoveId::from_decimal("1").unwrap(),
+                    distance: MoveDistance::Declared(1.0),
+                },
+                _ => Operation::FinishMove {
+                    id: MoveId::from_decimal("1").unwrap(),
+                    finish: MoveFinish::Commit,
+                },
+            };
+            let reply = editor.remote_operation(
+                RemoteRequest {
+                    expected_scene_token: Some(if condition == 5 {
+                        Uuid::new_v4()
+                    } else {
+                        token
+                    }),
+                    operation: request,
+                },
+                &context,
+            );
+            assert!(matches!(
+                reply,
+                Err(OperationError::BusyEditing | OperationError::StaleScene)
+            ));
+            assert_eq!(editor.history.scene(), &before);
+            assert!(editor.history.active_move().is_none());
+            assert_eq!(editor.active_tool, ActiveTool::Select);
+        }
+    }
+    let mut editor = Editor::default();
+    editor.create(azteccraft::scene::Primitive::Cube);
+    editor
+        .apply_operation(Operation::SetActiveTool(ActiveTool::Move))
+        .unwrap();
+    let before = editor.history.scene().clone();
+    let token = editor.scene_token;
+    let camera = editor.camera.clone();
+    let target = editor.selected_move_target().unwrap();
+    let reply = editor
+        .apply_operation_guarded(
+            MoveProvenance::Remote,
+            Operation::BeginMove {
+                target,
+                axis: WorldAxis::X,
+            },
+            &|| true,
+        )
+        .unwrap();
+    assert!(matches!(reply, OperationReply::MoveStarted { .. }));
+    let id = editor.history.active_move().unwrap().id;
+    editor
+        .apply_operation_guarded(
+            MoveProvenance::Remote,
+            Operation::UpdateMove {
+                id,
+                distance: MoveDistance::Declared(2.0),
+            },
+            &|| true,
+        )
+        .unwrap();
+    let missing_directory = tempfile::tempdir().unwrap();
+    assert!(
+        editor
+            .apply_operation(Operation::OpenScene {
+                path: missing_directory.path().join("missing-move-fixture.mb")
+            })
+            .is_err()
+    );
+    assert_eq!(editor.history.scene(), &before);
+    assert_eq!(editor.scene_token, token);
+    assert_eq!(editor.camera, camera);
+    assert_eq!(editor.active_tool, ActiveTool::Move);
+    assert!(editor.history.active_move().is_none());
+    let pending = editor.apply_operation(Operation::NewScene).unwrap();
+    let OperationReply::PendingConfirmation {
+        pending_action_id, ..
+    } = pending
+    else {
+        panic!()
+    };
+    editor
+        .apply_operation(Operation::ResolveFileAction {
+            pending_id: Uuid::parse_str(&pending_action_id).unwrap(),
+            decision: FileDecision::Discard,
+        })
+        .unwrap();
+    assert_ne!(editor.scene_token, token);
+    assert_eq!(editor.active_tool, ActiveTool::Select);
+    assert!(editor.history.active_move().is_none());
+    assert!(editor.history.scene().nodes().is_empty());
+}
+
+#[test]
+fn finite_parallel_or_backward_release_commits_exact_last_valid_preview_with_honest_status() {
+    for backward in [false, true] {
+        let (mut editor, context, mut rect) = setup(1.0);
+        let (begin, end) = if backward {
+            editor.camera = azteccraft::viewport::Camera::new(
+                glam::Vec3::ZERO,
+                0.6,
+                0.4,
+                10.0,
+                90_f32.to_radians(),
+                0.01,
+                100.0,
+            )
+            .unwrap();
+            let output = frame(
+                &mut editor,
+                &context,
+                raw(egui::vec2(1440.0, 900.0), Pos2::ZERO, 1.0, vec![]),
+            );
+            rect = viewport(&output);
+            let project = |x| {
+                let point = editor
+                    .camera
+                    .project(glam::Vec3::new(x, 0.0, 0.0), editor.aspect)
+                    .unwrap()
+                    .unwrap();
+                egui::pos2(
+                    rect.left() + (point.x + 1.0) * rect.width() * 0.5,
+                    rect.top() + (1.0 - point.y) * rect.height() * 0.5,
+                )
+            };
+            (project(0.8), project(2.8))
+        } else {
+            let begin = rect.center() + egui::vec2(40.0, 0.0);
+            (begin, begin + egui::vec2(rect.height() / 10.0, 0.0))
+        };
+        let before = editor.history.scene().clone();
+        frame(
+            &mut editor,
+            &context,
+            raw(
+                egui::vec2(1440.0, 900.0),
+                Pos2::ZERO,
+                1.0,
+                button(begin, true),
+            ),
+        );
+        assert_eq!(editor.history.active_move().unwrap().axis, WorldAxis::X);
+        frame(
+            &mut editor,
+            &context,
+            raw(
+                egui::vec2(1440.0, 900.0),
+                Pos2::ZERO,
+                1.0,
+                vec![Event::PointerMoved(end)],
+            ),
+        );
+        let last_valid = editor.history.scene().clone();
+        assert_ne!(last_valid, before);
+        let rejected = if backward {
+            egui::pos2(rect.center().x, rect.top() - rect.height() * 10.0)
+        } else {
+            egui::pos2(100_000_000.0, begin.y)
+        };
+        frame(
+            &mut editor,
+            &context,
+            raw(
+                egui::vec2(1440.0, 900.0),
+                Pos2::ZERO,
+                1.0,
+                button(rejected, false),
+            ),
+        );
+        assert!(editor.history.active_move().is_none(), "{}", editor.status);
+        assert_eq!(editor.history.scene(), &last_valid);
+        assert!(
+            editor.status.contains("last valid position committed"),
+            "{}",
+            editor.status
+        );
+        assert!(
+            editor
+                .status
+                .contains(if backward { "behind" } else { "parallel" }),
+            "{}",
+            editor.status
+        );
+        editor.history_step(false);
+        assert_eq!(editor.history.scene(), &before);
+        editor.history_step(false);
+        assert!(editor.history.scene().nodes().is_empty());
+    }
+}
+
+#[test]
+fn tiny_visible_geometry_inspection_reports_pointer_exclusion_without_global_ready_claim() {
+    let (mut editor, context, _) = setup(1.0);
+    let mut output = context.run_ui(
+        raw(
+            egui::vec2(16.0, 16.0),
+            Pos2::ZERO,
+            1.0,
+            vec![Event::PointerMoved(egui::pos2(2.0, 2.0))],
+        ),
+        |ui| {
+            let mut child = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(Rect::from_min_size(Pos2::ZERO, egui::vec2(4.0, 4.0))),
+            );
+            let input = crate::viewport_ui::capture(&mut child, &editor.camera)
+                .unwrap()
+                .unwrap();
+            assert!(
+                !editor
+                    .handle_move_input(&input, editor.scene_token)
+                    .unwrap()
+            );
+            editor.paint_move(&input);
+        },
+    );
+    output.textures_delta.clear();
+    let inspected = editor.inspect_move().unwrap();
+    assert!(inspected.numeric_available);
+    let viewport = inspected.viewport.unwrap();
+    assert_eq!(viewport.provenance, "last_native_viewport_capture");
+    assert!(viewport.pointer_available);
+    assert_eq!(viewport.pointer_hit, None);
+    assert!(
+        viewport
+            .axes
+            .iter()
+            .find(|axis| axis.axis == "x")
+            .unwrap()
+            .visible
+    );
+    assert!(
+        viewport
+            .axes
+            .iter()
+            .find(|axis| axis.axis == "y")
+            .unwrap()
+            .visible
+    );
+    assert!(
+        !viewport
+            .axes
+            .iter()
+            .find(|axis| axis.axis == "z")
+            .unwrap()
+            .visible
+    );
+}
+
+mod wire {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/support/maya_binary.rs"
+    ));
+}
+
+#[test]
+fn native_source_bound_cancel_restores_prior_authored_signed_zero_bytes_and_redo() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("native-move-original.mb");
+    let original = wire::specimen();
+    std::fs::write(&source, &original).unwrap();
+    let mut editor = Editor {
+        renderer: Some(crate::viewport_renderer::tests::renderer_handle()),
+        ..Editor::default()
+    };
+    editor
+        .apply_operation(Operation::OpenScene {
+            path: source.clone(),
+        })
+        .unwrap();
+    let target = editor.history.scene().transform_paths().unwrap().remove(0);
+    let node = target.node;
+    editor
+        .apply_operation(Operation::Select {
+            node: Some(node),
+            instance_path: Some(target.path),
+        })
+        .unwrap();
+    editor
+        .apply_operation(Operation::EditNode {
+            id: node,
+            name: None,
+            translation: [Some(0.25), Some(-0.0), None],
+            rotation_degrees: [None; 3],
+            scale: [None; 3],
+        })
+        .unwrap();
+    editor
+        .apply_operation(Operation::EditNode {
+            id: node,
+            name: None,
+            translation: [Some(0.5), None, None],
+            rotation_degrees: [None; 3],
+            scale: [None; 3],
+        })
+        .unwrap();
+    editor.history_step(false);
+    editor.camera = azteccraft::viewport::Camera::new(
+        glam::Vec3::new(0.25, 0.0, 3.0),
+        0.0,
+        0.0,
+        10.0,
+        90_f32.to_radians(),
+        0.01,
+        100.0,
+    )
+    .unwrap();
+    let before = editor.history.scene().clone();
+    let encoded = azteccraft::native_scene::binary::encode(&before).unwrap();
+    let token = editor.scene_token;
+    let dirty = editor.is_dirty();
+    let context = egui::Context::default();
+    let output = frame(
+        &mut editor,
+        &context,
+        raw(
+            egui::vec2(1440.0, 900.0),
+            Pos2::ZERO,
+            1.0,
+            vec![key(Key::W)],
+        ),
+    );
+    let rect = viewport(&output);
+    let begin = press_x(&mut editor, &context, rect, 1.0);
+    let end = begin + egui::vec2(rect.height() / 10.0, 0.0);
+    frame(
+        &mut editor,
+        &context,
+        raw(
+            egui::vec2(1440.0, 900.0),
+            Pos2::ZERO,
+            1.0,
+            vec![Event::PointerMoved(end)],
+        ),
+    );
+    assert_ne!(editor.history.scene(), &before);
+    frame(
+        &mut editor,
+        &context,
+        raw(
+            egui::vec2(1440.0, 900.0),
+            Pos2::ZERO,
+            1.25,
+            button(end, false),
+        ),
+    );
+    assert!(editor.history.active_move().is_none());
+    assert_eq!(editor.history.scene(), &before);
+    assert_eq!(editor.scene_token, token);
+    assert_eq!(editor.is_dirty(), dirty);
+    assert_eq!(
+        editor
+            .history
+            .scene()
+            .node(node)
+            .unwrap()
+            .transform()
+            .translation[1]
+            .to_bits(),
+        (-0.0f64).to_bits()
+    );
+    assert_eq!(
+        azteccraft::native_scene::binary::encode(editor.history.scene()).unwrap(),
+        encoded
+    );
+    editor.history_step(true);
+    assert_eq!(
+        editor
+            .history
+            .scene()
+            .node(node)
+            .unwrap()
+            .transform()
+            .translation[0],
+        0.5
+    );
+    editor.history_step(false);
+    assert_eq!(editor.history.scene(), &before);
+    assert_eq!(std::fs::read(&source).unwrap(), original);
+}
+
+#[test]
+fn coalesced_modified_release_or_modifier_transition_cancels_before_final_modifier_up() {
+    for transition_only in [false, true] {
+        let (mut editor, context, rect) = setup(1.0);
+        let before = editor.history.scene().clone();
+        let begin = press_x(&mut editor, &context, rect, 1.0);
+        let end = begin + egui::vec2(rect.height() / 10.0, 0.0);
+        frame(
+            &mut editor,
+            &context,
+            raw(
+                egui::vec2(1440.0, 900.0),
+                Pos2::ZERO,
+                1.0,
+                vec![Event::PointerMoved(end)],
+            ),
+        );
+        assert_ne!(editor.history.scene(), &before);
+        let events = if transition_only {
+            vec![
+                Event::ModifiersChanged(Modifiers::SHIFT),
+                Event::ModifiersChanged(Modifiers::NONE),
+                Event::PointerButton {
+                    pos: end,
+                    button: PointerButton::Primary,
+                    pressed: false,
+                    modifiers: Modifiers::NONE,
+                },
+            ]
+        } else {
+            vec![
+                Event::PointerButton {
+                    pos: end,
+                    button: PointerButton::Primary,
+                    pressed: false,
+                    modifiers: Modifiers::SHIFT,
+                },
+                Event::ModifiersChanged(Modifiers::NONE),
+            ]
+        };
+        frame(
+            &mut editor,
+            &context,
+            raw(egui::vec2(1440.0, 900.0), Pos2::ZERO, 1.0, events),
+        );
+        assert!(editor.history.active_move().is_none());
+        assert_eq!(editor.history.scene(), &before);
+    }
+}
+
+#[test]
+fn coalesced_modified_tool_key_is_not_unmodified_by_later_modifier_up() {
+    for tool_key in [Key::Q, Key::W] {
+        let (mut editor, context, _) = setup(1.0);
+        if tool_key == Key::W {
+            frame(
+                &mut editor,
+                &context,
+                raw(
+                    egui::vec2(1440.0, 900.0),
+                    Pos2::ZERO,
+                    1.0,
+                    vec![key(Key::Q)],
+                ),
+            );
+        }
+        let before = editor.active_tool;
+        frame(
+            &mut editor,
+            &context,
+            raw(
+                egui::vec2(1440.0, 900.0),
+                Pos2::ZERO,
+                1.0,
+                vec![
+                    Event::Key {
+                        key: tool_key,
+                        physical_key: None,
+                        pressed: true,
+                        repeat: false,
+                        modifiers: Modifiers::SHIFT,
+                    },
+                    Event::ModifiersChanged(Modifiers::NONE),
+                ],
+            ),
+        );
+        assert_eq!(editor.active_tool, before);
+        assert!(editor.history.active_move().is_none());
+    }
+}
+
+#[test]
+fn idle_escape_or_tool_activation_consumes_same_frame_axis_press_and_terminal_release() {
+    for intent in [Key::Escape, Key::W] {
+        let (mut editor, context, rect) = setup(1.0);
+        if intent == Key::W {
+            frame(
+                &mut editor,
+                &context,
+                raw(
+                    egui::vec2(1440.0, 900.0),
+                    Pos2::ZERO,
+                    1.0,
+                    vec![key(Key::Q)],
+                ),
+            );
+        }
+        let before = editor.history.scene().clone();
+        let camera = editor.camera.clone();
+        let point = rect.center() + egui::vec2(40.0, 0.0);
+        let mut events = vec![key(intent)];
+        events.extend(button(point, true));
+        frame(
+            &mut editor,
+            &context,
+            raw(egui::vec2(1440.0, 900.0), Pos2::ZERO, 1.0, events),
+        );
+        assert_eq!(editor.active_tool, ActiveTool::Move);
+        assert!(editor.history.active_move().is_none());
+        assert!(editor.native_move.is_none());
+        frame(
+            &mut editor,
+            &context,
+            raw(
+                egui::vec2(1440.0, 900.0),
+                Pos2::ZERO,
+                1.0,
+                button(point, false),
+            ),
+        );
+        assert!(editor.history.active_move().is_none());
+        assert_eq!(editor.history.scene(), &before);
+        assert_eq!(editor.camera, camera);
+    }
+}
+
+#[test]
+fn hover_and_active_painter_states_use_the_same_actual_axis_hit() {
+    let (mut editor, context, rect) = setup(1.0);
+    let shaft_color = |output: &egui::FullOutput| {
+        output
+            .shapes
+            .iter()
+            .find_map(|shape| {
+                if let Shape::LineSegment { points, stroke } = &shape.shape
+                    && points[0].distance(rect.center()) < 0.01
+                    && points[1].x > rect.center().x + 30.0
+                    && (points[1].y - rect.center().y).abs() < 0.01
+                {
+                    Some(stroke.color)
+                } else {
+                    None
+                }
+            })
+            .unwrap()
+    };
+    let idle = frame(
+        &mut editor,
+        &context,
+        raw(egui::vec2(1440.0, 900.0), Pos2::ZERO, 1.0, vec![]),
+    );
+    assert_eq!(shaft_color(&idle), egui::Color32::from_rgb(235, 75, 75));
+    let point = rect.center() + egui::vec2(40.0, 0.0);
+    let hover = frame(
+        &mut editor,
+        &context,
+        raw(
+            egui::vec2(1440.0, 900.0),
+            Pos2::ZERO,
+            1.0,
+            vec![Event::PointerMoved(point)],
+        ),
+    );
+    assert_eq!(shaft_color(&hover), egui::Color32::WHITE);
+    assert!(editor.history.active_move().is_none());
+    let active = frame(
+        &mut editor,
+        &context,
+        raw(
+            egui::vec2(1440.0, 900.0),
+            Pos2::ZERO,
+            1.0,
+            button(point, true),
+        ),
+    );
+    assert_eq!(shaft_color(&active), egui::Color32::from_rgb(255, 225, 80));
+    assert_eq!(editor.history.active_move().unwrap().axis, WorldAxis::X);
+}
+
+#[test]
+fn actual_hidden_logic_cancels_native_pointer_capture() {
+    let (mut editor, context, rect) = setup(1.0);
+    let before = editor.history.scene().clone();
+    let begin = press_x(&mut editor, &context, rect, 1.0);
+    let end = begin + egui::vec2(rect.height() / 10.0, 0.0);
+    frame(
+        &mut editor,
+        &context,
+        raw(
+            egui::vec2(1440.0, 900.0),
+            Pos2::ZERO,
+            1.0,
+            vec![Event::PointerMoved(end)],
+        ),
+    );
+    let mut input = raw(egui::vec2(1440.0, 900.0), Pos2::ZERO, 1.0, vec![]);
+    input.focused = false;
+    input
+        .viewports
+        .get_mut(&egui::ViewportId::ROOT)
+        .unwrap()
+        .minimized = Some(true);
+    eframe::App::raw_input_hook(&mut editor, &context, &mut input);
+    let mut native_frame = eframe::Frame::_new_kittest();
+    let _ = context.run_logic(&input, |ctx| {
+        eframe::App::logic(&mut editor, ctx, &mut native_frame)
+    });
+    assert!(editor.history.active_move().is_none());
+    assert!(editor.native_move.is_none());
+    assert_eq!(editor.history.scene(), &before);
+    assert!(editor.inspect_move().unwrap().viewport.is_none());
+}
+
+#[test]
+fn same_frame_name_or_channel_focus_blocks_qw_before_move_dispatch() {
+    for field in [crate::app::name_edit_id(), crate::app::channel_edit_id(0)] {
+        for shortcut in [Key::Q, Key::W] {
+            let (mut editor, context, _) = setup(1.25);
+            let (mut baseline, baseline_context, _) = setup(1.25);
+            if shortcut == Key::W {
+                for (editor, context) in
+                    [(&mut editor, &context), (&mut baseline, &baseline_context)]
+                {
+                    frame(
+                        editor,
+                        context,
+                        raw(
+                            egui::vec2(1440.0, 900.0),
+                            Pos2::ZERO,
+                            1.25,
+                            vec![key(Key::Q)],
+                        ),
+                    );
+                    frame(
+                        editor,
+                        context,
+                        raw(
+                            egui::vec2(1440.0, 900.0),
+                            Pos2::ZERO,
+                            1.25,
+                            vec![Event::Key {
+                                key: Key::Q,
+                                physical_key: None,
+                                pressed: false,
+                                repeat: false,
+                                modifiers: Modifiers::NONE,
+                            }],
+                        ),
+                    );
+                }
+            }
+            let tool = editor.active_tool;
+            assert_eq!(tool, baseline.active_tool);
+            assert_eq!(context.memory(|memory| memory.focused()), None);
+            assert_eq!(baseline_context.memory(|memory| memory.focused()), None);
+            let position = context.read_response(field).unwrap().rect.center();
+            assert_eq!(
+                position,
+                baseline_context.read_response(field).unwrap().rect.center()
+            );
+            let before = editor.history.scene().clone();
+            let baseline_before = baseline.history.scene().clone();
+            let token = editor.scene_token;
+            let mut events = button(position, true);
+            events.extend(button(position, false));
+            let mut shortcut_events = events.clone();
+            shortcut_events.push(key(shortcut));
+            let text = if shortcut == Key::Q { "q" } else { "w" };
+            events.push(Event::Text(text.into()));
+            shortcut_events.push(Event::Text(text.into()));
+            frame(
+                &mut baseline,
+                &baseline_context,
+                raw(egui::vec2(1440.0, 900.0), Pos2::ZERO, 1.25, events),
+            );
+            frame(
+                &mut editor,
+                &context,
+                raw(egui::vec2(1440.0, 900.0), Pos2::ZERO, 1.25, shortcut_events),
+            );
+            assert_eq!(context.memory(|memory| memory.focused()), Some(field));
+            assert_eq!(
+                baseline_context.memory(|memory| memory.focused()),
+                Some(field)
+            );
+            assert_eq!(editor.active_tool, tool);
+            assert_eq!(editor.history.scene(), &before);
+            assert_eq!(baseline.history.scene(), &baseline_before);
+            assert_eq!(editor.scene_token, token);
+            assert_eq!(editor.name, baseline.name);
+            assert_eq!(editor.channels, baseline.channels);
+            assert_eq!(editor.name_intent, baseline.name_intent);
+            assert_eq!(editor.channel_intents, baseline.channel_intents);
+            assert_eq!(editor.has_draft(), baseline.has_draft());
+            assert!(editor.history.active_move().is_none());
+        }
+    }
+}

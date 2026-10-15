@@ -34,7 +34,7 @@ fn headless_gpu_ascii_editor_open_select_frame_reaches_actual_curve_callback() {
     let baseline = editor.history.scene().clone();
     let token = editor.scene_token;
     let output = context.run_ui(input(Vec::new(), egui::Vec2::splat(128.0)), |ui| {
-        editor.viewport(ui, token, None, false, true)
+        editor.viewport(ui, token, None, None, false, true)
     });
     assert!(
         output
@@ -139,7 +139,7 @@ fn headless_gpu_face_editor_typed_selection_reaches_actual_marker_callback() {
     let before = editor.history.scene().clone();
     let token = editor.scene_token;
     let output = context.run_ui(input(Vec::new(), egui::Vec2::splat(128.0)), |ui| {
-        editor.viewport(ui, token, None, false, true)
+        editor.viewport(ui, token, None, None, false, true)
     });
     let recorded = recorded_submission(editor.renderer.as_ref().unwrap());
     assert_eq!(recorded.centers.end - recorded.centers.start, 36);
@@ -185,7 +185,7 @@ fn headless_gpu_actual_editor_startup_installs_resources_used_by_its_own_callbac
     .unwrap();
     let token = editor.scene_token;
     let output = context.run_ui(input(Vec::new(), egui::Vec2::splat(128.0)), |ui| {
-        editor.viewport(ui, token, None, false, true)
+        editor.viewport(ui, token, None, None, false, true)
     });
     assert_eq!(
         output
@@ -265,7 +265,7 @@ fn replacement_frame_token_discards_navigation_and_click_for_old_document() {
             vec![egui::Event::PointerMoved(egui::pos2(64.0, 64.0))],
             egui::Vec2::splat(128.0),
         ),
-        |ui| editor.viewport(ui, old, None, false, true),
+        |ui| editor.viewport(ui, old, None, None, false, true),
     );
     warmup.textures_delta.clear();
     editor.new_document().unwrap();
@@ -284,7 +284,7 @@ fn replacement_frame_token_discards_navigation_and_click_for_old_document() {
             ],
             egui::Vec2::splat(128.0),
         ),
-        |ui| editor.viewport(ui, old, None, false, true),
+        |ui| editor.viewport(ui, old, None, None, false, true),
     );
     output.textures_delta.clear();
     assert_eq!(editor.camera, camera);

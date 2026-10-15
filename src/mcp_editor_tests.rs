@@ -229,6 +229,87 @@ fn camera_operations() -> [Operation; 3] {
 }
 
 #[test]
+fn remote_numeric_move_survives_successive_actual_hidden_editor_callbacks() {
+    use crate::editor_operations::MoveDistance;
+    use azteccraft::{
+        history::{MoveFinish, MoveId},
+        native_scene::WorldAxis,
+    };
+    let context = egui::Context::default();
+    let (bridge, ingress) = mcp::test_bridge(context.clone());
+    let mut editor = Editor {
+        mcp: Some(bridge),
+        ..Default::default()
+    };
+    editor.create(Primitive::Cube);
+    let before = editor.history.scene().clone();
+    let target = editor.selected_move_target().unwrap();
+    let token = editor.scene_token;
+    let mut begin = ingress
+        .queue(RemoteRequest {
+            expected_scene_token: Some(token),
+            operation: Operation::BeginMove {
+                target,
+                axis: WorldAxis::X,
+            },
+        })
+        .unwrap();
+    hidden_frame(&mut editor, &context, vec![]);
+    let Ok(OperationReply::MoveStarted { move_id }) = begin.try_recv().unwrap() else {
+        panic!()
+    };
+    let id = MoveId::from_decimal(&move_id).unwrap();
+    hidden_frame(&mut editor, &context, vec![]);
+    assert_eq!(editor.history.active_move().unwrap().id, id);
+    let mut update = ingress
+        .queue(RemoteRequest {
+            expected_scene_token: Some(token),
+            operation: Operation::UpdateMove {
+                id,
+                distance: MoveDistance::Declared(2.0),
+            },
+        })
+        .unwrap();
+    hidden_frame(&mut editor, &context, vec![]);
+    assert!(matches!(
+        update.try_recv().unwrap(),
+        Ok(OperationReply::Changed)
+    ));
+    let preview = editor.history.scene().clone();
+    assert_eq!(preview.nodes()[0].transform().translation[0], 2.0);
+    hidden_frame(&mut editor, &context, vec![]);
+    assert_eq!(editor.history.active_move().unwrap().id, id);
+    assert_eq!(editor.history.scene(), &preview);
+    let mut finish = ingress
+        .queue(RemoteRequest {
+            expected_scene_token: Some(token),
+            operation: Operation::FinishMove {
+                id,
+                finish: MoveFinish::Commit,
+            },
+        })
+        .unwrap();
+    hidden_frame(&mut editor, &context, vec![]);
+    assert!(matches!(
+        finish.try_recv().unwrap(),
+        Ok(OperationReply::Changed)
+    ));
+    assert!(editor.history.active_move().is_none());
+    let mut undo = ingress
+        .queue(RemoteRequest {
+            expected_scene_token: Some(token),
+            operation: Operation::Undo,
+        })
+        .unwrap();
+    hidden_frame(&mut editor, &context, vec![]);
+    assert!(matches!(
+        undo.try_recv().unwrap(),
+        Ok(OperationReply::Changed)
+    ));
+    assert_eq!(editor.history.scene(), &before);
+}
+
+#[test]
 fn pending_file_resolution_retains_input_draft_focus_and_scene_guards() {
     for condition in 0..5 {
         let context = egui::Context::default();
@@ -1491,6 +1572,8 @@ mod official_client {
         ));
     }
 
+    include!("move_mcp_tests.rs");
+
     #[tokio::test]
     async fn material_sdk_edit_inspect_history_and_repeated_save_share_the_native_word() {
         let directory = tempfile::tempdir().unwrap();
@@ -2354,7 +2437,11 @@ mod official_client {
         };
         assert!(matches!(
             editor
-                .apply_operation_guarded(Operation::SaveScene, &guard)
+                .apply_operation_guarded(
+                    azteccraft::history::MoveProvenance::Native,
+                    Operation::SaveScene,
+                    &guard
+                )
                 .unwrap(),
             OperationReply::SaveUncertain { .. }
         ));
