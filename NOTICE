@@ -1,0 +1,17 @@
+AztecCraft
+Copyright (c) 2026 ArtCraft Team and the AztecCraft contributors.
+Licensed under the MIT License or the Apache License, Version 2.0, at your option
+(LICENSE-MIT, LICENSE-APACHE).
+
+Third-party material
+
+This product bundles third-party material under its own licenses, listed below.
+
+craft-atomic (vendor/craft-atomic) - atomic file writes, vendored from
+https://github.com/storytold/craft-libs (crates/atomic), copyright (c) 2026 ArtCraft Team
+and the craft-libs contributors, licensed MIT OR Apache-2.0. Its complete LICENSE-MIT,
+LICENSE-APACHE, NOTICE and ATTRIBUTION.md are in vendor/craft-atomic/, and its provenance is in
+vendor/craft-atomic/UPSTREAM.md. Those upstream notices describe the whole craft-libs workspace;
+the assets they list (ICC profiles, FOGRA39 data) are not bundled here.
+
+Packaged binaries also carry the four craft-atomic files under licenses/craft-atomic/.
