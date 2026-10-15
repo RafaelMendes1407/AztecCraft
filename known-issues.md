@@ -203,3 +203,16 @@ genuine source-bound Save consumer checks remain open.
 The prior changed-parent full MCP-client run observed an unchanged transport
 notification-flood outer-timeout failure; its single isolated reproduction
 passed. The full run remains failed and the timing cause unproved.
+
+## Move lifecycle gaps
+
+**Severity:** low
+**Area:** Move tool, MCP lifecycle
+
+A remote-owned Move has no timeout and is not tied to the MCP client session. If
+the client disconnects it stays active, preview included, until a matching
+`finish_move` from a later client with the same scene token and move ID, or a human
+cancel (Escape, tool/selection change, New/Open or close). Until then every other
+mutating operation, Grid toggle and selection-mode change reports
+`busy_manipulation`. Replacing the scene (New or Open) also resets the active tool
+to Select; Maya keeps the current tool across scene changes.
