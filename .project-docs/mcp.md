@@ -1,6 +1,6 @@
 # Native editor MCP
 
-The optional MCP server controls the new native Editor window launched by its client. Tools use that window's canonical native scene, history, selection and camera. It cannot attach to an already running instance. This candidate exposes twenty tools; it does not establish Maya scripting, plug-in or full-functionality compatibility.
+The optional MCP server controls the new native Editor window launched by its client. Tools use that window's canonical native scene, history, selection and camera. It cannot attach to an already running instance. This candidate exposes twenty-one tools; it does not establish Maya scripting, plug-in or full-functionality compatibility.
 
 The Save integration in this working branch is provisional. Its ordinary vendored
 atomic engine and document adapter have separate consumer checks. Current
@@ -36,6 +36,19 @@ Pinned rmcp 3.5.1 handles protocol decoding, discovery, initialization and reque
 
 ## Tools and state
 
+Material inspection adds an optional bounded `material` projection to each shape:
+shader type, authoritative diffuse f64, complete shared-user count and separate
+editing/rendering availability. Null means supported editing is unavailable, not
+a guessed default. `set_material_diffuse` follows the same token, focus, differing
+draft, modal/close and native-input guards as other mutations. Values may exceed
+one; no source record is inserted and no other shader input is editable. The
+isolated official SDK material edit/inspect/Undo/Save/reopen journey and full
+client matrix pass. The corrected test performs actual protocol Open after Save,
+requiring new document tokens and inspected material values; independent focused
+verification reproduced it. Bounded macOS native data QA also passed. Committed
+cold, hooks/CI and published combined-parent verification remain pending;
+material data changes do not enable rendered Phong output.
+
 Call `inspect_scene` first. Every other tool requires `scene_token`, a UUID string from that inspection. IDs are unsigned 64-bit decimal strings, including values beyond JavaScript's exact integer range. JSON numbers are rejected for IDs. Unknown argument fields, invalid types and unknown tools are protocol errors.
 
 | Tool | Arguments besides `scene_token` | Result |
@@ -47,6 +60,7 @@ Call `inspect_scene` first. Every other tool requires `scene_token`, a UUID stri
 | `set_transform` | `node_id`, `translation`, `rotation_degrees`, `scale`, each an array of three finite f64 numbers | Translation in declared scene units, rotation in degrees, dimensionless scale |
 | `edit_node` | `node_id`; optional `name`, `translation`, `rotation_degrees`, `scale` | One undo entry for the supplied name and individual channels; selection stays unchanged |
 | `extrude_face` | `node_id`, `shape_id`, `instance_path`, `face_index`, `distance` | Extrudes one current canonical face through the shared native history |
+| `set_material_diffuse` | `shape_id`: decimal NativeId; `value`: finite nonnegative f64 | Edits the checked existing Phong diffuse scalar for all shapes sharing that shader, through one History command |
 | `delete_node` | `node_id` | Changed authoring state |
 | `undo` | None | Changed or unchanged history state |
 | `redo` | None | Changed or unchanged history state |
@@ -210,7 +224,7 @@ No-default core builds remain independent of desktop and MCP dependencies. See [
 
 Every existing and new user-facing capability and its relevant state must be accessible through MCP, including while catch-up is in progress. Each applicable feature slice includes its typed operation, MCP schema/handler and inspection changes, real Editor protocol tests and documentation before the completed feature gate. The feature owner coordinates protected editor boundaries and adapter review with the MCP owner. Do not advertise a tool before the operation exists or leave MCP support as a permanent later backlog.
 
-The current catalog omits component selection, GUI Export, materials, animation, simulation and scripting. `extrude_face` exposes the existing bounded single-quad operation through an explicit current target; native component selection and face-extrusion UI remain pending. Native face UI support must include its MCP capability updates in that same completed feature slice. Core-only APIs and unsupported controls do not imply an advertised MCP tool. The current binary decoder refuses shared-instance MB input, and the native UI cannot create instances; SDK ambiguity behavior has no reachable producer in this slice. Canonical path/ambiguity checks and reachable explicit-path protocol tests do not establish full instanced-file support.
+The current catalog omits component selection, GUI Export, material assignment/rendering, animation, simulation and scripting. Its single material-data edit is the bounded existing Phong diffuse scalar described above. `extrude_face` exposes the existing bounded single-quad operation through an explicit current target; native component selection and face-extrusion UI remain pending. Native face UI support must include its MCP capability updates in that same completed feature slice. Core-only APIs and unsupported controls do not imply an advertised MCP tool. The current binary decoder refuses shared-instance MB input, and the native UI cannot create instances; SDK ambiguity behavior has no reachable producer in this slice. Canonical path/ambiguity checks and reachable explicit-path protocol tests do not establish full instanced-file support.
 
 Nine verified tools establish the initial server foundation, not catch-up with every existing operation. Existing capabilities without tools need reviewed follow-up slices; their absence does not defer MCP support for new applicable features, including the native face slice.
 

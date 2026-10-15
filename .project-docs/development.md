@@ -1,5 +1,32 @@
 # Development
 
+## Checked material scalar editing candidate
+
+M1 stores one authoritative effective f64 diffuse value for each supported shared
+Phong shader and existing eight-byte source span. Immutable appearance metadata
+and original source bytes remain separate. The Channel Box's Materials/Common
+Material Attributes section targets an explicit direct mesh shape; several direct
+shapes require a choice. Connected Color and material rendering stay unavailable.
+Diffuse text retains the unrounded source value, including unusual original
+values; edits must be finite and nonnegative and may exceed one. Slider bounds
+apply only to interaction. Its original document token and shape target travel
+with the draft through the existing commit, focus, Escape, selection, Undo and
+Save barriers. Remote mutations cannot commit that human draft.
+
+The isolated branch passed default248, headless192 and MCP-client314 tests, plus
+formatting and strict default/headless/client/production lint. Actual widget and
+SDK tests cover draft targeting, precise Enter/Escape, History and repeated Save.
+The independent viewer source-word oracle passed; three isolated core mutations
+each failed at their intended assertions and passed after exact restoration.
+Those private-resolver sensitivity runs are separate from the ordinary matrix.
+The corrected SDK test and independent verifier also exercised actual protocol
+Open of saved outputs and the new document token/origin. Root's bounded macOS
+native edit/Undo/Redo/Save As/Open journey passed, with independent byte checks
+limited to the authorized eight-byte word and unchanged original fixtures.
+Committed cold, ordinary hooks, CI and published combined-parent verification
+remain pending. Data editing does not imply evaluated Phong output,
+textures, normals or color management.
+
 Install Rust 1.99.0 with Cargo, rustfmt and Clippy. The repository pins the same
 toolchain for local rustup users and CI. The user has authorized publishing the
 early prototype, superseding the original first-push restriction. Full Maya

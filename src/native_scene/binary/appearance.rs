@@ -1206,6 +1206,150 @@ fn shape_binding(
     ))
 }
 
+fn checked_material_shape(
+    graph: &Graph<'_>,
+    shapes: &[ShapeAppearance],
+    materials: &[SourceMaterial],
+    owner: Option<usize>,
+    shading_group: usize,
+    meter: &mut Meter<'_>,
+) -> Result<bool, BinaryError> {
+    let Some(owner) = owner else { return Ok(false) };
+    meter.step(shapes.len())?;
+    Ok(shapes.iter().any(|shape| {
+        shape.source_group == graph.facts.records[owner].group
+            && shape.binding.as_ref().is_ok_and(|binding| {
+                materials[binding.material].owners[0] == graph.facts.records[shading_group].group
+            })
+    }))
+}
+
+fn complete_diffuse_users(
+    graph: &Graph<'_>,
+    shader: usize,
+    shapes: &[ShapeAppearance],
+    materials: &[SourceMaterial],
+    meter: &mut Meter<'_>,
+) -> Result<bool, BinaryError> {
+    let mut groups = 0usize;
+    meter.step(graph.links.len())?;
+    for output in &graph.links {
+        if output.source != Some(shader) || message_link(graph.facts, output) {
+            continue;
+        }
+        let Some(group) = output.destination else {
+            return Ok(false);
+        };
+        if output.mode != 0
+            || graph.key(&output.source_key) != b"oc"
+            || graph.key(&output.destination_key) != b"ss"
+            || form(graph.facts, group) != Some(*b"SHAD")
+        {
+            return Ok(false);
+        }
+        groups += 1;
+        let mut members = 0usize;
+        meter.step(graph.links.len())?;
+        for link in &graph.links {
+            if link.destination == Some(group) && graph.key(&link.destination_key) == b"dsm" {
+                if !checked_material_shape(graph, shapes, materials, link.source, group, meter)? {
+                    return Ok(false);
+                }
+                members += 1;
+            }
+            if link.source == Some(group)
+                && !message_link(graph.facts, link)
+                && !checked_material_shape(
+                    graph,
+                    shapes,
+                    materials,
+                    link.destination,
+                    group,
+                    meter,
+                )?
+            {
+                return Ok(false);
+            }
+        }
+        if members == 0 {
+            return Ok(false);
+        }
+    }
+    Ok(groups != 0)
+}
+
+fn bind_diffuse(
+    graph: &Graph<'_>,
+    shapes: &[ShapeAppearance],
+    materials: &[SourceMaterial],
+    meter: &mut Meter<'_>,
+) -> Result<(Vec<DiffuseBinding>, Vec<MaterialDiffuse>), BinaryError> {
+    let mut bindings: Vec<DiffuseBinding> = meter.vector(materials.len())?;
+    let mut values = meter.vector(materials.len())?;
+    for material in materials {
+        let shader = material.owners[1];
+        meter.step(bindings.len())?;
+        if bindings.iter().any(|binding| binding.shader == shader) {
+            continue;
+        }
+        let Some(span) = material.inputs.iter().find_map(|input| match input {
+            InputEvidence::Saved {
+                property: InputProperty::Diffuse,
+                span,
+            } => Some(span),
+            _ => None,
+        }) else {
+            continue;
+        };
+        meter.step(graph.facts.records.len())?;
+        let shader_record = graph
+            .facts
+            .records
+            .iter()
+            .position(|record| record.group == shader && matches!(record.data, Data::Create(_)))
+            .ok_or_else(|| {
+                fail(
+                    ErrorKind::Malformed,
+                    graph.facts.container.chunks()[shader].header_range().start,
+                )
+            })?;
+        if !complete_diffuse_users(graph, shader_record, shapes, materials, meter)? {
+            continue;
+        }
+        meter.step(shapes.len())?;
+        let uses_shader = |shape: &ShapeAppearance| {
+            shape.binding.as_ref().is_ok_and(|binding| {
+            let owner = &materials[binding.material];
+            owner.owners[1] == shader && owner.inputs.iter().any(|input| {
+                matches!(input, InputEvidence::Saved { property: InputProperty::Diffuse, span: other } if other == span)
+            })
+        })
+        };
+        let mut users = meter.vector(shapes.iter().filter(|shape| uses_shader(shape)).count())?;
+        meter.step(shapes.len())?;
+        for shape in shapes.iter().filter(|shape| uses_shader(shape)) {
+            users.push(shape.shape);
+        }
+        if users.is_empty() {
+            continue;
+        }
+        let word: [u8; 8] = graph.facts.container.source()[span.value.clone()]
+            .try_into()
+            .map_err(|_| fail(ErrorKind::Malformed, span.value.start))?;
+        values.push(MaterialDiffuse {
+            binding: bindings.len(),
+            value: f64::from_be_bytes(word),
+            replaced: false,
+        });
+        bindings.push(DiffuseBinding {
+            shader,
+            span: span.clone(),
+            shapes: users,
+        });
+    }
+    Ok((bindings, values))
+}
+
 pub(super) fn bind(
     container: &Container,
     facts: &WireFacts<'_>,
@@ -1214,7 +1358,7 @@ pub(super) fn bind(
     scene: &NativeScene,
     budget: &mut Budget,
     retained_appearance_bytes: usize,
-) -> Result<Arc<SourceAppearance>, BinaryError> {
+) -> Result<(Arc<SourceAppearance>, Vec<MaterialDiffuse>), BinaryError> {
     let mut meter = Meter {
         budget,
         bytes: 0,
@@ -1267,10 +1411,18 @@ pub(super) fn bind(
             binding: outcome,
         });
     }
+    let (diffuse, values) = bind_diffuse(&graph, &shapes, &materials, &mut meter)?;
     let arc_bytes = size_of::<SourceAppearance>()
         .checked_add(2 * size_of::<usize>())
         .ok_or_else(resource)?;
     meter.charge(arc_bytes)?;
     meter.budget.charge(arc_bytes)?;
-    Ok(Arc::new(SourceAppearance { shapes, materials }))
+    Ok((
+        Arc::new(SourceAppearance {
+            shapes,
+            materials,
+            diffuse,
+        }),
+        values,
+    ))
 }

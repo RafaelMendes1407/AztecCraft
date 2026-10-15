@@ -1,5 +1,27 @@
 # Native verification record
 
+## M1 material candidate, bounded macOS verification
+
+The current source adds a real Common Material Attributes/Diffuse draft and
+`set_material_diffuse` operation backed by the checked native shared-shader value.
+The isolated default248/headless192/client314 tests and strict lint passed,
+including real TextEdit events and the SDK edit/Undo/Save journey. A later targeted
+SDK test also passed actual protocol Open of each saved output, changed document
+tokens, inspected exact effective words and another Active Save from the reopened
+origin; the retained independent verifier reproduced the corrected journey.
+The independent source-word oracle and three intended core mutation failures with
+exact restored positives are separately recorded. The production MCP build was
+copied and hashed under its build lock. Root operated that macOS package: select
+a supported shape, edit Diffuse with Enter, Save As to a fresh working file,
+toolbar Undo to a dirty baseline and Redo to saved/clean, then File Open the saved
+working file and inspect the retained value. An independent private byte check
+found changes only inside the authorized eight-byte diffuse envelope; all five
+original fixture hashes were unchanged. This proves that bounded native data
+journey, not rendered Phong fidelity or other platforms. Committed cold, ordinary
+hooks, CI and published combined-parent checks remain pending. Originals must
+never be Save destinations. Material rendering, assignment, textures and color
+processing stay unavailable. The historical record below is unchanged.
+
 Recorded 2026-10-14 for source commit `6c96345f7c9754b26dabff0d2ae0eec198441c9b`.
 The verification operator exercised a locally packaged debug macOS application.
 These results apply to that build and platform, without establishing Maya parity

@@ -113,6 +113,14 @@ struct ExtrudeArgs {
 
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+struct MaterialDiffuseArgs {
+    scene_token: String,
+    shape_id: String,
+    value: f64,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct OpenArgs {
     scene_token: String,
     #[schemars(length(min = 1, max = 4096))]
@@ -302,6 +310,22 @@ fn parse_request(name: &str, arguments: JsonObject) -> Result<RemoteRequest, Err
                 },
             )
         }
+        "set_material_diffuse" => {
+            let args: MaterialDiffuseArgs = decode(arguments)?;
+            if !args.value.is_finite() || args.value < 0.0 {
+                return Err(ErrorData::invalid_params(
+                    "Diffuse must be finite and nonnegative",
+                    None,
+                ));
+            }
+            (
+                token(&args.scene_token)?,
+                Operation::SetMaterialDiffuse {
+                    shape: native_id(&args.shape_id)?,
+                    value: args.value,
+                },
+            )
+        }
         "extrude_face" => {
             let args: ExtrudeArgs = decode(arguments)?;
             if !(2..=257).contains(&args.instance_path.len()) || !args.distance.is_finite() {
@@ -470,6 +494,10 @@ fn catalog() -> Vec<Tool> {
                 "extrude_face" => (
                     "Extrude one current canonical quad along its local normal by distance in declared scene units. Requires node, shape and full root-to-shape path; shared-shape edits affect every instance. Zero distance changes topology; imported structural edits remain unsupported",
                     schema::<ExtrudeArgs>(),
+                ),
+                "set_material_diffuse" => (
+                    "Edit the checked saved Phong diffuse scalar for an exact shape through shared undo history. Requires complete shared-shader users; affects all those shapes. Values are finite and nonnegative, may exceed one, and do not enable rendered materials",
+                    schema::<MaterialDiffuseArgs>(),
                 ),
                 "delete_node" => (
                     "Delete an object through editor undo history",
@@ -696,6 +724,42 @@ mod tests {
     use super::*;
 
     #[test]
+    fn material_arguments_are_strict_f64_and_exact_native_identity() {
+        let token = Uuid::new_v4().to_string();
+        for args in [
+            json!({"scene_token":token,"shape_id":"2","value":-1}),
+            json!({"scene_token":token,"shape_id":2,"value":0.5}),
+            json!({"scene_token":token,"shape_id":"2"}),
+            json!({"scene_token":token,"shape_id":"2","value":"NaN"}),
+            json!({"scene_token":token,"shape_id":"2","value":null}),
+            json!({"scene_token":token,"shape_id":"2","value":0.5,"extra":true}),
+        ] {
+            assert!(
+                parse_request("set_material_diffuse", args.as_object().unwrap().clone()).is_err()
+            );
+        }
+        for value in [-0.0f64, 1.2345678901234567, 4.5] {
+            let request = parse_request(
+                "set_material_diffuse",
+                json!({"scene_token":token,"shape_id":"18446744073709551615","value":value})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
+            .unwrap();
+            let Operation::SetMaterialDiffuse {
+                shape,
+                value: actual,
+            } = request.operation
+            else {
+                panic!("wrong typed operation");
+            };
+            assert_eq!(shape.to_decimal(), "18446744073709551615");
+            assert_eq!(actual.to_bits(), value.to_bits());
+        }
+    }
+
+    #[test]
     fn advertised_catalogue_schemas_and_handlers_match_exactly() {
         let tools = catalog();
         assert_eq!(
@@ -718,6 +782,7 @@ mod tests {
                 "select_node" => json!({"scene_token":token,"node_id":null}),
                 "rename_node" => json!({"scene_token":token,"node_id":"1","name":"cube"}),
                 "edit_node" => json!({"scene_token":token,"node_id":"1"}),
+                "set_material_diffuse" => json!({"scene_token":token,"shape_id":"2","value":1.25}),
                 "extrude_face" => {
                     json!({"scene_token":token,"node_id":"1","shape_id":"2","instance_path":["1","2"],"face_index":0,"distance":1})
                 }

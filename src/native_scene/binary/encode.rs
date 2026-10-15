@@ -58,6 +58,24 @@ fn check_appearance_metadata(
     Ok(())
 }
 
+fn retained_material_metadata(scene: &NativeScene) -> Result<usize, BinaryError> {
+    let appearance = scene
+        .source
+        .as_ref()
+        .and_then(|source| source.appearance.as_ref())
+        .map(|appearance| appearance.metadata_bytes())
+        .transpose()
+        .map_err(|error| canonical(error, None))?
+        .unwrap_or(0);
+    appearance
+        .checked_add(
+            scene
+                .material_bytes()
+                .map_err(|error| canonical(error, None))?,
+        )
+        .ok_or_else(resource)
+}
+
 pub fn encode(scene: &NativeScene) -> Result<Vec<u8>, BinaryError> {
     let source = scene
         .source
@@ -65,13 +83,7 @@ pub fn encode(scene: &NativeScene) -> Result<Vec<u8>, BinaryError> {
         .filter(|s| s.format == SourceFormat::Binary)
         .ok_or_else(unsupported)?;
     {
-        let retained_appearance = source
-            .appearance
-            .as_ref()
-            .map(|appearance| appearance.metadata_bytes())
-            .transpose()
-            .map_err(|error| canonical(error, None))?
-            .unwrap_or(0);
+        let retained_appearance = retained_material_metadata(scene)?;
         let original = decode_with_retained_bytes(source.bytes.clone(), 0, retained_appearance)?;
         if !same_structure(scene, &original) || original.source.as_ref() != Some(source) {
             return Err(unsupported());
@@ -87,7 +99,13 @@ pub fn encode(scene: &NativeScene) -> Result<Vec<u8>, BinaryError> {
         }
         scene.validate().map_err(|e| canonical(e, None))?;
     }
-    let mut budget = Budget::new(source.bytes.len())?;
+    let mut budget = Budget::new(
+        source
+            .bytes
+            .len()
+            .checked_add(retained_material_metadata(scene)?)
+            .ok_or_else(resource)?,
+    )?;
     let mut output = budget.vector::<u8>(source.bytes.len())?;
     output.extend_from_slice(&source.bytes);
     for node in &scene.nodes {
@@ -122,6 +140,23 @@ pub fn encode(scene: &NativeScene) -> Result<Vec<u8>, BinaryError> {
             }
         }
     }
+    for value in &scene.materials {
+        if !value.replaced {
+            continue;
+        }
+        let binding = source
+            .appearance
+            .as_ref()
+            .and_then(|appearance| appearance.diffuse.get(value.binding))
+            .ok_or_else(unsupported)?;
+        binding
+            .original(source)
+            .map_err(|error| canonical(error, None))?;
+        output
+            .get_mut(binding.span.value.clone())
+            .ok_or_else(unsupported)?
+            .copy_from_slice(&value.value.to_be_bytes());
+    }
     let retained = source
         .bytes
         .len()
@@ -132,19 +167,25 @@ pub fn encode(scene: &NativeScene) -> Result<Vec<u8>, BinaryError> {
     }
     // Reparse while retaining both the live source and the returned output buffer.
     budget.charge(output.len())?;
-    let retained_appearance = source
-        .appearance
-        .as_ref()
-        .map(|appearance| appearance.metadata_bytes())
-        .transpose()
-        .map_err(|error| canonical(error, None))?
-        .unwrap_or(0);
+    let retained_appearance = retained_material_metadata(scene)?;
     let parsed =
         decode_with_retained_bytes(Arc::from(output.as_slice()), retained, retained_appearance)?;
     if !same_structure(scene, &parsed) {
         return Err(unsupported());
     }
     check_appearance_metadata(scene, &parsed)?;
+    if scene.materials.len() != parsed.materials.len()
+        || scene
+            .materials
+            .iter()
+            .zip(&parsed.materials)
+            .any(|(expected, actual)| {
+                expected.binding != actual.binding
+                    || expected.value.to_bits() != actual.value.to_bits()
+            })
+    {
+        return Err(unsupported());
+    }
     for (node, decoded) in scene.nodes.iter().zip(&parsed.nodes) {
         for field in FIELDS {
             for (component, (value, after)) in node

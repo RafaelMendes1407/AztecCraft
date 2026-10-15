@@ -1,5 +1,18 @@
 # Known limitations
 
+## Material data editing is a bounded candidate
+
+The native Common Material Attributes/Diffuse control and `set_material_diffuse`
+tool edit only an existing checked Phong scalar whose complete shared-shader
+consumer closure is supported. Missing/default records, connected overrides,
+unsupported consumers and graph edits are unavailable. Values use native f64
+words and one shared History value; the slider does not clamp untouched source
+data. No rendered material, texture lookup, assignment or color processor is
+provided. Isolated material widget/SDK and default/headless/client checks pass;
+the corrected protocol reopen journey was independently reproduced and bounded
+macOS native edit/Undo/Save/reopen passed. Committed cold verification, hooks/CI
+and published Save/NCRV/Face/Grid composition remain pending.
+
 ## Reference baseline unavailable
 
 **Severity:** high

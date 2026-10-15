@@ -57,7 +57,7 @@ pub const MAX_NAME_BYTES: usize = 4096;
 pub const MAX_RESULT_BYTES: usize = 512 * 1024;
 
 #[cfg(any(test, feature = "mcp"))]
-pub const TOOL_NAMES: [&str; 20] = [
+pub const TOOL_NAMES: [&str; 21] = [
     "inspect_scene",
     "create_primitive",
     "select_node",
@@ -65,6 +65,7 @@ pub const TOOL_NAMES: [&str; 20] = [
     "set_transform",
     "edit_node",
     "extrude_face",
+    "set_material_diffuse",
     "delete_node",
     "undo",
     "redo",
@@ -81,6 +82,11 @@ pub const TOOL_NAMES: [&str; 20] = [
 ];
 
 pub enum Operation {
+    #[cfg(any(test, feature = "mcp"))]
+    SetMaterialDiffuse {
+        shape: NativeId,
+        value: f64,
+    },
     #[cfg(any(test, feature = "mcp"))]
     Inspect,
     Create {
@@ -264,6 +270,16 @@ pub struct ShapeInspection {
     pub faces: usize,
     pub smoothing_known: bool,
     pub source_appearance: azteccraft::native_scene::AppearanceSummary,
+    pub material: Option<MaterialInspection>,
+}
+#[derive(Debug, Serialize)]
+#[cfg(any(test, feature = "mcp"))]
+pub struct MaterialInspection {
+    pub shader: &'static str,
+    pub diffuse: f64,
+    pub shared_users: usize,
+    pub editing_available: bool,
+    pub rendering_available: bool,
 }
 #[derive(Debug, Serialize)]
 #[cfg(any(test, feature = "mcp"))]
@@ -353,6 +369,7 @@ pub fn check_inspection_size(
     for shape in scene.shapes() {
         estimated_bytes = estimated_bytes
             .saturating_add(512)
+            .saturating_add(256)
             .saturating_add(APPEARANCE_SUMMARY_MAX_BYTES)
             .saturating_add(shape.name().len().saturating_mul(6));
         if estimated_bytes > limit {

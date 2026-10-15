@@ -23,6 +23,10 @@ pub enum Command {
         name: Option<String>,
         channels: [Option<f64>; 9],
     },
+    SetMaterialDiffuse {
+        shape: NativeId,
+        value: f64,
+    },
     ExtrudeFace {
         shape: NativeId,
         face_index: usize,
@@ -83,6 +87,10 @@ impl History {
             }
             Command::EditNode { id, name, channels } => {
                 candidate.edit_node(id, name.as_deref(), channels)?;
+                EditOutcome::Changed
+            }
+            Command::SetMaterialDiffuse { shape, value } => {
+                candidate.set_material_diffuse(shape, value)?;
                 EditOutcome::Changed
             }
             Command::ExtrudeFace {
