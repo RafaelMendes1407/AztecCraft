@@ -16,6 +16,11 @@ name = "azteccraft"
 path = "src/main.rs"
 required-features = ["desktop"]
 
+[[example]]
+name = "icon_sheet"
+path = "examples/icon_sheet.rs"
+required-features = ["desktop"]
+
 [dependencies]
 glam = { version = "=0.34.1", features = ["serde"] }
 serde = { version = "=1.0.229", features = ["derive"] }
