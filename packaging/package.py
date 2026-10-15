@@ -18,6 +18,12 @@ from typing import Literal
 Platform = Literal["macos", "windows", "linux"]
 ATOMIC_NOTICES = ("LICENSE-MIT", "LICENSE-APACHE", "NOTICE", "ATTRIBUTION.md")
 PROJECT_NOTICES = ("LICENSE-MIT", "LICENSE-APACHE", "NOTICE")
+FONT_NOTICES = (
+    "Hack-Regular.txt",
+    "OFL.txt",
+    "UFL.txt",
+    "emoji-icon-font-mit-license.txt",
+)
 NOTICE_LIMIT = 64 * 1024
 
 
@@ -29,18 +35,22 @@ def capture_project_notices(manifest: Path) -> tuple[tuple[str, bytes], ...]:
     return capture_notices(manifest.parent, PROJECT_NOTICES)
 
 
+def capture_font_notices(manifest: Path) -> tuple[tuple[str, bytes], ...]:
+    return capture_notices(manifest.parent / "licenses" / "egui-default-fonts", FONT_NOTICES)
+
+
 def capture_notices(root: Path, names: tuple[str, ...]) -> tuple[tuple[str, bytes], ...]:
     notices = []
     for name in names:
         path = root / name
         if not stat.S_ISREG(path.lstat().st_mode):
-            raise ValueError(f"atomic notice {name} must be a regular file, not a symlink")
+            raise ValueError(f"license notice {name} must be a regular file, not a symlink")
         with path.open("rb") as source:
             if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
-                raise ValueError(f"atomic notice {name} must be a regular file")
+                raise ValueError(f"license notice {name} must be a regular file")
             content = source.read(NOTICE_LIMIT + 1)
         if len(content) > NOTICE_LIMIT:
-            raise ValueError(f"atomic notice {name} exceeds 64 KiB")
+            raise ValueError(f"license notice {name} exceeds 64 KiB")
         notices.append((name, content))
     return tuple(notices)
 
@@ -103,6 +113,7 @@ def package(binary: Path, manifest: Path, output: Path, target: Platform) -> Pat
         raise ValueError("package version must be a semantic version")
     notices = capture_atomic_notices(manifest)
     project_notices = capture_project_notices(manifest)
+    font_notices = capture_font_notices(manifest)
     output.mkdir()
     if target == "macos":
         bundle = output / "AztecCraft.app"
@@ -132,8 +143,14 @@ def package(binary: Path, manifest: Path, output: Path, target: Platform) -> Pat
         bundle / "Contents" / "Resources" / "licenses" if target == "macos" else bundle / "licenses"
     )
     licenses = project_licenses / "craft-atomic"
+    fonts = project_licenses / "egui-default-fonts"
     licenses.mkdir(parents=True)
-    for directory, files in ((project_licenses, project_notices), (licenses, notices)):
+    fonts.mkdir()
+    for directory, files in (
+        (project_licenses, project_notices),
+        (licenses, notices),
+        (fonts, font_notices),
+    ):
         for name, content in files:
             with (directory / name).open("xb") as destination:
                 destination.write(content)

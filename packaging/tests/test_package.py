@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from package import (
     ATOMIC_NOTICES,
+    FONT_NOTICES,
     NOTICE_LIMIT,
     PROJECT_NOTICES,
     Platform,
@@ -49,6 +50,10 @@ def manifest_fixture(directory: Path, version: str = "0.1.0") -> Path:
         (notices / name).write_bytes(f"fixture notice {name}\n".encode())
     for name in PROJECT_NOTICES:
         (directory / name).write_bytes(f"fixture project notice {name}\n".encode())
+    fonts = directory / "licenses" / "egui-default-fonts"
+    fonts.mkdir(parents=True)
+    for name in FONT_NOTICES:
+        (fonts / name).write_bytes(f"fixture font notice {name}\n".encode())
     return manifest
 
 
@@ -76,6 +81,9 @@ def test_package_preserves_payload_metadata_and_archive_layout(
         expected = (manifest.parent / "vendor" / "craft-atomic" / name).read_bytes()
         assert (output / notice_root / name).read_bytes() == expected
     project_root = notice_root.rsplit("/", 1)[0]
+    for name in FONT_NOTICES:
+        expected = (manifest.parent / "licenses" / "egui-default-fonts" / name).read_bytes()
+        assert (output / project_root / "egui-default-fonts" / name).read_bytes() == expected
     for name in PROJECT_NOTICES:
         expected = (manifest.parent / name).read_bytes()
         assert (output / project_root / name).read_bytes() == expected
@@ -136,6 +144,8 @@ def test_package_preserves_payload_metadata_and_archive_layout(
                     f"{notice_root}/LICENSE-APACHE",
                     f"{notice_root}/LICENSE-MIT",
                     f"{notice_root}/NOTICE",
+                    f"{project_root}/egui-default-fonts/",
+                    *[f"{project_root}/egui-default-fonts/{n}" for n in sorted(FONT_NOTICES)],
                 ]
 
 
@@ -281,3 +291,27 @@ def test_missing_project_notice_fails_before_creating_output(tmp_path: Path, nam
     with pytest.raises(FileNotFoundError):
         package(binary, manifest, output, "linux")
     assert not output.exists()
+
+
+@pytest.mark.parametrize("name", FONT_NOTICES)
+def test_missing_font_notice_fails_before_creating_output(tmp_path: Path, name: str) -> None:
+    binary = binary_fixture(tmp_path, "linux")
+    manifest = manifest_fixture(tmp_path)
+    (manifest.parent / "licenses" / "egui-default-fonts" / name).unlink()
+    output = tmp_path / "artifacts"
+    with pytest.raises(FileNotFoundError):
+        package(binary, manifest, output, "linux")
+    assert not output.exists()
+
+
+def test_project_notice_symlink_error_names_the_notice(tmp_path: Path) -> None:
+    binary = binary_fixture(tmp_path, "linux")
+    manifest = manifest_fixture(tmp_path)
+    notice = manifest.parent / "NOTICE"
+    notice.unlink()
+    try:
+        notice.symlink_to(manifest)
+    except OSError:
+        pytest.skip("host cannot create symlinks")
+    with pytest.raises(ValueError, match=r"license notice NOTICE must be a regular file"):
+        package(binary, manifest, tmp_path / "artifacts", "linux")

@@ -14,4 +14,19 @@ LICENSE-APACHE, NOTICE and ATTRIBUTION.md are in vendor/craft-atomic/, and its p
 vendor/craft-atomic/UPSTREAM.md. Those upstream notices describe the whole craft-libs workspace;
 the assets they list (ICC profiles, FOGRA39 data) are not bundled here.
 
-Packaged binaries also carry the four craft-atomic files under licenses/craft-atomic/.
+Packaged builds also carry the craft-atomic files under licenses/craft-atomic/.
+
+egui default fonts - eframe's default_fonts feature embeds the fonts of epaint_default_fonts 0.36.2
+in the binary. The crate's own license files are in licenses/egui-default-fonts/ and ship with
+packaged builds:
+Hack-Regular (https://sourcefoundry.org/hack/) - MIT, with DejaVu (public domain) and Bitstream
+  Vera Sans Mono (Bitstream Vera License) parts. See licenses/egui-default-fonts/Hack-Regular.txt.
+NotoEmoji-Regular (https://github.com/googlefonts/noto-emoji) - SIL Open Font License 1.1.
+  See licenses/egui-default-fonts/OFL.txt.
+Ubuntu-Light (https://design.ubuntu.com/font) - Ubuntu Font Licence 1.0.
+  See licenses/egui-default-fonts/UFL.txt.
+emoji-icon-font (https://github.com/jslegers/emoji-icon-font) - MIT, copyright (c) 2014 John Slegers.
+  See licenses/egui-default-fonts/emoji-icon-font-mit-license.txt.
+
+Rust crate dependencies remain under their own licenses (see Cargo.lock); no per-crate license
+bundle is shipped.
