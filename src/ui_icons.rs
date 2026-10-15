@@ -18,6 +18,9 @@ pub enum UiIcon {
     Scale,
     /// Static placeholder glyph; the dynamic Last Used behaviour is unsupported.
     LastUsed,
+    SelectHierarchy,
+    SelectObject,
+    SelectComponent,
 }
 
 /// Tool Box order.
@@ -29,6 +32,9 @@ pub const ALL: &[UiIcon] = &[
     UiIcon::Rotate,
     UiIcon::Scale,
     UiIcon::LastUsed,
+    UiIcon::SelectHierarchy,
+    UiIcon::SelectObject,
+    UiIcon::SelectComponent,
 ];
 
 // Newly chosen values; not sampled from any Maya image.
@@ -36,7 +42,9 @@ const NEUTRAL_LIGHT: Color32 = Color32::from_rgb(214, 218, 222);
 const AXIS_X: Color32 = Color32::from_rgb(242, 98, 98);
 const AXIS_Y: Color32 = Color32::from_rgb(124, 208, 96);
 const AXIS_Z: Color32 = Color32::from_rgb(104, 152, 244);
-const BRUSH_ACCENT: Color32 = Color32::from_rgb(238, 196, 92);
+const NEUTRAL_MID: Color32 = Color32::from_rgb(150, 156, 164);
+const NEUTRAL_DARK: Color32 = Color32::from_rgb(106, 112, 122);
+const ACCENT: Color32 = Color32::from_rgb(238, 196, 92);
 
 const GRID: f32 = 24.0;
 /// Stroke width in grid units.
@@ -243,7 +251,7 @@ fn paint_select(fit: &Fit) -> Vec<Shape> {
         12,
     ));
     pts.pop();
-    let mut shapes = vec![fit.fill(&pts, BRUSH_ACCENT)];
+    let mut shapes = vec![fit.fill(&pts, ACCENT)];
     let (s, ctrl, e) = (b - d * 7.0, pos2(5.0, 12.0), pos2(3.2, 20.8));
     for i in 0..3 {
         let at = quad_bezier(s, ctrl, e, i as f32 / 2.0);
@@ -329,6 +337,156 @@ fn last_used(fit: &Fit) -> Vec<Shape> {
     ]
 }
 
+/// Rectangle from `a` to `b` as one clockwise outline.
+fn rect_path(a: Pos2, b: Pos2) -> [Pos2; 4] {
+    [a, pos2(b.x, a.y), b, pos2(a.x, b.y)]
+}
+
+/// Gap between neighbouring regions, in grid units.
+const REGION_GAP: f32 = 0.6;
+/// Hierarchy node disc radius.
+const NODE_RADIUS: f32 = 2.8;
+/// Half the width of a hierarchy connector bar.
+const BAR_HALF: f32 = 1.2;
+/// Top edge of the hierarchy fork bar.
+const FORK_BAR_TOP: f32 = 11.6;
+
+fn select_hierarchy(fit: &Fit) -> Vec<Shape> {
+    let (root, left, right) = (pos2(12.0, 4.4), pos2(5.0, 20.4), pos2(19.0, 20.4));
+    let (r, half) = (NODE_RADIUS, BAR_HALF);
+    let (stem_top, bar_top) = (root.y + r + REGION_GAP, FORK_BAR_TOP);
+    let bar_bottom = bar_top + 2.0 * half;
+    let drop_bottom = left.y - r - REGION_GAP;
+    let (stem_bottom, drop_top) = (bar_top - REGION_GAP, bar_bottom + REGION_GAP);
+    let mut shapes = vec![
+        fit.fill(&disc(root, r), ACCENT),
+        fit.fill(
+            &rect_path(
+                pos2(root.x - half, stem_top),
+                pos2(root.x + half, stem_bottom),
+            ),
+            NEUTRAL_MID,
+        ),
+        fit.fill(
+            &rect_path(
+                pos2(left.x - half, bar_top),
+                pos2(right.x + half, bar_bottom),
+            ),
+            NEUTRAL_MID,
+        ),
+    ];
+    for node in [left, right] {
+        let drop = rect_path(
+            pos2(node.x - half, drop_top),
+            pos2(node.x + half, drop_bottom),
+        );
+        shapes.push(fit.fill(&drop, NEUTRAL_MID));
+    }
+    shapes.push(fit.fill(&disc(left, r), NEUTRAL_LIGHT));
+    shapes.push(fit.fill(&disc(right, r), NEUTRAL_LIGHT));
+    shapes
+}
+
+/// Cube silhouette vertices: six hexagon corners clockwise from the top, then the centre.
+fn cube_vertices(radius: f32) -> [Pos2; 7] {
+    let c = pos2(12.0, 12.0);
+    let corner = |k: usize| {
+        let a = k as f32 * PI / 3.0;
+        c + vec2(radius * a.sin(), -radius * a.cos())
+    };
+    [
+        corner(0),
+        corner(1),
+        corner(2),
+        corner(3),
+        corner(4),
+        corner(5),
+        c,
+    ]
+}
+
+/// Moves every edge of a clockwise convex polygon inward by `d`.
+fn inset(poly: &[Pos2], d: f32) -> Vec<Pos2> {
+    let n = poly.len();
+    // Each edge as a point and direction, pushed along its inward normal.
+    let lines: Vec<(Pos2, Vec2)> = (0..n)
+        .map(|i| {
+            let dir = (poly[(i + 1) % n] - poly[i]).normalized();
+            (poly[i] + vec2(-dir.y, dir.x) * d, dir)
+        })
+        .collect();
+    (0..n)
+        .map(|i| {
+            let (p, u) = lines[(i + n - 1) % n];
+            let (q, v) = lines[i];
+            let t = ((q - p).x * v.y - (q - p).y * v.x) / (u.x * v.y - u.y * v.x);
+            p + u * t
+        })
+        .collect()
+}
+
+fn select_object(fit: &Fit) -> Vec<Shape> {
+    let [top, ur, lr, bottom, ll, ul, c] = cube_vertices(OBJECT_CUBE_RADIUS);
+    let half_gap = REGION_GAP / 2.0;
+    [
+        ([top, ur, c, ul], NEUTRAL_LIGHT),
+        ([c, ur, lr, bottom], NEUTRAL_MID),
+        ([c, bottom, ll, ul], NEUTRAL_DARK),
+    ]
+    .iter()
+    .map(|(face, color)| fit.fill(&inset(face, half_gap), *color))
+    .collect()
+}
+
+/// Cube circumradii, in grid units.
+const OBJECT_CUBE_RADIUS: f32 = 11.4;
+const COMPONENT_CUBE_RADIUS: f32 = 10.0;
+/// Half the width of a cube edge bar.
+const EDGE_HALF: f32 = 0.6;
+/// Half the side of a cube corner point.
+const POINT_HALF: f32 = 1.4;
+
+fn select_component(fit: &Fit) -> Vec<Shape> {
+    let v = cube_vertices(COMPONENT_CUBE_RADIUS);
+    let [top, ur, lr, bottom, ll, ul, c] = v;
+    let edges = [
+        (top, ur),
+        (ur, lr),
+        (lr, bottom),
+        (bottom, ll),
+        (ll, ul),
+        (ul, top),
+        (c, ur),
+        (c, bottom),
+        (c, ul),
+    ];
+    let mut shapes = vec![];
+    for (a, b) in edges {
+        let dir = (b - a).normalized();
+        // Distance from a corner point's centre to its far side along the edge, plus the gap.
+        let clear = POINT_HALF * (dir.x.abs() + dir.y.abs()) + REGION_GAP;
+        let len = (b - a).length();
+        shapes.push(fit.fill(
+            &along(
+                a,
+                dir,
+                &[
+                    (clear, -EDGE_HALF),
+                    (len - clear, -EDGE_HALF),
+                    (len - clear, EDGE_HALF),
+                    (clear, EDGE_HALF),
+                ],
+            ),
+            NEUTRAL_LIGHT,
+        ));
+    }
+    for p in v {
+        let h = POINT_HALF;
+        shapes.push(fit.fill(&rect_path(p - vec2(h, h), p + vec2(h, h)), ACCENT));
+    }
+    shapes
+}
+
 /// Geometry of `icon` fitted to `rect`, without needing a window. Disabled looks
 /// come from the host `Ui` (egui's disabled opacity); icons have no tone.
 pub fn shapes(icon: UiIcon, rect: Rect) -> Vec<Shape> {
@@ -359,6 +517,9 @@ pub fn shapes(icon: UiIcon, rect: Rect) -> Vec<Shape> {
             shapes
         }
         UiIcon::LastUsed => last_used(&fit),
+        UiIcon::SelectHierarchy => select_hierarchy(&fit),
+        UiIcon::SelectObject => select_object(&fit),
+        UiIcon::SelectComponent => select_component(&fit),
     }
 }
 
