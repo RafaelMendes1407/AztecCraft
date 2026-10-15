@@ -1,0 +1,121 @@
+diff --git a/crates/atomic/src/lib.rs b/crates/atomic/src/lib.rs
+index 36168b3..5db7e63 100644
+--- a/crates/atomic/src/lib.rs
++++ b/crates/atomic/src/lib.rs
+@@ -53,6 +53,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
+ /// File-system operations performed by atomic writes.
+ /// [`RealFs`] provides the production implementation; test suites implement this to inject faults.
+ pub trait AtomicFs {
++    /// Check whether an existing regular target is writable before staging a replacement.
++    fn check_writable(&self, path: &Path) -> io::Result<()> {
++        check_writable(path)
++    }
+     /// Exclusively create a payload file with the requested permission policy. On Unix,
+     /// request mode `0600` for `Private` or `0666` for `PlatformDefault`; the OS applies its
+     /// umask/default ACL. Other platforms keep their native creation behavior.
+@@ -302,7 +306,7 @@ fn replace_with_options(
+     let existing = std::fs::metadata(&target).ok();
+     let existed = existing.is_some();
+     if existing.as_ref().is_some_and(|m| m.is_file()) {
+-        check_writable(&target).map_err(|e| read_only_error(e, path))?;
++        fs.check_writable(&target).map_err(|e| read_only_error(e, path))?;
+     }
+ 
+     let tmp = stage(fs, &dir, &name, path, existing.as_ref(), new_permissions, fill)?;
+@@ -637,6 +641,7 @@ mod tests {
+         #[cfg(unix)]
+         permission_lengths: std::cell::RefCell<Vec<u64>>,
+         fail_sync: bool,
++        fail_writable: bool,
+         /// Syncs fail once this many have succeeded.
+         syncs_before_failure: Option<u32>,
+         syncs: Cell<u32>,
+@@ -653,6 +658,13 @@ mod tests {
+     }
+ 
+     impl AtomicFs for Faulty {
++        fn check_writable(&self, path: &Path) -> io::Result<()> {
++            if self.fail_writable {
++                self.events.borrow_mut().push("check_writable");
++                return Err(io::Error::from(io::ErrorKind::PermissionDenied));
++            }
++            RealFs.check_writable(path)
++        }
+         fn create_new(&self, path: &Path, permissions: NewFilePermissions) -> io::Result<File> {
+             let normal = permissions == NewFilePermissions::PlatformDefault;
+             self.events.borrow_mut().push(if normal { "create_new_normal" } else { "create_new" });
+@@ -725,6 +737,37 @@ mod tests {
+ 
+     const NO_RETRY: RenameRetry = RenameRetry { attempts: 0, first_delay_ms: 0 };
+ 
++    #[test]
++    fn writable_preflight_refusal_preserves_original_without_staging() -> io::Result<()> {
++        let d = TempDir::new("preflight_refusal");
++        let p = d.0.join("doc.craft");
++        std::fs::write(&p, ORIGINAL)?;
++        let fs = Faulty { fail_writable: true, ..Default::default() };
++        let filled = Cell::new(false);
++        let result = WriteOptions::default().atomic_write_with_custom(&fs, NO_RETRY, &p, |_| {
++            filled.set(true);
++            Ok(())
++        });
++        assert_eq!(result.map_err(|error| error.kind()), Err(io::ErrorKind::PermissionDenied));
++        assert_eq!(*fs.events.borrow(), ["check_writable"]);
++        assert!(!filled.get());
++        assert_eq!(std::fs::read(&p)?, ORIGINAL);
++        assert_no_temp(&d.0);
++        Ok(())
++    }
++
++    #[test]
++    fn missing_target_does_not_run_writable_preflight() -> io::Result<()> {
++        let d = TempDir::new("preflight_new");
++        let p = d.0.join("doc.craft");
++        let fs = Faulty { fail_writable: true, ..Default::default() };
++        atomic_write_custom(&fs, NO_RETRY, &p, b"created")?;
++        assert!(!fs.events.borrow().contains(&"check_writable"));
++        assert_eq!(std::fs::read(&p)?, b"created");
++        assert_no_temp(&d.0);
++        Ok(())
++    }
++
+     #[test]
+     fn replaces_and_creates() {
+         let d = TempDir::new("ok");
+@@ -1102,17 +1145,17 @@ mod tests {
+     }
+ 
+     #[test]
+-    fn distinguishes_atomicity_and_durability_order() {
++    fn distinguishes_atomicity_and_durability_order() -> io::Result<()> {
+         let d = TempDir::new("durability_order");
+         let p = d.0.join("doc.craft");
+         std::fs::write(&p, ORIGINAL).ok();
+ 
+         let fs = Faulty::default();
+-        atomic_write_custom(&fs, NO_RETRY, &p, b"durable payload").expect("successful atomic write");
++        atomic_write_custom(&fs, NO_RETRY, &p, b"durable payload")?;
+ 
+         let events = fs.events.into_inner();
+-        let sync_file_idx = events.iter().position(|&e| e == "sync_file").expect("file content must be flushed");
+-        let rename_idx = events.iter().position(|&e| e == "rename").expect("atomic rename must be performed");
++        let sync_file_idx = events.iter().position(|&e| e == "sync_file").ok_or_else(|| io::Error::other("file content must be flushed"))?;
++        let rename_idx = events.iter().position(|&e| e == "rename").ok_or_else(|| io::Error::other("atomic rename must be performed"))?;
+ 
+         // 1. Content Durability: staging file must be synced to stable media BEFORE pointer switch (rename)
+         assert!(
+@@ -1123,12 +1166,13 @@ mod tests {
+         // 2. Directory Durability: on Unix, parent directory must be synced AFTER rename to commit directory entry
+         #[cfg(unix)]
+         {
+-            let sync_dir_idx = events.iter().position(|&e| e == "sync_dir").expect("directory must be flushed on Unix");
++            let sync_dir_idx = events.iter().position(|&e| e == "sync_dir").ok_or_else(|| io::Error::other("directory must be flushed on Unix"))?;
+             assert!(
+                 rename_idx < sync_dir_idx,
+                 "Durability invariant violated: parent directory must be flushed after rename (rename={rename_idx}, sync_dir={sync_dir_idx})"
+             );
+         }
++        Ok(())
+     }
+ 
+     #[test]

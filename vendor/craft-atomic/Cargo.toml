@@ -1,0 +1,20 @@
+# Modified for AztecCraft: standalone workspace metadata and lint expansion.
+# Source and exact changes are recorded in UPSTREAM.md.
+[package]
+name = "craft-atomic"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.95"
+repository = "https://github.com/storytold/craft-libs"
+description = "Crash-safe atomic file writing and replacement for the Craft suite"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+
+[target.'cfg(target_vendor = "apple")'.dependencies]
+rustix = { version = "1.1", default-features = false, features = ["std", "fs"] }

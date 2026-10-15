@@ -17,6 +17,9 @@ functionality coverage and exact parity remain unmeasured and unmet.
 | `cargo test --locked --test document_workflows` | Run retained legacy JSON utility tests |
 | `cargo test --locked --test viewport_workflows` | Run camera/projection/picking tests only |
 | `cargo test --locked --no-default-features --test obj_workflows` | Run OBJ export tests only |
+| `cargo fmt --manifest-path vendor/craft-atomic/Cargo.toml --all -- --check` | Check vendor formatting with inherited upstream settings |
+| `cargo clippy --manifest-path vendor/craft-atomic/Cargo.toml --all-targets --locked -- -D warnings` | Lint the standalone vendor crate |
+| `cargo test --manifest-path vendor/craft-atomic/Cargo.toml --locked` | Run actual vendor unit/integration/doc tests |
 
 [Build and security notes](builds.md) describe the prepared three-platform CI,
 dependency audit, code line coverage and pre-commit configuration. Remote CI and
@@ -122,7 +125,7 @@ delivery barrier for remote Close. Full native file-dialog navigation, native
 editing of imported scenes and other-platform interaction need separate evidence.
 
 The standalone legacy `document::load`/`save_new` utilities retain validated JSON
-v1 quad scenes and create-new/no-clobber writes via pinned `craft-atomic`.
+v1 quad scenes and create-new/no-clobber writes via vendored `craft-atomic`.
 They are tested independently and aren't used to save native editor state.
 Overwrite-save, recovery, autosave, history and camera persistence remain pending.
 
@@ -162,9 +165,21 @@ validation preserves degenerate geometry; those states don't establish drawable
 surface or normal fidelity.
 
 `glam` supplies vector/quaternion math, and `serde`/`serde_json` implement the
-document layer. Direct versions, the `craft-atomic` revision and the resolved
-dependency graph are pinned. Debug symbols and incremental builds are disabled
+document layer. Direct versions and the resolved dependency graph are pinned.
+`craft-atomic` is the single path dependency at `vendor/craft-atomic` with recorded
+[source, patch and update provenance](../vendor/craft-atomic/UPSTREAM.md).
+Debug symbols and incremental builds are disabled
 in development/test profiles to limit local disk use.
+
+The standalone vendor test lock uses only registry version/source/checksum tuples
+already in the root lock. Root consumer tests do not run dependency tests; the
+existing three-platform CI matrix runs both. Packaging captures all four complete
+vendor license/notice files from the selected manifest's project root before
+creating output, with a 64 KiB per-file limit and a 256 KiB total bound. Inputs
+must be stable regular files during capture. Captured bytes accompany each binary
+and its archive at `Contents/Resources/licenses/craft-atomic/` on macOS or
+`azteccraft/licenses/craft-atomic/` on Linux/Windows. Rejected notice inputs leave
+no new output directory. This prerequisite does not implement native Save.
 
 ## Maya Binary container inspection
 

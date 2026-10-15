@@ -8,9 +8,10 @@ import struct
 import tarfile
 import zipfile
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
-from package import Platform, package
+from package import ATOMIC_NOTICES, NOTICE_LIMIT, Platform, capture_atomic_notices, package
 
 
 def binary_fixture(directory: Path, target: Platform) -> Path:
@@ -35,6 +36,10 @@ def binary_fixture(directory: Path, target: Platform) -> Path:
 def manifest_fixture(directory: Path, version: str = "0.1.0") -> Path:
     manifest = directory / "Cargo.toml"
     manifest.write_text(f'[package]\nname = "azteccraft"\nversion = "{version}"\n')
+    notices = directory / "vendor" / "craft-atomic"
+    notices.mkdir(parents=True)
+    for name in ATOMIC_NOTICES:
+        (notices / name).write_bytes(f"fixture notice {name}\n".encode())
     return manifest
 
 
@@ -53,8 +58,20 @@ def test_package_preserves_payload_metadata_and_archive_layout(
     assert receipt["version"] == "0.1.0"
     assert receipt["platform"] == target
     assert archive.name.startswith(f"azteccraft-0.1.0-{target}-aarch64.")
+    notice_root = (
+        "AztecCraft.app/Contents/Resources/licenses/craft-atomic"
+        if target == "macos"
+        else "azteccraft/licenses/craft-atomic"
+    )
+    for name in ATOMIC_NOTICES:
+        expected = (manifest.parent / "vendor" / "craft-atomic" / name).read_bytes()
+        assert (output / notice_root / name).read_bytes() == expected
     if target == "linux":
         with tarfile.open(archive) as tar:
+            for name in ATOMIC_NOTICES:
+                notice = tar.extractfile(f"{notice_root}/{name}")
+                assert notice is not None
+                assert notice.read() == (output / notice_root / name).read_bytes()
             member = tar.getmember("azteccraft/azteccraft")
             payload = tar.extractfile(member)
             assert payload is not None
@@ -64,6 +81,11 @@ def test_package_preserves_payload_metadata_and_archive_layout(
             assert member.uname == member.gname == ""
     else:
         with zipfile.ZipFile(archive) as zip_file:
+            for name in ATOMIC_NOTICES:
+                assert (
+                    zip_file.read(f"{notice_root}/{name}")
+                    == (output / notice_root / name).read_bytes()
+                )
             if target == "windows":
                 assert zip_file.read("azteccraft/azteccraft.exe") == binary.read_bytes()
             else:
@@ -83,6 +105,13 @@ def test_package_preserves_payload_metadata_and_archive_layout(
                     "AztecCraft.app/Contents/Info.plist",
                     "AztecCraft.app/Contents/MacOS/",
                     name,
+                    "AztecCraft.app/Contents/Resources/",
+                    "AztecCraft.app/Contents/Resources/licenses/",
+                    f"{notice_root}/",
+                    f"{notice_root}/ATTRIBUTION.md",
+                    f"{notice_root}/LICENSE-APACHE",
+                    f"{notice_root}/LICENSE-MIT",
+                    f"{notice_root}/NOTICE",
                 ]
 
 
@@ -124,3 +153,96 @@ def test_wrong_binary_platform_is_rejected_without_output(tmp_path: Path) -> Non
     with pytest.raises(ValueError, match="format"):
         package(binary, manifest, output, "macos")
     assert not output.exists()
+
+
+@pytest.mark.parametrize("name", ATOMIC_NOTICES)
+@pytest.mark.parametrize("failure", ["missing", "symlink", "directory", "oversize"])
+def test_invalid_notice_fails_before_creating_output(
+    tmp_path: Path, name: str, failure: str
+) -> None:
+    binary = binary_fixture(tmp_path, "linux")
+    manifest = manifest_fixture(tmp_path)
+    notice = manifest.parent / "vendor" / "craft-atomic" / name
+    notice.unlink()
+    if failure == "symlink":
+        try:
+            notice.symlink_to(manifest)
+        except OSError:
+            pytest.skip("host cannot create symlinks")
+    elif failure == "directory":
+        notice.mkdir()
+    elif failure == "oversize":
+        notice.write_bytes(b"x" * (NOTICE_LIMIT + 1))
+    output = tmp_path / "artifacts"
+    with pytest.raises((ValueError, FileNotFoundError)):
+        package(binary, manifest, output, "linux")
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("failure", ["unreadable", "mid-read"])
+def test_notice_io_error_fails_before_creating_output(tmp_path: Path, failure: str) -> None:
+    binary = binary_fixture(tmp_path, "linux")
+    manifest = manifest_fixture(tmp_path)
+    notice = manifest.parent / "vendor" / "craft-atomic" / ATOMIC_NOTICES[-1]
+    output = tmp_path / "artifacts"
+    original_open = Path.open
+    with notice.open("rb") as source:
+        reader = MagicMock()
+        reader.__enter__.return_value.fileno.return_value = source.fileno()
+        reader.__enter__.return_value.read.side_effect = OSError("injected read failure")
+
+        def failing_open(path: Path, mode: str = "r") -> object:
+            if path == notice:
+                if failure == "unreadable":
+                    raise PermissionError("injected unreadable notice")
+                return reader
+            return original_open(path, mode)
+
+        with patch.object(Path, "open", new=failing_open), pytest.raises(OSError):
+            package(binary, manifest, output, "linux")
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("target", ["macos", "linux", "windows"])
+def test_package_uses_captured_notices_without_reopening(tmp_path: Path, target: Platform) -> None:
+    binary = binary_fixture(tmp_path, target)
+    project = tmp_path / "selected-project"
+    project.mkdir()
+    manifest = manifest_fixture(project)
+    expected = capture_atomic_notices(manifest)
+
+    def capture_then_change(selected_manifest: Path) -> tuple[tuple[str, bytes], ...]:
+        captured = capture_atomic_notices(selected_manifest)
+        for name, _ in captured:
+            (project / "vendor" / "craft-atomic" / name).write_bytes(b"changed after capture")
+        return captured
+
+    output = tmp_path / "artifacts"
+    with patch("package.capture_atomic_notices", side_effect=capture_then_change):
+        archive = package(binary, manifest, output, target)
+    notice_root = (
+        "AztecCraft.app/Contents/Resources/licenses/craft-atomic"
+        if target == "macos"
+        else "azteccraft/licenses/craft-atomic"
+    )
+    for name, content in expected:
+        assert (output / notice_root / name).read_bytes() == content
+    if target == "linux":
+        with tarfile.open(archive) as tar:
+            for name, content in expected:
+                notice = tar.extractfile(f"{notice_root}/{name}")
+                assert notice is not None
+                assert notice.read() == content
+    else:
+        with zipfile.ZipFile(archive) as zip_file:
+            for name, content in expected:
+                assert zip_file.read(f"{notice_root}/{name}") == content
+
+
+def test_all_four_notices_at_size_limit_are_captured(tmp_path: Path) -> None:
+    manifest = manifest_fixture(tmp_path)
+    for name in ATOMIC_NOTICES:
+        (tmp_path / "vendor" / "craft-atomic" / name).write_bytes(b"x" * NOTICE_LIMIT)
+    assert capture_atomic_notices(manifest) == tuple(
+        (name, b"x" * NOTICE_LIMIT) for name in ATOMIC_NOTICES
+    )

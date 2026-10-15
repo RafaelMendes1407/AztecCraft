@@ -96,6 +96,16 @@ jobs:
         run: rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt
       - name: Format
         run: cargo +1.99.0 fmt --all -- --check
+      - name: Vendored atomic format
+        run: cargo +1.99.0 fmt --manifest-path vendor/craft-atomic/Cargo.toml --all -- --check
+      - name: Vendored atomic Clippy
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target
+        run: cargo +1.99.0 clippy --manifest-path vendor/craft-atomic/Cargo.toml --all-targets --locked -- -D warnings
+      - name: Vendored atomic tests and docs
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target
+        run: cargo +1.99.0 test --manifest-path vendor/craft-atomic/Cargo.toml --locked
       - name: Clippy
         run: cargo +1.99.0 clippy --workspace --all-targets --locked -- -D warnings
       - name: Test

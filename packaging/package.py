@@ -16,6 +16,25 @@ from pathlib import Path
 from typing import Literal
 
 Platform = Literal["macos", "windows", "linux"]
+ATOMIC_NOTICES = ("LICENSE-MIT", "LICENSE-APACHE", "NOTICE", "ATTRIBUTION.md")
+NOTICE_LIMIT = 64 * 1024
+
+
+def capture_atomic_notices(manifest: Path) -> tuple[tuple[str, bytes], ...]:
+    root = manifest.parent / "vendor" / "craft-atomic"
+    notices = []
+    for name in ATOMIC_NOTICES:
+        path = root / name
+        if not stat.S_ISREG(path.lstat().st_mode):
+            raise ValueError(f"atomic notice {name} must be a regular file, not a symlink")
+        with path.open("rb") as source:
+            if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
+                raise ValueError(f"atomic notice {name} must be a regular file")
+            content = source.read(NOTICE_LIMIT + 1)
+        if len(content) > NOTICE_LIMIT:
+            raise ValueError(f"atomic notice {name} exceeds 64 KiB")
+        notices.append((name, content))
+    return tuple(notices)
 
 
 def binary_architecture(binary: Path, target: Platform) -> str:
@@ -74,6 +93,7 @@ def package(binary: Path, manifest: Path, output: Path, target: Platform) -> Pat
         version,
     ):
         raise ValueError("package version must be a semantic version")
+    notices = capture_atomic_notices(manifest)
     output.mkdir()
     if target == "macos":
         bundle = output / "AztecCraft.app"
@@ -99,6 +119,15 @@ def package(binary: Path, manifest: Path, output: Path, target: Platform) -> Pat
         bundle = output / "azteccraft"
         bundle.mkdir()
         executable = bundle / binary.name
+    licenses = (
+        bundle / "Contents" / "Resources" / "licenses" / "craft-atomic"
+        if target == "macos"
+        else bundle / "licenses" / "craft-atomic"
+    )
+    licenses.mkdir(parents=True)
+    for name, content in notices:
+        with (licenses / name).open("xb") as destination:
+            destination.write(content)
     with binary.open("rb") as source, executable.open("xb") as destination:
         shutil.copyfileobj(source, destination)
     if target != "windows":
