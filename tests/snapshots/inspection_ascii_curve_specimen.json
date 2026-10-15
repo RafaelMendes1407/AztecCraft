@@ -1,0 +1,147 @@
+{
+  "inspection": {
+    "appearance_incomplete": true,
+    "camera": {
+      "distance": 9.202924728393556,
+      "eye": [
+        18.28616714477539,
+        3.583787679672241,
+        6.995919704437256
+      ],
+      "target": [
+        13.5,
+        0.0,
+        0.0
+      ]
+    },
+    "can_redo": false,
+    "can_undo": false,
+    "clipping_complete": false,
+    "closing": false,
+    "curves": [
+      {
+        "control_vertices": 4,
+        "degree": 3,
+        "domain": [
+          0.0,
+          1.0
+        ],
+        "draw_available": true,
+        "form": "open",
+        "id": "2",
+        "knots": 6,
+        "name": "curveShape",
+        "read_only": true
+      }
+    ],
+    "depth_complete": false,
+    "dirty": false,
+    "document_origin": "maya_ascii",
+    "face_selection_policy": "visible_centers_only",
+    "grid_visible": true,
+    "has_draft": false,
+    "has_file": true,
+    "modal": false,
+    "move_tool": {
+      "active": null,
+      "active_tool": "select",
+      "class": "object_translation",
+      "numeric_available": false,
+      "numeric_unavailable_reason": "Select an object or face before framing",
+      "orientation": "world",
+      "viewport": null
+    },
+    "native_input_pending": false,
+    "nodes": [
+      {
+        "authoring_transform": {
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "translation": [
+            12.0,
+            0.0,
+            0.0
+          ]
+        },
+        "id": "1",
+        "instance_paths": [
+          [
+            "1"
+          ]
+        ],
+        "name": "curve",
+        "shape_ids": [
+          "2"
+        ],
+        "transform": {
+          "rotation_degrees": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "translation": [
+            12.0,
+            0.0,
+            0.0
+          ]
+        },
+        "transform_id": "1"
+      }
+    ],
+    "pending_action": null,
+    "read_only_reason": "Maya ASCII scenes are read-only in this version",
+    "remembered_face": null,
+    "retained_source_bytes": 446,
+    "retained_source_records": 10,
+    "save_as_available": false,
+    "save_available": false,
+    "save_reconciliation_required": false,
+    "scene_token": "<uuid>",
+    "selected_instance_path": [],
+    "selected_node": null,
+    "selection_mode": "object",
+    "shapes": [],
+    "source_appearance": {
+      "checked_source_bindings": 0,
+      "issues": {
+        "ambiguous_instance": false,
+        "color_processor_unavailable": true,
+        "evaluation_unavailable": true,
+        "malformed_data": false,
+        "missing_membership": false,
+        "overlapping_membership": false,
+        "quadratic_filtering_unproved": true,
+        "unsupported_graph": false,
+        "unsupported_settings": false,
+        "unsupported_shader": false,
+        "uv_mismatch": false
+      },
+      "shapes": 0,
+      "state": "unbound",
+      "unavailable": 0,
+      "unbound": 0
+    },
+    "text_focused": false,
+    "units": {
+      "angular": "deg",
+      "linear": "cm",
+      "time": "film"
+    },
+    "viewport_backend": "uninitialized",
+    "viewport_error": "uninitialized"
+  },
+  "outcome": "scene"
+}
