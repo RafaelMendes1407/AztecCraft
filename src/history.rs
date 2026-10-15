@@ -51,7 +51,6 @@ pub struct History {
     redo: Vec<NativeScene>,
     active_move: Option<MoveTransaction>,
     next_move_id: u64,
-    move_scene_token: Option<uuid::Uuid>,
 }
 
 impl History {
@@ -62,7 +61,6 @@ impl History {
             redo: Vec::new(),
             active_move: None,
             next_move_id: 0,
-            move_scene_token: None,
         }
     }
 

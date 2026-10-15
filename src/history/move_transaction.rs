@@ -132,12 +132,6 @@ impl History {
         if self.active_move.is_some() {
             return Err(MoveError::Busy);
         }
-        if self
-            .move_scene_token
-            .is_some_and(|token| token != scene_token)
-        {
-            return Err(MoveError::StaleScene);
-        }
         let next_id = self
             .next_move_id
             .checked_add(1)
@@ -171,7 +165,6 @@ impl History {
             distance_cm: 0.0,
         });
         self.next_move_id = next_id;
-        self.move_scene_token = Some(scene_token);
         Ok(MoveId(next_id))
     }
 

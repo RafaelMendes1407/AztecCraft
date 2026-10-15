@@ -259,16 +259,6 @@ fn nested_stale_and_wrong_owner_requests_leave_the_matching_gesture_untouched() 
         history.update_move(token, id, MoveProvenance::Native, 9.0),
         Err(MoveError::StaleMove)
     );
-    assert_eq!(
-        history.begin_move(
-            &target(&history),
-            WorldAxis::X,
-            Uuid::new_v4(),
-            MoveProvenance::Native,
-            BUDGET
-        ),
-        Err(MoveError::StaleScene)
-    );
 }
 
 #[test]
@@ -319,7 +309,6 @@ fn failed_begin_and_id_exhaustion_do_not_consume_state_or_ids() {
     assert_eq!(history.scene, original);
     assert!(history.active_move().is_none());
     assert_eq!(history.next_move_id, 0);
-    assert!(history.move_scene_token.is_none());
     let id = start(&mut history, token);
     assert_eq!(id, MoveId(1));
     history.cancel_active_move().unwrap();
