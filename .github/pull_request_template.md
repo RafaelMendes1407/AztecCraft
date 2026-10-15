@@ -14,10 +14,12 @@ Closes #
 
 ## Checklist
 
+- [ ] Native window checked for UI changes (screenshot reviewed)
 - [ ] Unfinished controls are visibly unsupported
 - [ ] No parity claim without the pinned Maya reference
 - [ ] No private paths, scenes or assets in the diff
 
 ## Reviewers
 
-<!-- Two independent reviewers (not the author) on the same head SHA; maintainer sign-off. -->
+<!-- Reviewed head SHA: -->
+<!-- Links to the two `APPROVED <SHA>` comments and the maintainer `SIGN-OFF <SHA>` comment. -->
