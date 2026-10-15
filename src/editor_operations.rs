@@ -458,6 +458,15 @@ pub enum OperationError {
     Camera(InvalidCameraInput),
 }
 
+impl OperationError {
+    pub(crate) fn from_history(error: NativeError) -> Self {
+        match error {
+            NativeError::BusyManipulation => Self::BusyManipulation,
+            error => Self::Scene(error),
+        }
+    }
+}
+
 impl fmt::Display for OperationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -609,6 +618,18 @@ mod tests {
         assert!(matches!(
             check_inspection_size(&native),
             Err(OperationError::TooLarge)
+        ));
+    }
+
+    #[test]
+    fn history_busy_manipulation_keeps_its_busy_error_class() {
+        assert!(matches!(
+            OperationError::from_history(NativeError::BusyManipulation),
+            OperationError::BusyManipulation
+        ));
+        assert!(matches!(
+            OperationError::from_history(NativeError::ResourceLimit),
+            OperationError::Scene(NativeError::ResourceLimit)
         ));
     }
 }

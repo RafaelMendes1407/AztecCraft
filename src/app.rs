@@ -995,7 +995,7 @@ impl Editor {
         let outcome = self
             .history
             .execute(command)
-            .map_err(OperationError::Scene)?;
+            .map_err(OperationError::from_history)?;
         if let EditOutcome::Created(id) = outcome {
             self.remembered_face = None;
             self.selected = Some(id);
