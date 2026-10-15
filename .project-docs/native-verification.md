@@ -167,10 +167,24 @@ vertices failed the actual Metal framebuffer visibility assertion. An independen
 reviewer verified raw logs, original/mutated/restored hashes and original
 manifest/lock restoration. The shared canonical build target received no mutant output.
 
-Native Open, remote setter visibility, camera navigation/resize, draft/modal
-refusal and supplied-scene preservation remain outside those native observations.
-Integration onto the published Save/material parent requires its own source
-review, current-source verification and commit checks. Future Face functionality
+The integrated Grid commit `d4c2ed4` on published Save/material parent `d9ec058d`
+passed two source/staged review passes, formatting, strict Clippy for all four
+configurations and normal commit hooks. Current-parent default/core/MCP-client
+suites passed 257/195/326 tests, with 26/10/28 ignored and no failures. A fresh
+compile identified the actual landing worktree and Grid/material test inventory.
+An independent committed-source check then explicitly ran four tests with zero
+ignored: Grid SDK state, material SDK edit/History/repeated Save, Metal empty-frame
+grid rasterization and SDK-to-fresh-callback submission. Both GPU tests used
+Apple M1 Pro/Metal; only the rasterization test checks framebuffer pixels.
+
+The current-parent production MCP executable SHA256 is
+`f033f4c41f0ba70fa5861eb9d62d3a203a6556bb58c6990904e5bb3ec9c10b68`.
+Native Open in a controlled macOS launch of that executable using the private
+diagnostic modal hook retained Grid off after opening; turning Grid on then made
+the grid visible. This adds the observed Open retention path to the
+earlier scoped native checks. Remote setter visibility, camera navigation/resize,
+draft/modal refusal and general supplied-scene preservation remain outside these
+native observations. Feature-branch CI remains pending. Future Face functionality
 is a separate change rather than a prerequisite for this Grid slice.
 No Maya grid appearance, complete functionality or parity claim follows from
 these results. Grid options, global/additional panels and settings persistence
