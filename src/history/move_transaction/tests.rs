@@ -184,6 +184,7 @@ fn active_move_blocks_every_history_mutation_before_state_or_stack_changes() {
             name: None,
             channels: [None; 9],
         },
+        Command::SetMaterialDiffuse { shape, value: 0.25 },
         Command::ExtrudeFace {
             shape,
             face_index: 0,
