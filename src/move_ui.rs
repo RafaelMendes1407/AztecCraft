@@ -66,10 +66,11 @@ impl Editor {
             self.move_consumed_frame = true;
             self.move_suppress_primary = true;
         }
-        result?;
         if cancelled {
+            // Also after a failed cancel, so the Channel Box shows the scene's actual values.
             self.sync_fields();
         }
+        result?;
         Ok(cancelled)
     }
 

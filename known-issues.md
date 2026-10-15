@@ -216,3 +216,9 @@ cancel (Escape, tool/selection change, New/Open or close). Until then every othe
 mutating operation, Grid toggle and selection-mode change reports
 `busy_manipulation`. Replacing the scene (New or Open) also resets the active tool
 to Select; Maya keeps the current tool across scene changes.
+
+If the baseline or source of an active Move cannot be validated at finish or
+cancel (believed unreachable), the transaction is still cleared first, so the
+history is not left busy. The scene then keeps its preview values and the
+baseline is lost: the document is dirty rather than silently restored, and the
+Channel Box is resynchronized to the scene.
