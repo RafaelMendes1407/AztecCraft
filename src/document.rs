@@ -9,6 +9,9 @@ use std::{
     sync::Arc,
 };
 
+mod native_save;
+pub use native_save::{NativeSaveError, SaveDestination, SaveOutcome, SaveReceipt, save_native};
+
 pub const DOCUMENT_VERSION: u32 = 1;
 pub const MAX_DOCUMENT_BYTES: usize = 16 * 1024 * 1024;
 
@@ -21,13 +24,19 @@ pub enum LinkStatus {
 #[derive(Clone)]
 pub struct SourceBaseline {
     bytes: Arc<[u8]>,
+    parse_bytes: Arc<[u8]>,
     metadata: Metadata,
     link: LinkStatus,
+    #[cfg(unix)]
+    file: Arc<std::fs::File>,
+    #[cfg(unix)]
+    destination: Option<Arc<native_save::Destination>>,
 }
 impl fmt::Debug for SourceBaseline {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SourceBaseline")
             .field("bytes", &self.bytes.len())
+            .field("parse_bytes", &self.parse_bytes.len())
             .field("file_length", &self.metadata.len())
             .field("link", &self.link)
             .finish()
@@ -83,7 +92,7 @@ impl fmt::Display for NativeLoadError {
 }
 impl std::error::Error for NativeLoadError {}
 
-fn read_bytes(path: &Path) -> io::Result<(Vec<u8>, Metadata, LinkStatus)> {
+fn read_bytes(path: &Path) -> io::Result<(Vec<u8>, Metadata, LinkStatus, std::fs::File)> {
     #[cfg(not(unix))]
     if !std::fs::metadata(path)?.is_file() {
         return Err(io::Error::new(
@@ -112,9 +121,10 @@ fn read_bytes(path: &Path) -> io::Result<(Vec<u8>, Metadata, LinkStatus)> {
         LinkStatus::Direct
     };
     let mut bytes = Vec::new();
-    file.take((MAX_DOCUMENT_BYTES + 1) as u64)
+    (&file)
+        .take((MAX_DOCUMENT_BYTES + 1) as u64)
         .read_to_end(&mut bytes)?;
-    Ok((bytes, metadata, link))
+    Ok((bytes, metadata, link, file))
 }
 
 pub fn load_native(path: &Path) -> Result<NativeDocument, NativeLoadError> {
@@ -126,7 +136,7 @@ pub fn load_native(path: &Path) -> Result<NativeDocument, NativeLoadError> {
     if !binary_format && !extension.eq_ignore_ascii_case("aztec") {
         return Err(NativeLoadError::UnsupportedFormat);
     }
-    let (bytes, metadata, link) =
+    let (bytes, metadata, link, file) =
         read_bytes(path).map_err(|error| NativeLoadError::Read(error.kind()))?;
     if bytes.len() > MAX_DOCUMENT_BYTES {
         return Err(NativeLoadError::TooLarge);
@@ -138,10 +148,26 @@ pub fn load_native(path: &Path) -> Result<NativeDocument, NativeLoadError> {
         NativeScene::from_legacy(decode_legacy(&bytes).map_err(|_| NativeLoadError::Legacy)?)
             .map_err(NativeLoadError::Native)?
     };
+    #[cfg(unix)]
+    let destination = if matches!(link, LinkStatus::Direct) {
+        native_save::Destination::capture(path)
+            .ok()
+            .filter(|destination| destination.matches(&metadata).unwrap_or(false))
+            .map(Arc::new)
+    } else {
+        None
+    };
+    #[cfg(not(unix))]
+    drop(file);
     let source = SourceBaseline {
+        parse_bytes: bytes.clone(),
         bytes,
         metadata,
         link,
+        #[cfg(unix)]
+        file: Arc::new(file),
+        #[cfg(unix)]
+        destination,
     };
     Ok(NativeDocument {
         scene,
@@ -161,7 +187,7 @@ struct Document<T> {
 }
 
 pub fn load(path: &Path) -> Result<Scene, DocumentError> {
-    let (bytes, _, _) = read_bytes(path).map_err(|source| DocumentError::Io {
+    let (bytes, ..) = read_bytes(path).map_err(|source| DocumentError::Io {
         operation: "read document",
         path: path.into(),
         source,
