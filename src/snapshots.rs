@@ -3,9 +3,6 @@
 //! `UPDATE_SNAPSHOTS=1` rewrites a snapshot; every other run fails on any difference, including a
 //! missing file. Snapshots are public, so callers normalize machine-specific values first.
 
-// Only the SDK snapshot tests use these.
-#![cfg_attr(not(feature = "mcp-test-client"), allow(dead_code))]
-
 use std::path::PathBuf;
 
 fn path(name: &str) -> PathBuf {
@@ -87,7 +84,7 @@ pub(crate) fn normalize_text(text: &str, roots: &[&std::path::Path]) -> String {
     out
 }
 
-#[cfg(feature = "mcp")]
+#[cfg(feature = "mcp-test-client")]
 pub(crate) fn normalize_json(
     value: &serde_json::Value,
     roots: &[&std::path::Path],

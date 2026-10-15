@@ -5035,6 +5035,10 @@ mod tests {
 #[path = "snapshots.rs"]
 mod snapshots;
 
+#[cfg(test)]
+#[path = "guard_matrix_tests.rs"]
+mod guard_matrix_tests;
+
 #[cfg(all(test, feature = "mcp"))]
 #[path = "mcp_editor_tests.rs"]
 mod mcp_editor_tests;
