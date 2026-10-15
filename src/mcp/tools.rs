@@ -640,7 +640,10 @@ fn catalog() -> Vec<Tool> {
             Tool::new(name, description, input_schema).with_annotations(
                 ToolAnnotations::new()
                     .read_only(name == "inspect_scene")
-                    .idempotent(name == "set_grid_visibility")
+                    .idempotent(matches!(
+                        name,
+                        "set_grid_visibility" | "select_node" | "set_selection_mode" | "select_face"
+                    ))
                     .open_world(false),
             )
         })
@@ -887,6 +890,22 @@ mod tests {
                 _ => json!({"scene_token":token}),
             };
             assert!(parse_request(&tool.name, args.as_object().unwrap().clone()).is_ok());
+        }
+    }
+
+    #[test]
+    fn only_absolute_state_setters_are_annotated_idempotent() {
+        for tool in catalog() {
+            let expected = matches!(
+                tool.name.as_ref(),
+                "set_grid_visibility" | "select_node" | "set_selection_mode" | "select_face"
+            );
+            assert_eq!(
+                tool.annotations.unwrap().idempotent_hint == Some(true),
+                expected,
+                "{}",
+                tool.name
+            );
         }
     }
 
