@@ -272,7 +272,7 @@ The strip shows:
 
 - a menu-set selector where only Modeling is active; Rigging, Animation, FX and Rendering are disabled;
 - New, Open and Save buttons, which share the File menu's handlers and enable state;
-- Hierarchy (disabled), Object and Component selection modes. Component means Face, the only
+- Hierarchy (Root sub-mask only), Object and Component selection modes. Component means Face, the only
   implemented component mode;
 - five sidebar toggles, of which only Channel Box / Layer Editor works. The others are disabled.
 
@@ -286,6 +286,13 @@ cluster therefore follows the last drawn group.
 - Save As has no strip button and stays in the File menu.
 - Open's native dialog calls `rfd` directly and cannot be click-tested, so equivalence between the strip
   and menu Open is checked only for enable state and hover text.
+- Hierarchy supports the Root sub-mask only; Leaf and Template are unsupported.
+- Grouped hierarchy exists only in opened `.ma`/`.mb` files. Delete on a group is refused there, because
+  structural edits are refused for source-bound scenes. On flat scenes Hierarchy selects what Object selects.
+- F8 from Hierarchy goes to Face (PROVISIONAL; the 2026 docs only document Object/Component).
+- The selection mode menu (presets) is disabled and stateless until masks exist (#29).
+- Mode intents in one frame (buttons, F8, F11) apply before Delete, so Delete sees the new mode.
+- `select_node` stays exact and is not limited by the selection mode.
 - Nothing was compared against a pinned Maya 2026 install.
 
 Tracked in the UI parity inventory (`.project-docs/ui-parity-inventory.md`, section 2).
