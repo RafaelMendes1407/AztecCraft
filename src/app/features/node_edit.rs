@@ -152,6 +152,10 @@ impl Editor {
         self.name_intent |= response.changed();
         let mut apply = response.lost_focus();
         ui.separator();
+        let visibility = self
+            .selected
+            .and_then(|id| self.history.scene().node(id).ok())
+            .and_then(|node| node.local_visibility());
         egui::Grid::new("transform_channels")
             .num_columns(2)
             .spacing([8.0, 5.0])
@@ -183,6 +187,10 @@ impl Editor {
                     apply |= response.lost_focus();
                     ui.end_row();
                 }
+                ui.label("Visibility");
+                ui.add_enabled(false, egui::Button::new(visibility_text(visibility)))
+                    .on_disabled_hover_text("visibility edit not implemented");
+                ui.end_row();
             });
         let angular = match &self.history.scene().units().angular {
             AngularUnit::Degree => "degrees",
@@ -208,5 +216,25 @@ impl Editor {
         ui.separator();
         ui.weak("Inputs / construction history");
         unsupported(ui, "Not implemented yet");
+    }
+}
+
+fn visibility_text(visibility: Option<bool>) -> &'static str {
+    match visibility {
+        Some(true) => "on",
+        Some(false) => "off",
+        None => "unknown",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::visibility_text;
+
+    #[test]
+    fn unproved_visibility_reads_unknown_and_never_defaults_to_on() {
+        assert_eq!(visibility_text(None), "unknown");
+        assert_eq!(visibility_text(Some(true)), "on");
+        assert_eq!(visibility_text(Some(false)), "off");
     }
 }
