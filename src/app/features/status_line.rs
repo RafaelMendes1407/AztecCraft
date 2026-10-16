@@ -8,6 +8,8 @@ const MENU_SETS: [&str; 5] = ["Modeling", "Rigging", "Animation", "FX", "Renderi
 const ACTIVE_MENU_SET: &str = "Modeling";
 const MENU_SET_LABEL: &str = "Menu set";
 const MENU_SET_UNAVAILABLE: &str = "not implemented yet";
+const SELECTION_MODE_MENU_LABEL: &str = "Selection mode menu";
+const SELECTION_MODE_MENU_HOVER: &str = "Selection mode menu (presets): not implemented yet";
 
 struct StripButton {
     label: &'static str,
@@ -116,6 +118,7 @@ impl Editor {
                 }
             }
             ui.separator();
+            selection_mode_menu(ui);
             for button in &SELECTION_MODES {
                 let (intent, mode) = button.target;
                 let selected = mode == self.selection_mode;
@@ -174,9 +177,31 @@ fn menu_set_selector(ui: &mut egui::Ui) {
                 }
             }
         });
+    let enabled = combo.response.enabled();
     combo.response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, MENU_SET_LABEL)
+        egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, enabled, MENU_SET_LABEL)
     });
+}
+
+/// Presets need mask state (not implemented), so the control is disabled, stateless and empty.
+fn selection_mode_menu(ui: &mut egui::Ui) {
+    let combo = ui
+        .add_enabled_ui(false, |ui| {
+            egui::ComboBox::from_id_salt("selection_mode_menu")
+                .selected_text("Presets")
+                .show_ui(ui, |_| {})
+        })
+        .inner
+        .response;
+    let enabled = combo.enabled();
+    combo.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::WidgetType::ComboBox,
+            enabled,
+            SELECTION_MODE_MENU_LABEL,
+        )
+    });
+    combo.on_disabled_hover_text(SELECTION_MODE_MENU_HOVER);
 }
 
 #[cfg(test)]

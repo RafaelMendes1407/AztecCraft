@@ -11,6 +11,8 @@ const MODES: [&str; 3] = [
     "Object selection",
     "Component selection",
 ];
+const MENU_SET: &str = "Menu set";
+const PRESETS: &str = "Selection mode menu";
 const FILES: [&str; 3] = ["New scene", "Open...", "Save"];
 const HIERARCHY: &str = "Hierarchy selection";
 const CHANNEL_BOX: &str = "Channel Box / Layer Editor";
@@ -61,7 +63,7 @@ fn strip(output: &egui::FullOutput) -> Vec<Control> {
     let mut found: Vec<Control> = controls(output)
         .into_iter()
         .filter(|c| {
-            c.role == accesskit::Role::ComboBox && c.label == "Menu set"
+            c.role == accesskit::Role::ComboBox && (c.label == MENU_SET || c.label == PRESETS)
                 || FILES.contains(&c.label.as_str())
                 || MODES.contains(&c.label.as_str())
                 || TOGGLES.contains(&c.label.as_str())
@@ -135,7 +137,7 @@ fn strip_fits_the_minimum_window_at_every_scale_and_enlarged_text() {
         frame_with(&mut editor, &context, SIZE, ppp, vec![]);
         let output = frame_with(&mut editor, &context, SIZE, ppp, vec![]);
         let found = strip(&output);
-        assert_eq!(found.len(), 12, "ppp {ppp} font {font}");
+        assert_eq!(found.len(), 13, "ppp {ppp} font {font}");
         let margin = egui::Frame::side_top_panel(&context.global_style()).total_margin();
         for control in &found {
             assert!(
@@ -163,9 +165,10 @@ fn strip_elements_are_in_documented_order() {
     frame_with(&mut editor, &context, SIZE, 1.0, vec![]);
     let output = frame_with(&mut editor, &context, SIZE, 1.0, vec![]);
     let labels: Vec<String> = strip(&output).into_iter().map(|c| c.label).collect();
-    let expected: Vec<&str> = ["Menu set"]
+    let expected: Vec<&str> = [MENU_SET]
         .into_iter()
         .chain(FILES)
+        .chain([PRESETS])
         .chain(MODES)
         .chain(TOGGLES)
         .collect();
@@ -203,6 +206,23 @@ fn clicking_disabled_strip_buttons_changes_nothing() {
         click(&mut editor, &context, control.rect.center());
         assert_eq!(snapshot(&editor), before, "{}", control.label);
     }
+}
+
+#[test]
+fn presets_combo_is_inert_and_shows_the_disabled_hover_text() {
+    let (mut editor, context) = file_editor(FileState::Clean);
+    let output = strip_output(&mut editor, &context);
+    let combo = strip(&output)
+        .into_iter()
+        .find(|c| c.label == PRESETS)
+        .expect("presets combo");
+    assert!(combo.disabled);
+    let before = snapshot(&editor);
+    let hover = hover_texts(&mut editor, &context, combo.rect.center());
+    assert!(hover.contains(SELECTION_MODE_MENU_HOVER), "{hover}");
+    click(&mut editor, &context, combo.rect.center());
+    assert!(!egui::Popup::is_any_open(&context));
+    assert_eq!(snapshot(&editor), before);
 }
 
 #[test]
@@ -254,11 +274,13 @@ fn every_strip_control_has_its_label_and_disabled_state() {
             "{name}"
         );
     }
-    let combo = found
-        .iter()
-        .find(|c| c.role == accesskit::Role::ComboBox)
-        .expect("menu set combo");
-    assert!(!combo.disabled);
+    for (label, disabled) in [(MENU_SET, false), (PRESETS, true)] {
+        let combo = found
+            .iter()
+            .find(|c| c.role == accesskit::Role::ComboBox && c.label == label)
+            .unwrap_or_else(|| panic!("combo {label}"));
+        assert_eq!(combo.disabled, disabled, "{label}");
+    }
 }
 
 /// Tabs until the menu set combo has keyboard focus, failing if a disabled button takes it.
@@ -273,7 +295,8 @@ fn tab_to_combo(editor: &mut Editor, context: &egui::Context) {
         let found = strip(&output);
         let focused = found.iter().find(|c| Some(c.id) == focus);
         match focused {
-            Some(c) if c.role == accesskit::Role::ComboBox => return,
+            Some(c) if c.role == accesskit::Role::ComboBox && c.label == MENU_SET => return,
+            Some(c) if c.label == PRESETS => panic!("Tab focused the disabled presets combo"),
             Some(c) if TOGGLES.contains(&c.label.as_str()) && c.label != CHANNEL_BOX => {
                 panic!("Tab focused disabled strip button {}", c.label)
             }
@@ -300,7 +323,8 @@ fn keyboard_activates_the_enabled_combo_and_skips_disabled_buttons() {
         let focused = controls(&output).into_iter().find(|c| Some(c.id) == focus);
         if let Some(c) = focused {
             assert!(
-                !TOGGLES.contains(&c.label.as_str()) || c.label == CHANNEL_BOX,
+                (!TOGGLES.contains(&c.label.as_str()) || c.label == CHANNEL_BOX)
+                    && c.label != PRESETS,
                 "Tab focused disabled {}",
                 c.label
             );
