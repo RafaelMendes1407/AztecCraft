@@ -1,4 +1,4 @@
-use super::Editor;
+use crate::app::Editor;
 use crate::editor_operations::{
     ActiveTool, MoveDistance, Operation, OperationError, OperationReply, SelectionMode,
 };
@@ -10,7 +10,7 @@ use azteccraft::{
 use glam::Vec2;
 use uuid::Uuid;
 
-pub(super) struct NativeMove {
+pub(in crate::app) struct NativeMove {
     id: MoveId,
     scene_token: Uuid,
     drag: AxisDrag,
@@ -18,7 +18,7 @@ pub(super) struct NativeMove {
 
 // Both fields are read only by the cfg-gated inspect_move below.
 #[cfg_attr(not(any(test, feature = "mcp")), allow(dead_code))]
-pub(super) struct MoveViewportFeedback {
+pub(in crate::app) struct MoveViewportFeedback {
     capture: ViewportCapture,
     pointer: Option<Vec2>,
 }
@@ -41,7 +41,7 @@ fn edit_reply(outcome: EditOutcome) -> OperationReply {
 }
 
 impl Editor {
-    pub(super) fn selected_move_target(&self) -> Result<TransformTarget, OperationError> {
+    pub(in crate::app) fn selected_move_target(&self) -> Result<TransformTarget, OperationError> {
         let node = self.selected.ok_or(OperationError::NoSelection)?;
         Ok(TransformTarget {
             node,
@@ -51,7 +51,7 @@ impl Editor {
 
     // Returns whether a Move was actually cancelled. Only then is the current pointer sequence
     // consumed; an idle cancel must not swallow the next frame's input.
-    pub(super) fn cancel_move(&mut self) -> Result<bool, OperationError> {
+    pub(in crate::app) fn cancel_move(&mut self) -> Result<bool, OperationError> {
         let cancelled = self.history.active_move().is_some() || self.native_move.is_some();
         let result = if self.history.active_move().is_some() {
             self.history
@@ -74,12 +74,12 @@ impl Editor {
         Ok(cancelled)
     }
 
-    pub(super) fn consume_pointer_sequence(&mut self) {
+    pub(in crate::app) fn consume_pointer_sequence(&mut self) {
         self.move_consumed_frame = true;
         self.move_suppress_primary = true;
     }
 
-    pub(super) fn guard_move_dispatch(
+    pub(in crate::app) fn guard_move_dispatch(
         &mut self,
         operation: &Operation,
         provenance: MoveProvenance,
@@ -116,7 +116,7 @@ impl Editor {
         Err(OperationError::BusyManipulation)
     }
 
-    pub(super) fn set_active_tool(
+    pub(in crate::app) fn set_active_tool(
         &mut self,
         tool: ActiveTool,
     ) -> Result<OperationReply, OperationError> {
@@ -129,7 +129,7 @@ impl Editor {
         })
     }
 
-    pub(super) fn begin_editor_move(
+    pub(in crate::app) fn begin_editor_move(
         &mut self,
         target: &TransformTarget,
         axis: WorldAxis,
@@ -169,7 +169,7 @@ impl Editor {
         not(any(test, feature = "mcp")),
         allow(clippy::infallible_destructuring_match)
     )]
-    pub(super) fn update_editor_move(
+    pub(in crate::app) fn update_editor_move(
         &mut self,
         id: MoveId,
         distance: MoveDistance,
@@ -206,7 +206,7 @@ impl Editor {
         Ok(edit_reply(outcome))
     }
 
-    pub(super) fn finish_editor_move(
+    pub(in crate::app) fn finish_editor_move(
         &mut self,
         id: MoveId,
         finish: MoveFinish,
@@ -222,7 +222,7 @@ impl Editor {
     }
 
     #[cfg(any(test, feature = "mcp"))]
-    pub(super) fn inspect_move(
+    pub(in crate::app) fn inspect_move(
         &self,
     ) -> Result<crate::editor_operations::MoveInspection, OperationError> {
         use crate::editor_operations::{
@@ -335,7 +335,7 @@ impl Editor {
 }
 
 impl Editor {
-    pub(super) fn missing_move_viewport(&mut self) -> Result<(), OperationError> {
+    pub(in crate::app) fn missing_move_viewport(&mut self) -> Result<(), OperationError> {
         self.move_viewport = None;
         if self.native_move.is_some() {
             self.cancel_move()?;
@@ -375,7 +375,7 @@ impl Editor {
         Ok(())
     }
 
-    pub(super) fn handle_move_input(
+    pub(in crate::app) fn handle_move_input(
         &mut self,
         input: &crate::viewport_ui::ViewportInput,
         frame_token: Uuid,
@@ -549,7 +549,7 @@ impl Editor {
         Ok(true)
     }
 
-    pub(super) fn paint_move(&self, input: &crate::viewport_ui::ViewportInput) {
+    pub(in crate::app) fn paint_move(&self, input: &crate::viewport_ui::ViewportInput) {
         if self.active_tool != ActiveTool::Move
             || self
                 .renderer
@@ -637,5 +637,5 @@ impl Editor {
 }
 
 #[cfg(test)]
-#[path = "move_ui/tests.rs"]
+#[path = "move_tool/tests.rs"]
 mod tests;

@@ -21,11 +21,11 @@ Remote, `remote_operation_guarded` (`src/app/dispatch.rs:58`), checks in this or
 Native, `apply_operation` (`src/app/dispatch.rs:118`) calls `apply_operation_guarded` (defined at `src/app/dispatch.rs:124`, called at `src/app/dispatch.rs:119`) with
 provenance Native and no token or draft checks. In order:
 
-1. `guard_move_dispatch` first, with side effects (`src/app/dispatch.rs:130`, `src/move_ui.rs:82`). For
+1. `guard_move_dispatch` first, with side effects (`src/app/dispatch.rs:130`, `src/app/features/move_tool.rs:82`). For
    `SetActiveTool`, `Select`, `SetSelectionMode`, `SelectFace`, `NewScene`, `OpenScene` and
-   `RequestClose` it cancels any Move (`cancel_move`, `src/move_ui.rs:54`) and consumes the
+   `RequestClose` it cancels any Move (`cancel_move`, `src/app/features/move_tool.rs:54`) and consumes the
    pointer sequence only on a real tool change that cancelled nothing
-   (`src/move_ui.rs:99`). Other operations during a Move are `BusyManipulation` except
+   (`src/app/features/move_tool.rs:99`). Other operations during a Move are `BusyManipulation` except
    `UpdateMove`/`FinishMove`.
 2. Closing is `BusyEditing` (`src/app/dispatch.rs:131`), so a native `NewScene` while closing cancels the
    Move and then fails.
@@ -53,7 +53,7 @@ These are not expressible as a shared guard and must not be hoisted without a ne
   (matrix states `no_install`, `no_install_modal`).
 - Read-only Maya ASCII is decided by the scene (`authoring_read_only_reason`,
   `src/native_scene.rs:934`) and surfaces as `ReadOnlyFormat`; Move maps it in
-  `src/move_ui.rs:156`.
+  `src/app/features/move_tool.rs:156`.
 - `EditNode` with no fields returns `Unchanged` after only checking the node (`src/app/dispatch.rs:271`).
 - Delete in Face mode is refused only in `native_operation` (`src/app/dispatch.rs:5`), above the
   pipeline. The matrix calls the pipeline directly, so its `delete(face_mode)` cells show the
@@ -61,7 +61,7 @@ These are not expressible as a shared guard and must not be hoisted without a ne
   covers the UI refusal. The remote pipeline has no such refusal today, which is a bug
   (cristim/AztecCraft#83, listed in `known-issues.md`); the snapshot records current behavior and
   must change with the fix. The Move Face-mode refusal is in `begin_editor_move`
-  (`src/move_ui.rs:138`) and applies to both pipelines (`begin_move(face_mode)` cells).
+  (`src/app/features/move_tool.rs:138`) and applies to both pipelines (`begin_move(face_mode)` cells).
 - The `read_only_ascii` fixture is a curve-only scene with no mesh. `set_material_diffuse`,
   `select_face(face_mode)` and `extrude_face` therefore fail there with a missing-shape error, not
   `ReadOnlyFormat`; read-only refusal is shown by `create`, `delete`, `rename` and the other
