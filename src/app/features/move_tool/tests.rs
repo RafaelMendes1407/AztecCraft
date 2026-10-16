@@ -1682,3 +1682,64 @@ fn same_frame_name_or_channel_focus_blocks_qw_before_move_dispatch() {
         }
     }
 }
+
+#[test]
+fn a_scene_refusal_mid_move_drag_keeps_the_last_valid_preview_and_other_errors_propagate() {
+    let (mut editor, _, _) = setup(1.0);
+    let node = editor.selected.unwrap();
+    editor
+        .apply_operation(Operation::EditNode {
+            id: node,
+            name: None,
+            translation: [Some(1e8), None, None],
+            rotation_degrees: [None; 3],
+            scale: [None; 3],
+        })
+        .unwrap();
+    let target = editor.selected_move_target().unwrap();
+    editor
+        .apply_operation(Operation::BeginMove {
+            target,
+            axis: WorldAxis::X,
+        })
+        .unwrap();
+    let id = editor.history.active_manipulation().unwrap().id;
+    let update = |editor: &mut Editor, distance: f64| {
+        editor.apply_operation(Operation::UpdateMove {
+            id,
+            distance: MoveDistance::Centimeters(distance),
+        })
+    };
+    let updated = update(&mut editor, 1.0);
+    assert!(updated.is_ok(), "{updated:?}");
+    let valid = editor.history.scene().clone();
+    // A step below the precision of the large translation is refused by the scene.
+    let updated = update(&mut editor, 1e-3);
+    assert!(matches!(
+        updated,
+        Err(OperationError::Move(ManipulationError::Native(_)))
+    ));
+    editor
+        .finish_native_sample(id, ActiveTool::Move, false, updated)
+        .unwrap();
+    assert!(editor.error);
+    assert!(
+        editor.status.ends_with("; showing the last valid preview"),
+        "{}",
+        editor.status
+    );
+    assert_eq!(editor.history.scene(), &valid);
+    assert!(editor.history.active_manipulation().is_some());
+    // Anything but a scene refusal stops the drag handling.
+    for error in [
+        OperationError::Move(ManipulationError::StaleManipulation),
+        OperationError::InvalidInput("x".into()),
+    ] {
+        assert!(
+            editor
+                .finish_native_sample(id, ActiveTool::Move, false, Err(error))
+                .is_err()
+        );
+    }
+    assert_eq!(editor.history.scene(), &valid);
+}

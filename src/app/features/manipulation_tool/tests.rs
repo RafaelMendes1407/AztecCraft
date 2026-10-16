@@ -126,6 +126,18 @@ fn release(editor: &mut Editor, context: &egui::Context, scale: f32, at: Pos2) {
     );
 }
 
+// Counts the undo entries by walking back and forward again.
+fn undo_depth(editor: &mut Editor) -> usize {
+    let mut depth = 0;
+    while editor.history.undo() {
+        depth += 1;
+    }
+    for _ in 0..depth {
+        assert!(editor.history.redo());
+    }
+    depth
+}
+
 fn near(actual: f64, expected: f64, tolerance: f64) {
     assert!(
         (actual - expected).abs() <= tolerance,
@@ -510,7 +522,6 @@ fn numeric_entry_applies_one_labelled_edit_and_shows_core_refusals() {
     assert_eq!(editor.history.undo_label(), Some("Rotate"));
     editor.native_operation(Operation::Undo);
     assert_eq!(channels(&editor)[5], 0.0);
-    let undo_depth = editor.history.undo_label();
 
     editor.native_operation(Operation::SetActiveTool(ActiveTool::Scale));
     editor.manipulation.scale_handle = ScaleHandle::Uniform;
@@ -520,6 +531,7 @@ fn numeric_entry_applies_one_labelled_edit_and_shows_core_refusals() {
     assert_eq!(channels(&editor)[6..], [2.0; 3]);
     assert_eq!(editor.history.undo_label(), Some("Scale"));
     let scene = editor.history.scene().clone();
+    let entries = undo_depth(&mut editor);
     for refused in ["0", "-1"] {
         editor.manipulation.numeric = refused.into();
         editor.apply_numeric_manipulation();
@@ -534,6 +546,7 @@ fn numeric_entry_applies_one_labelled_edit_and_shows_core_refusals() {
         assert_eq!(editor.manipulation.numeric, refused, "kept for correction");
         assert_eq!(editor.history.scene(), &scene);
         assert!(editor.history.active_manipulation().is_none());
+        assert_eq!(undo_depth(&mut editor), entries, "{refused} left an entry");
     }
     for garbage in ["", "abc", "inf", "NaN"] {
         editor.manipulation.numeric = garbage.into();
@@ -541,7 +554,6 @@ fn numeric_entry_applies_one_labelled_edit_and_shows_core_refusals() {
         assert!(editor.error, "{garbage}");
         assert_eq!(editor.history.scene(), &scene);
     }
-    let _ = undo_depth;
 }
 
 #[test]
