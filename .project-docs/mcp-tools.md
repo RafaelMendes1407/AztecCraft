@@ -13,7 +13,7 @@ Generated from the tool registry in `src/mcp/registry.rs`; do not edit by hand. 
 | `finish_move` | mutating | no | Commit one undoable Move edit or cancel to the exact begin authoring state. Only the matching remote-owned Move ID may finish |
 | `create_primitive` | mutating | no | Create a cube, plane, sphere, cylinder or cone in the live editor |
 | `select_node` | mutating | yes | Select an object using an optional full transform instance_path; ambiguous objects require a path. Null node_id clears selection without a path |
-| `set_selection_mode` | mutating | yes | Set Object or Face selection mode without editing the scene; a valid remembered face stays inactive in Object mode |
+| `set_selection_mode` | mutating | yes | Set Object, Face or Hierarchy (Root sub-mask only) selection mode without editing the scene; a valid remembered face stays inactive outside Face mode |
 | `select_face` | mutating | yes | Select a complete canonical face target in Face mode, or clear it with null; explicit targets need not be visible and select their owning instance |
 | `rename_node` | mutating | no | Rename an existing object |
 | `set_transform` | mutating | no | Set f64 translation in declared scene units, rotation in XYZ degrees, and scale |

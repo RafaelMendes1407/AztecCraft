@@ -746,7 +746,11 @@ fn face_mode_preserves_the_remembered_target_without_editing_scene_or_redo() {
         },
     )
     .unwrap();
-    for mode in [SelectionMode::Object, SelectionMode::Face] {
+    for mode in [
+        SelectionMode::Object,
+        SelectionMode::Hierarchy,
+        SelectionMode::Face,
+    ] {
         remote(&mut editor, Operation::SetSelectionMode(mode)).unwrap();
         assert_eq!(editor.remembered_face.as_ref(), Some(&target));
         assert_eq!(editor.selected, Some(id));
@@ -3644,6 +3648,211 @@ fn cylinder_and_cone_names_count_up_and_skip_collisions() {
     }
 }
 
+/// A group (translate x = 2) holding a child transform that owns one triangle mesh.
+/// Mirrored by `grouped_scene_bytes()` in src/mcp_tests/official_client/selection.rs; this module builds without the mcp feature, so the builder cannot be shared.
+fn group_editor() -> Editor {
+    use material_wire as wire;
+    let bytes = wire::scene(
+        &[
+            wire::group(
+                b"XFRM",
+                &[
+                    wire::creation(b"group", None),
+                    wire::triple(b"t", [2.0, 0.0, 0.0]),
+                ]
+                .concat(),
+                4,
+            ),
+            wire::group(b"XFRM", &wire::creation(b"child", Some(b"group")), 4),
+            wire::group(
+                b"DMSH",
+                &[
+                    wire::creation(b"shape", Some(b"child")),
+                    wire::chunk(b"MESH", &wire::mesh_payload(&[0, 1, 0x6000_0002]), 8),
+                ]
+                .concat(),
+                4,
+            ),
+        ]
+        .concat(),
+    );
+    let scene = azteccraft::native_scene::binary::decode(bytes).unwrap();
+    Editor {
+        history: History::new(scene),
+        ..Editor::default()
+    }
+}
+
+/// Clicks the viewport at the projected mean of the first instance's world vertices.
+fn click_first_instance(editor: &mut Editor) {
+    editor.camera = Camera::default();
+    let view = ViewScene::from_native(editor.history.scene(), 1024 * 1024).unwrap();
+    let vertices = view.instances()[0].world_vertices();
+    let center = vertices.iter().copied().sum::<glam::Vec3>() / vertices.len() as f32;
+    assert!((center.x - 2.0).abs() < 0.5, "world x {}", center.x);
+    click_world_point(editor, center);
+}
+
+/// Clicks the viewport at the projection of `point` through the editor's current camera.
+fn click_world_point(editor: &mut Editor, point: glam::Vec3) {
+    let ctx = egui::Context::default();
+    let run = |editor: &mut Editor, events: Vec<egui::Event>| {
+        let mut rect = egui::Rect::NOTHING;
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(800.0, 600.0),
+                )),
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                editor.viewport(ui, editor.scene_token, None, None, false, true);
+                rect = ui.min_rect();
+            },
+        );
+        output.textures_delta.clear();
+        rect
+    };
+    let rect = run(editor, vec![]);
+    let ndc = editor
+        .camera
+        .project(point, editor.aspect)
+        .unwrap()
+        .unwrap();
+    let width = rect.width();
+    let height = width / editor.aspect;
+    let position = egui::pos2(
+        rect.left() + (ndc.x + 1.0) * 0.5 * width,
+        rect.bottom() - (ndc.y + 1.0) * 0.5 * height,
+    );
+    run(editor, vec![egui::Event::PointerMoved(position)]);
+    for pressed in [true, false] {
+        run(
+            editor,
+            vec![egui::Event::PointerButton {
+                pos: position,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+    }
+}
+
+#[test]
+fn hierarchy_click_on_a_descendant_selects_the_root_and_object_click_the_leaf() {
+    let mut editor = group_editor();
+    let paths = editor.history.scene().transform_paths().unwrap();
+    let (root, child) = (&paths[0], &paths[1]);
+    assert_eq!((root.path.len(), child.path.len()), (1, 2));
+    editor.native_operation(Operation::SetSelectionMode(SelectionMode::Hierarchy));
+    click_first_instance(&mut editor);
+    assert_eq!(editor.selected, Some(root.node));
+    assert_eq!(editor.selected_path, root.path);
+    // Path containment only; painting is asserted in viewport_renderer::tests.
+    let view = ViewScene::from_native(editor.history.scene(), 1024 * 1024).unwrap();
+    assert!(
+        view.instances()[0]
+            .path()
+            .starts_with(&editor.selected_path)
+    );
+
+    let mut editor = group_editor();
+    click_first_instance(&mut editor);
+    assert_eq!(editor.selected, Some(child.node));
+    assert_eq!(editor.selected_path, child.path);
+}
+
+#[test]
+fn delete_of_a_group_is_a_typed_error_without_mutation_in_hierarchy_mode() {
+    let mut editor = group_editor();
+    let root = editor.history.scene().transform_paths().unwrap()[0].node;
+    editor.native_operation(Operation::SetSelectionMode(SelectionMode::Hierarchy));
+    editor.native_operation(Operation::Select {
+        node: Some(root),
+        instance_path: None,
+    });
+    let scene = editor.history.scene().clone();
+    assert!(remote(&mut editor, Operation::Delete(root)).is_err());
+    assert_eq!(editor.history.scene(), &scene);
+}
+
+#[test]
+fn hierarchy_delete_works_on_a_flat_scene_and_select_face_is_refused() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let id = editor.selected.unwrap();
+    editor.native_operation(Operation::SetSelectionMode(SelectionMode::Hierarchy));
+    assert!(remote(&mut editor, Operation::SelectFace { target: None }).is_err());
+    editor.native_operation(Operation::Delete(id));
+    assert!(!editor.error);
+    assert!(editor.history.scene().nodes().is_empty());
+}
+
+#[test]
+fn selecting_in_hierarchy_mode_clears_the_remembered_face() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let target = selected_face(&editor, 0);
+    editor.native_operation(Operation::SetSelectionMode(SelectionMode::Face));
+    editor.native_operation(Operation::SelectFace {
+        target: Some(target.clone()),
+    });
+    editor.native_operation(Operation::SetSelectionMode(SelectionMode::Hierarchy));
+    assert_eq!(editor.remembered_face.as_ref(), Some(&target));
+    editor.native_operation(Operation::Select {
+        node: None,
+        instance_path: None,
+    });
+    assert_eq!(editor.remembered_face, None);
+}
+
+fn button_disabled(output: &egui::FullOutput, label: &str) -> bool {
+    let update = output
+        .platform_output
+        .accesskit_update
+        .as_ref()
+        .expect("accesskit enabled");
+    let matches: Vec<bool> = update
+        .nodes
+        .iter()
+        .filter(|(_, node)| {
+            node.role() == eframe::egui::accesskit::Role::Button && node.label() == Some(label)
+        })
+        .map(|(_, node)| node.is_disabled())
+        .collect();
+    assert_eq!(matches.len(), 1, "button {label:?} found {matches:?}");
+    matches[0]
+}
+
+#[test]
+fn delete_controls_are_enabled_in_hierarchy_mode_and_disabled_in_face_mode() {
+    for mode in [SelectionMode::Hierarchy, SelectionMode::Face] {
+        let mut editor = Editor::default();
+        editor.create(Primitive::Cube);
+        editor.native_operation(Operation::SetSelectionMode(mode));
+        assert!(editor.selected.is_some());
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        let output = frame(&mut editor, &ctx, vec![]);
+        let expect_disabled = mode == SelectionMode::Face;
+        assert_eq!(
+            button_disabled(&output, "Delete selected"),
+            expect_disabled,
+            "channel box, {mode:?}"
+        );
+        let edit = face_text_position(&output, "Edit");
+        let output = face_pointer_click(&mut editor, &ctx, edit, egui::Modifiers::NONE, vec![]);
+        assert_eq!(
+            button_disabled(&output, "Delete"),
+            expect_disabled,
+            "edit menu, {mode:?}"
+        );
+    }
+}
+
 #[test]
 fn create_menu_cylinder_and_cone_items_create_selectable_framed_movable_solids() {
     for (label, name, faces, cap) in [
@@ -3721,4 +3930,98 @@ fn create_menu_cylinder_and_cone_items_create_selectable_framed_movable_solids()
         let view = ViewScene::from_native(editor.history.scene(), 256 * 1024 * 1024).unwrap();
         assert_eq!(view.instances()[0].faces().len(), faces);
     }
+}
+
+#[test]
+fn frame_selected_in_hierarchy_mode_frames_the_selected_root() {
+    let mut editor = group_editor();
+    editor.native_operation(Operation::SetSelectionMode(SelectionMode::Hierarchy));
+    click_first_instance(&mut editor);
+    assert!(editor.selected.is_some());
+    let before = editor.camera.clone();
+    remote(&mut editor, Operation::FrameSelected).unwrap();
+    assert_ne!(editor.camera, before);
+}
+
+#[test]
+fn hierarchy_click_on_a_flat_scene_selects_what_an_object_click_selects() {
+    let mut picked = Vec::new();
+    for mode in [SelectionMode::Object, SelectionMode::Hierarchy] {
+        let mut editor = Editor::default();
+        editor.create(Primitive::Cube);
+        let id = editor.selected.unwrap();
+        editor.native_operation(Operation::SetSelectionMode(mode));
+        editor.native_operation(Operation::Select {
+            node: None,
+            instance_path: None,
+        });
+        assert_eq!(editor.selected, None);
+        editor.camera = Camera::default();
+        click_world_point(&mut editor, glam::Vec3::ZERO);
+        assert_eq!(editor.selected, Some(id), "{mode:?}");
+        picked.push((editor.selected, editor.selected_path.clone()));
+    }
+    assert_eq!(picked[0], picked[1]);
+}
+
+#[test]
+fn hierarchy_click_on_empty_space_clears_the_selection() {
+    let mut editor = group_editor();
+    editor.native_operation(Operation::SetSelectionMode(SelectionMode::Hierarchy));
+    click_first_instance(&mut editor);
+    assert!(editor.selected.is_some());
+    click_world_point(&mut editor, glam::Vec3::new(-3.0, 0.0, 0.0));
+    assert_eq!(editor.selected, None);
+    assert!(editor.selected_path.is_empty());
+}
+
+/// Two cubes: A at the origin (selected) and B translated to x = 2.
+fn two_cubes() -> (Editor, NodeId, NodeId) {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let a = editor.selected.unwrap();
+    editor.create(Primitive::Cube);
+    let b = editor.selected.unwrap();
+    editor.channels[0] = "2".into();
+    editor.channel_intents[0] = true;
+    editor.select(Some(a));
+    assert_eq!(editor.selected, Some(a));
+    assert!(!editor.has_draft());
+    editor.native_operation(Operation::SetSelectionMode(SelectionMode::Hierarchy));
+    editor.camera = Camera::default();
+    (editor, a, b)
+}
+
+#[test]
+fn hierarchy_click_commits_a_valid_draft_to_the_old_target_first() {
+    let (mut editor, a, b) = two_cubes();
+    editor.channels[1] = "5".into();
+    editor.channel_intents[1] = true;
+    click_world_point(&mut editor, glam::Vec3::new(2.0, 0.0, 0.0));
+    assert_eq!(editor.selected, Some(b));
+    let translation = |id| {
+        editor
+            .history
+            .scene()
+            .node(id)
+            .unwrap()
+            .transform()
+            .translation
+    };
+    assert_eq!(translation(a)[1], 5.0);
+    assert_eq!(translation(b), [2.0, 0.0, 0.0]);
+    assert!(!editor.has_draft());
+}
+
+#[test]
+fn hierarchy_click_with_an_invalid_draft_refuses_and_keeps_the_selection() {
+    let (mut editor, a, _) = two_cubes();
+    editor.channels[0] = "nan".into();
+    editor.channel_intents[0] = true;
+    let before = editor.history.scene().clone();
+    click_world_point(&mut editor, glam::Vec3::new(2.0, 0.0, 0.0));
+    assert_eq!(editor.selected, Some(a));
+    assert_eq!(editor.history.scene(), &before);
+    assert_eq!(editor.channels[0], "nan");
+    assert!(editor.error);
 }

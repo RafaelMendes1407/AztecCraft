@@ -1745,3 +1745,66 @@ fn surface_fill_is_the_named_base_until_shading_is_wired() {
         assert_eq!(color, expected, "vertex {vertex}");
     }
 }
+
+#[test]
+fn object_feedback_highlights_descendants_of_a_selected_root_only() {
+    use maya_binary::{chunk, creation, group, mesh_payload, scene, triple};
+    let bytes = scene(
+        &[
+            group(
+                b"XFRM",
+                &[creation(b"root", None), triple(b"t", [0.0; 3])].concat(),
+                4,
+            ),
+            group(b"XFRM", &creation(b"child", Some(b"root")), 4),
+            group(
+                b"DMSH",
+                &[
+                    creation(b"shape", Some(b"child")),
+                    chunk(b"MESH", &mesh_payload(&[0, 1, 0x6000_0002]), 8),
+                ]
+                .concat(),
+                4,
+            ),
+            group(
+                b"XFRM",
+                &[creation(b"other", None), triple(b"t", [5.0, 0.0, 0.0])].concat(),
+                4,
+            ),
+            group(
+                b"DMSH",
+                &[
+                    creation(b"othershape", Some(b"other")),
+                    chunk(b"MESH", &mesh_payload(&[0, 1, 0x6000_0002]), 8),
+                ]
+                .concat(),
+                4,
+            ),
+        ]
+        .concat(),
+    );
+    let native = azteccraft::native_scene::binary::decode(bytes).unwrap();
+    let view = ViewScene::from_native(&native, VIEW_BUDGET).unwrap();
+    assert_eq!(view.instances().len(), 2);
+    let selected = |feedback: SelectionFeedback<'_>, index: usize| {
+        let instance = &view.instances()[index];
+        feedback.selected(instance, &instance.faces()[0])
+    };
+    let roots = native.transform_paths().unwrap();
+    let root = roots.iter().find(|t| t.path.len() == 1).unwrap();
+    let other = roots.iter().rfind(|t| t.path.len() == 1).unwrap();
+    assert_ne!(root.path, other.path);
+    let nested = view
+        .instances()
+        .iter()
+        .position(|i| i.path().len() > 2)
+        .unwrap();
+    let flat = 1 - nested;
+    let feedback = SelectionFeedback::Object(Some(&root.path));
+    assert!(selected(feedback, nested));
+    assert!(!selected(feedback, flat));
+    let feedback = SelectionFeedback::Object(Some(&other.path));
+    assert!(!selected(feedback, nested));
+    assert!(selected(feedback, flat));
+    assert!(!selected(SelectionFeedback::Object(None), nested));
+}

@@ -8,6 +8,8 @@ const MENU_SETS: [&str; 5] = ["Modeling", "Rigging", "Animation", "FX", "Renderi
 const ACTIVE_MENU_SET: &str = "Modeling";
 const MENU_SET_LABEL: &str = "Menu set";
 const MENU_SET_UNAVAILABLE: &str = "not implemented yet";
+const SELECTION_MODE_MENU_LABEL: &str = "Selection mode menu";
+const SELECTION_MODE_MENU_HOVER: &str = "Selection mode menu (presets): not implemented yet";
 
 struct StripButton {
     label: &'static str,
@@ -21,28 +23,27 @@ struct ModeButton {
     label: &'static str,
     icon: UiIcon,
     hover: &'static str,
-    /// `None` while the mode is unsupported.
-    target: Option<(SelectionModeIntent, SelectionMode)>,
+    target: (SelectionModeIntent, SelectionMode),
 }
 
 const SELECTION_MODES: [ModeButton; 3] = [
     ModeButton {
         label: "Hierarchy selection",
         icon: UiIcon::SelectHierarchy,
-        hover: "Hierarchy selection: not implemented yet",
-        target: None,
+        hover: "Hierarchy selection (Root only; Leaf and Template unsupported)",
+        target: (SelectionModeIntent::Hierarchy, SelectionMode::Hierarchy),
     },
     ModeButton {
         label: "Object selection",
         icon: UiIcon::SelectObject,
         hover: "Object selection (F8 toggles)",
-        target: Some((SelectionModeIntent::Object, SelectionMode::Object)),
+        target: (SelectionModeIntent::Object, SelectionMode::Object),
     },
     ModeButton {
         label: "Component selection",
         icon: UiIcon::SelectComponent,
         hover: "Component selection (Face only; Vertex, Edge, UV unsupported)  F11",
-        target: Some((SelectionModeIntent::Face, SelectionMode::Face)),
+        target: (SelectionModeIntent::Face, SelectionMode::Face),
     },
 ];
 
@@ -117,11 +118,11 @@ impl Editor {
                 }
             }
             ui.separator();
+            selection_mode_menu(ui);
             for button in &SELECTION_MODES {
-                let selected = button
-                    .target
-                    .is_some_and(|(_, mode)| mode == self.selection_mode);
-                let enabled = admitted && button.target.is_some();
+                let (intent, mode) = button.target;
+                let selected = mode == self.selection_mode;
+                let enabled = admitted;
                 let response = icon_button(
                     ui,
                     button.label,
@@ -130,7 +131,7 @@ impl Editor {
                     selected,
                     button.hover,
                 );
-                if let (true, Some((intent, _))) = (response.clicked(), button.target) {
+                if response.clicked() {
                     selection_intent.get_or_insert(intent);
                 }
             }
@@ -176,9 +177,31 @@ fn menu_set_selector(ui: &mut egui::Ui) {
                 }
             }
         });
+    let enabled = combo.response.enabled();
     combo.response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, MENU_SET_LABEL)
+        egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, enabled, MENU_SET_LABEL)
     });
+}
+
+/// Presets need mask state (not implemented), so the control is disabled, stateless and empty.
+fn selection_mode_menu(ui: &mut egui::Ui) {
+    let combo = ui
+        .add_enabled_ui(false, |ui| {
+            egui::ComboBox::from_id_salt("selection_mode_menu")
+                .selected_text("Presets")
+                .show_ui(ui, |_| {})
+        })
+        .inner
+        .response;
+    let enabled = combo.enabled();
+    combo.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::WidgetType::ComboBox,
+            enabled,
+            SELECTION_MODE_MENU_LABEL,
+        )
+    });
+    combo.on_disabled_hover_text(SELECTION_MODE_MENU_HOVER);
 }
 
 #[cfg(test)]

@@ -126,11 +126,11 @@ impl Editor {
                     .add_enabled(
                         authoring
                             && self.selected.is_some()
-                            && self.selection_mode == SelectionMode::Object,
+                            && self.selection_mode != SelectionMode::Face,
                         egui::Button::new("Delete"),
                     )
                     .on_disabled_hover_text(
-                        "Object selection required; face deletion is unsupported",
+                        "Object or Hierarchy selection required; face deletion is unsupported",
                     )
                     .clicked()
                 {

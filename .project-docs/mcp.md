@@ -61,8 +61,8 @@ Call `inspect_scene` first. Every other tool requires `scene_token`, a UUID stri
 | `update_move` | `move_id`: decimal string; `distance`: finite absolute f64 | Preview World distance from begin in declared linear units |
 | `finish_move` | `move_id`; `finish`: `commit` or `cancel` | One Undo at commit, or exact begin-state restoration |
 | `create_primitive` | `primitive`: `cube`, `plane`, `sphere`, `cylinder` or `cone` (provisional radius-1 polygon solids: 20x20 sphere with pole triangles; cylinder with two 20-gon caps; cone with a 20-gon base); optional `name` | Created `node_id`; selects the new node |
-| `select_node` | Optional `node_id` and `instance_path`, at most 256 decimal NativeId strings | Full root-to-transform prefix; ambiguous objects require a path. Null or omitted node clears selection and cannot include a path |
-| `set_selection_mode` | Required `mode`: `object` or `face` | Changes the transient selection mask; a valid remembered face remains inactive in Object mode |
+| `select_node` | Optional `node_id` and `instance_path`, at most 256 decimal NativeId strings | Full root-to-transform prefix; ambiguous objects require a path. Null or omitted node clears selection and cannot include a path. `select_node` stays exact: it selects the named transform and is not limited by the selection mode |
+| `set_selection_mode` | Required `mode`: `object`, `face` or `hierarchy` (Root sub-mask only; Leaf and Template are unsupported) | Changes the transient selection mask; a valid remembered face remains inactive outside Face mode. In Hierarchy mode a native viewport click selects the root transform of the hit object's hierarchy |
 | `select_face` | Required `target`: complete target object or null | In Face mode, selects that exact owning instance and canonical face; null clears only the face |
 | `rename_node` | `node_id`, `name` | Changed or unchanged authoring state |
 | `set_transform` | `node_id`, `translation`, `rotation_degrees`, `scale`, each an array of three finite f64 numbers | Translation in declared scene units, rotation in degrees, dimensionless scale |
@@ -107,7 +107,7 @@ Native Face selection uses 4x4 physical-pixel center markers and an 8x8 click bo
 with center-ray visibility and a bounded intersection budget. Plain primary
 click replaces or clears the face; modified selection and ambiguous coalesced
 primary releases are unsupported. Alt camera navigation remains available.
-F11 and Select > Components > Face enter Face mode; F8 toggles Object/Face.
+F11 and Select > Components > Face enter Face mode; F8 toggles Object/Face (from Hierarchy it goes to Face).
 Exact Maya CBS, numeric, visual and event-order parity remain unverified. Native
 Extrude remains disabled pending a real history/manipulator workflow; the
 existing explicit `extrude_face` tool keeps its checked authoring semantics.
@@ -340,14 +340,14 @@ Nine verified tools establish the initial server foundation, not catch-up with e
 | Native Save/Save As | Provisional `save_scene`/`save_scene_as` and matching pending Save; source-bound Unix binary only, current integration/native Save QA remains pending |
 | Core OBJ export | No tool; file authority and create-new/no-clobber behavior need a dedicated slice |
 | Polygon cylinder and cone creation | `create_primitive` with `cylinder` or `cone` dispatches the same `Operation::Create` as Create > Polygon cylinder/cone; the new node, its inspected counts, and face view, pick, select (including the true 20-gon caps through the same ViewScene n-gon path) and refused cap extrusion are covered by actual Editor protocol tests; provisional topology |
-| Native Face/Center selection | `set_selection_mode`, `select_face` and selection inspection share authoritative typed state; other component masks and multi-face gestures are unsupported |
+| Native Hierarchy/Face/Center selection | `set_selection_mode` (`object`, `face`, `hierarchy`), `select_face` and selection inspection share authoritative typed state; `select_node` stays exact and is not mode-limited. Hierarchy is the Root sub-mask only; other component masks and multi-face gestures are unsupported |
 | Core mesh extrusion | `extrude_face` exposes the checked single-quad History command with an explicit current face target; native face-extrusion UI remains unsupported |
 | Native Select/Move tool and World-axis object translation | Four typed Move tools share the native transaction and guards; bounded tool/active preview/capture state is inspectable. Candidate native/SDK verification remains pending |
 | Native Tool Box Select and Move buttons | The icon-only Select (Q) and Move (W) buttons dispatch `Operation::SetActiveTool`, the same typed operation as `set_active_tool` (`select` or `move`), with the same closing and modal guards |
 | Native Tool Box Lasso, Paint Selection, Rotate, Scale and Last Used | Visibly disabled and unsupported in the native UI ("not implemented yet" hover text); no operation and no MCP tool, and none is advertised. Last Used dynamic behaviour is also unsupported |
 | Interactive camera orbit/pan/dolly | Three navigation tools use the same typed operations as native captured gestures; live camera state is inspectable |
 | Viewport Grid visibility | `set_grid_visibility` shares the checkable native Grid button's typed setter; `grid_visible` exposes the authoritative session state. Fixed grid only; options, global/additional panels and persistence are unsupported |
-| Status Line sidebar and selection toggles | The Channel Box toggle is supported through `set_sidebar_panel_visibility` (state in `inspect_scene` `sidebar_panels`); the Object/Component selection modes use `set_selection_mode` (Component is Face). The menu-set selector is native-only and has no state, so no tool (only Modeling is active). Hierarchy, Modeling Toolkit, HumanIK, Attribute Editor and Tool Settings are visibly unsupported and have no tool |
+| Status Line sidebar and selection toggles | The Channel Box toggle is supported through `set_sidebar_panel_visibility` (state in `inspect_scene` `sidebar_panels`); the Hierarchy (Root sub-mask only), Object and Component selection modes use `set_selection_mode` (Component is Face). The menu-set selector is native-only and has no state, so no tool (only Modeling is active). The selection mode menu (presets) is native-only, disabled, stateless and has no tool. Modeling Toolkit, HumanIK, Attribute Editor and Tool Settings are visibly unsupported and have no tool |
 | Status Line file buttons | New, Open and Save use the existing `new_scene`, `open_scene` and `save_scene` tools; the buttons and the File menu share one native handler. Save As has no strip button |
 | Status Line absent groups | Selection masks, snaps, symmetry, construction history, render buttons, Hypershade and the input box are not drawn, so there is nothing to expose and no tool |
 | GPU geometry viewport | `inspect_scene` exposes live backend/error/depth/clipping/appearance state; camera and object selection share the native frame consumer. Materials and complete appearance remain unsupported |

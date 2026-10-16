@@ -446,7 +446,7 @@ impl Editor {
                 });
             }
             Operation::FrameSelected => {
-                let path = if self.selection_mode == SelectionMode::Object {
+                let path = if self.selection_mode != SelectionMode::Face {
                     let id = self.selected.ok_or(OperationError::NoSelection)?;
                     Some(self.selection_path(
                         id,

@@ -1,7 +1,7 @@
 use super::*;
 use crate::app::tests::frame_with;
 use crate::app::{channel_edit_id, text_edit_focused};
-use crate::editor_operations::{SelectionMode, SidebarPanel};
+use crate::editor_operations::{Operation, SelectionMode, SidebarPanel};
 use azteccraft::scene::NodeId;
 use eframe::egui::{Event, Key, Modifiers, PointerButton, Pos2, Rect, Vec2, accesskit};
 
@@ -11,6 +11,8 @@ const MODES: [&str; 3] = [
     "Object selection",
     "Component selection",
 ];
+const MENU_SET: &str = "Menu set";
+const PRESETS: &str = "Selection mode menu";
 const FILES: [&str; 3] = ["New scene", "Open...", "Save"];
 const HIERARCHY: &str = "Hierarchy selection";
 const CHANNEL_BOX: &str = "Channel Box / Layer Editor";
@@ -61,7 +63,7 @@ fn strip(output: &egui::FullOutput) -> Vec<Control> {
     let mut found: Vec<Control> = controls(output)
         .into_iter()
         .filter(|c| {
-            c.role == accesskit::Role::ComboBox && c.label == "Menu set"
+            c.role == accesskit::Role::ComboBox && (c.label == MENU_SET || c.label == PRESETS)
                 || FILES.contains(&c.label.as_str())
                 || MODES.contains(&c.label.as_str())
                 || TOGGLES.contains(&c.label.as_str())
@@ -135,7 +137,7 @@ fn strip_fits_the_minimum_window_at_every_scale_and_enlarged_text() {
         frame_with(&mut editor, &context, SIZE, ppp, vec![]);
         let output = frame_with(&mut editor, &context, SIZE, ppp, vec![]);
         let found = strip(&output);
-        assert_eq!(found.len(), 12, "ppp {ppp} font {font}");
+        assert_eq!(found.len(), 13, "ppp {ppp} font {font}");
         let margin = egui::Frame::side_top_panel(&context.global_style()).total_margin();
         for control in &found {
             assert!(
@@ -163,9 +165,10 @@ fn strip_elements_are_in_documented_order() {
     frame_with(&mut editor, &context, SIZE, 1.0, vec![]);
     let output = frame_with(&mut editor, &context, SIZE, 1.0, vec![]);
     let labels: Vec<String> = strip(&output).into_iter().map(|c| c.label).collect();
-    let expected: Vec<&str> = ["Menu set"]
+    let expected: Vec<&str> = [MENU_SET]
         .into_iter()
         .chain(FILES)
+        .chain([PRESETS])
         .chain(MODES)
         .chain(TOGGLES)
         .collect();
@@ -195,13 +198,31 @@ fn clicking_disabled_strip_buttons_changes_nothing() {
     frame_with(&mut editor, &context, SIZE, 1.0, vec![]);
     let output = frame_with(&mut editor, &context, SIZE, 1.0, vec![]);
     let before = snapshot(&editor);
-    for control in strip(&output).iter().filter(|c| {
-        c.label == HIERARCHY || (TOGGLES.contains(&c.label.as_str()) && c.label != CHANNEL_BOX)
-    }) {
+    for control in strip(&output)
+        .iter()
+        .filter(|c| TOGGLES.contains(&c.label.as_str()) && c.label != CHANNEL_BOX)
+    {
         assert!(control.disabled, "{}", control.label);
         click(&mut editor, &context, control.rect.center());
         assert_eq!(snapshot(&editor), before, "{}", control.label);
     }
+}
+
+#[test]
+fn presets_combo_is_inert_and_shows_the_disabled_hover_text() {
+    let (mut editor, context) = file_editor(FileState::Clean);
+    let output = strip_output(&mut editor, &context);
+    let combo = strip(&output)
+        .into_iter()
+        .find(|c| c.label == PRESETS)
+        .expect("presets combo");
+    assert!(combo.disabled);
+    let before = snapshot(&editor);
+    let hover = hover_texts(&mut editor, &context, combo.rect.center());
+    assert!(hover.contains(SELECTION_MODE_MENU_HOVER), "{hover}");
+    click(&mut editor, &context, combo.rect.center());
+    assert!(!egui::Popup::is_any_open(&context));
+    assert_eq!(snapshot(&editor), before);
 }
 
 #[test]
@@ -249,15 +270,17 @@ fn every_strip_control_has_its_label_and_disabled_state() {
         assert_eq!(control.role, accesskit::Role::Button, "{name}");
         assert_eq!(
             control.disabled,
-            *name == HIERARCHY || (TOGGLES.contains(name) && *name != CHANNEL_BOX),
+            TOGGLES.contains(name) && *name != CHANNEL_BOX,
             "{name}"
         );
     }
-    let combo = found
-        .iter()
-        .find(|c| c.role == accesskit::Role::ComboBox)
-        .expect("menu set combo");
-    assert!(!combo.disabled);
+    for (label, disabled) in [(MENU_SET, false), (PRESETS, true)] {
+        let combo = found
+            .iter()
+            .find(|c| c.role == accesskit::Role::ComboBox && c.label == label)
+            .unwrap_or_else(|| panic!("combo {label}"));
+        assert_eq!(combo.disabled, disabled, "{label}");
+    }
 }
 
 /// Tabs until the menu set combo has keyboard focus, failing if a disabled button takes it.
@@ -272,11 +295,9 @@ fn tab_to_combo(editor: &mut Editor, context: &egui::Context) {
         let found = strip(&output);
         let focused = found.iter().find(|c| Some(c.id) == focus);
         match focused {
-            Some(c) if c.role == accesskit::Role::ComboBox => return,
-            Some(c)
-                if c.label == HIERARCHY
-                    || (TOGGLES.contains(&c.label.as_str()) && c.label != CHANNEL_BOX) =>
-            {
+            Some(c) if c.role == accesskit::Role::ComboBox && c.label == MENU_SET => return,
+            Some(c) if c.label == PRESETS => panic!("Tab focused the disabled presets combo"),
+            Some(c) if TOGGLES.contains(&c.label.as_str()) && c.label != CHANNEL_BOX => {
                 panic!("Tab focused disabled strip button {}", c.label)
             }
             Some(_) => {}
@@ -302,8 +323,8 @@ fn keyboard_activates_the_enabled_combo_and_skips_disabled_buttons() {
         let focused = controls(&output).into_iter().find(|c| Some(c.id) == focus);
         if let Some(c) = focused {
             assert!(
-                c.label != HIERARCHY
-                    && (!TOGGLES.contains(&c.label.as_str()) || c.label == CHANNEL_BOX),
+                (!TOGGLES.contains(&c.label.as_str()) || c.label == CHANNEL_BOX)
+                    && c.label != PRESETS,
                 "Tab focused disabled {}",
                 c.label
             );
@@ -388,7 +409,7 @@ fn component_and_object_clicks_set_the_mode_and_repeat_clicks_do_nothing() {
 fn same_frame_shortcuts_beat_the_strip_click_exactly_like_the_select_toggle_menu_item() {
     // Select > Components > Face (menus.rs) assigns the intent directly and so beats a
     // same-frame F8, unlike the strip and Select > Toggle, which only fill an empty slot.
-    for label in [OBJECT, COMPONENT] {
+    for label in [HIERARCHY, OBJECT, COMPONENT] {
         let (mut reference, context) = setup();
         strip_output(&mut reference, &context);
         let reference_scene = reference.history.scene().clone();
@@ -501,7 +522,7 @@ fn modal_and_closing_disable_both_mode_buttons() {
         }
         let output = strip_output(&mut editor, &context);
         let before = snapshot(&editor);
-        for label in [OBJECT, COMPONENT] {
+        for label in [HIERARCHY, OBJECT, COMPONENT] {
             let control = strip(&output)
                 .into_iter()
                 .find(|c| c.label == label)
@@ -529,6 +550,78 @@ fn accesskit_selected_follows_the_mode() {
     frame_with(&mut editor, &context, SIZE, 1.0, vec![key(Key::F8)]);
     let output = frame_with(&mut editor, &context, SIZE, 1.0, vec![]);
     assert_eq!(selected(&output), (Some(false), Some(true), Some(false)));
+    click(&mut editor, &context, button_center(&output, HIERARCHY));
+    let output = frame_with(&mut editor, &context, SIZE, 1.0, vec![]);
+    assert_eq!(selected(&output), (Some(true), Some(false), Some(false)));
+}
+
+#[test]
+fn hierarchy_click_sets_the_mode_and_repeat_clicks_do_nothing() {
+    let (mut editor, context) = setup();
+    let output = strip_output(&mut editor, &context);
+    click(&mut editor, &context, button_center(&output, HIERARCHY));
+    assert_eq!(editor.selection_mode, SelectionMode::Hierarchy);
+    let after = snapshot(&editor);
+    click(&mut editor, &context, button_center(&output, HIERARCHY));
+    assert_eq!(snapshot(&editor), after);
+}
+
+#[test]
+fn f8_from_hierarchy_goes_to_face_and_back_to_object() {
+    let (mut editor, context) = setup();
+    let output = strip_output(&mut editor, &context);
+    click(&mut editor, &context, button_center(&output, HIERARCHY));
+    frame_with(&mut editor, &context, SIZE, 1.0, vec![key(Key::F8)]);
+    assert_eq!(editor.selection_mode, SelectionMode::Face);
+    frame_with(&mut editor, &context, SIZE, 1.0, vec![key(Key::F8)]);
+    assert_eq!(editor.selection_mode, SelectionMode::Object);
+}
+
+#[test]
+fn same_frame_hierarchy_click_and_delete_deletes_the_selection_once() {
+    let (mut editor, context) = setup();
+    let output = strip_output(&mut editor, &context);
+    assert!(editor.selected.is_some());
+    click_with_keys(
+        &mut editor,
+        &context,
+        button_center(&output, HIERARCHY),
+        vec![key(Key::Delete)],
+    );
+    assert_eq!(editor.selection_mode, SelectionMode::Hierarchy);
+    assert!(!editor.error, "{}", editor.status);
+    assert!(editor.history.scene().nodes().is_empty());
+    assert_eq!(editor.selected, None);
+}
+
+#[test]
+fn f8_cancels_an_active_move_from_hierarchy() {
+    use crate::app::features::move_tool::tests::{press_x, setup as move_setup};
+    let (mut editor, context, rect) = move_setup(1.0);
+    context.enable_accesskit();
+    editor.native_operation(Operation::SetSelectionMode(SelectionMode::Hierarchy));
+    let before = editor.history.scene().clone();
+    let begin = press_x(&mut editor, &context, rect, 1.0);
+    frame_with(
+        &mut editor,
+        &context,
+        egui::vec2(1440.0, 900.0),
+        1.0,
+        vec![Event::PointerMoved(
+            begin + egui::vec2(rect.height() / 20.0, 0.0),
+        )],
+    );
+    assert_ne!(editor.history.scene(), &before);
+    frame_with(
+        &mut editor,
+        &context,
+        egui::vec2(1440.0, 900.0),
+        1.0,
+        vec![key(Key::F8)],
+    );
+    assert_eq!(editor.selection_mode, SelectionMode::Face);
+    assert!(editor.history.active_manipulation().is_none() && editor.native_move.is_none());
+    assert_eq!(editor.history.scene(), &before);
 }
 
 #[test]

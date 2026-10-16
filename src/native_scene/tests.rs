@@ -865,3 +865,31 @@ fn local_visibility_reports_explicit_values_and_none_when_unproved() {
     assert_eq!(scene.node(root).unwrap().local_visibility(), None);
     assert_eq!(scene.shapes()[0].local_visibility(), None);
 }
+
+#[test]
+fn root_transform_resolves_the_top_of_any_valid_path_and_refuses_others() {
+    let (scene, root) = test_fixtures::cube();
+    let id = scene.node(root).unwrap().transform_id;
+    assert_eq!(scene.root_transform(&[id]), Ok(root));
+    assert_eq!(
+        scene.root_transform(&[]),
+        Err(NativeError::InvalidInstancePath)
+    );
+    assert_eq!(
+        scene.root_transform(&[NativeId(u64::MAX)]),
+        Err(NativeError::InvalidInstancePath)
+    );
+    let (scene, root, child, _) = grouped_shape();
+    let root_id = scene.node(root).unwrap().transform_id;
+    let child_id = scene.node(child).unwrap().transform_id;
+    assert_eq!(scene.root_transform(&[root_id, child_id]), Ok(root));
+    assert_eq!(
+        scene.root_transform(&[child_id]),
+        Err(NativeError::InvalidInstancePath)
+    );
+    let too_deep = vec![root_id; MAX_TRANSFORM_DEPTH + 1];
+    assert_eq!(
+        scene.root_transform(&too_deep),
+        Err(NativeError::ResourceLimit)
+    );
+}

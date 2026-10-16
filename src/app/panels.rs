@@ -159,6 +159,7 @@ impl Editor {
             ui.label(match self.selection_mode {
                 SelectionMode::Object => "Object selection",
                 SelectionMode::Face => "Face selection | visible centers only",
+                SelectionMode::Hierarchy => "Hierarchy selection | Root",
             });
             ui.separator();
             grid_requested = ui
@@ -250,9 +251,10 @@ impl Editor {
                 let mode = match intent {
                     SelectionModeIntent::Face => SelectionMode::Face,
                     SelectionModeIntent::Object => SelectionMode::Object,
+                    SelectionModeIntent::Hierarchy => SelectionMode::Hierarchy,
                     SelectionModeIntent::Toggle => match self.selection_mode {
-                        SelectionMode::Object => SelectionMode::Face,
                         SelectionMode::Face => SelectionMode::Object,
+                        SelectionMode::Object | SelectionMode::Hierarchy => SelectionMode::Face,
                     },
                 };
                 self.apply_operation(Operation::SetSelectionMode(mode))?;
@@ -275,7 +277,7 @@ impl Editor {
                 && let Some(ndc) = clickable
             {
                 match self.selection_mode {
-                    SelectionMode::Object => {
+                    SelectionMode::Object | SelectionMode::Hierarchy => {
                         let hit = self
                             .camera
                             .pick_view(&view, ndc, self.aspect)
@@ -283,7 +285,17 @@ impl Editor {
                         let (node, instance_path) = if let Some(hit) = hit {
                             let mut prefix = hit.path;
                             prefix.pop();
-                            (Some(hit.transform), Some(prefix))
+                            if self.selection_mode == SelectionMode::Hierarchy {
+                                prefix.truncate(1);
+                                let root = self
+                                    .history
+                                    .scene()
+                                    .root_transform(&prefix)
+                                    .map_err(OperationError::Scene)?;
+                                (Some(root), Some(prefix))
+                            } else {
+                                (Some(hit.transform), Some(prefix))
+                            }
                         } else {
                             (None, None)
                         };
@@ -310,9 +322,11 @@ impl Editor {
                 &self.camera,
                 &view,
                 match self.selection_mode {
-                    SelectionMode::Object => crate::viewport_renderer::SelectionFeedback::Object(
-                        self.selected.map(|_| self.selected_path.as_slice()),
-                    ),
+                    SelectionMode::Object | SelectionMode::Hierarchy => {
+                        crate::viewport_renderer::SelectionFeedback::Object(
+                            self.selected.map(|_| self.selected_path.as_slice()),
+                        )
+                    }
                     SelectionMode::Face => crate::viewport_renderer::SelectionFeedback::Face {
                         active: self
                             .selected

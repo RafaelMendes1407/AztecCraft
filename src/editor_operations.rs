@@ -68,6 +68,7 @@ pub enum SelectionMode {
     #[default]
     Object,
     Face,
+    Hierarchy,
 }
 #[cfg(any(test, feature = "mcp"))]
 use uuid::Uuid;

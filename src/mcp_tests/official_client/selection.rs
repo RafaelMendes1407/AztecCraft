@@ -231,3 +231,288 @@ async fn sdk_face_mode_target_inspection_and_clear_share_authoritative_editor_st
     drop(editor);
     server.await.unwrap();
 }
+
+// Mirrors `group_editor()` in src/app/tests.rs; those tests build without the mcp feature, so the builder cannot be shared.
+fn grouped_scene_bytes() -> std::sync::Arc<[u8]> {
+    use binary_fixture::{chunk, creation, group, mesh_payload, scene, triple};
+    scene(
+        &[
+            group(
+                b"XFRM",
+                &[creation(b"group", None), triple(b"t", [2., 0., 0.])].concat(),
+                4,
+            ),
+            group(b"XFRM", &creation(b"child", Some(b"group")), 4),
+            group(
+                b"DMSH",
+                &[
+                    creation(b"shape", Some(b"child")),
+                    chunk(b"MESH", &mesh_payload(&[0, 1, 0x6000_0002]), 8),
+                ]
+                .concat(),
+                4,
+            ),
+        ]
+        .concat(),
+    )
+}
+
+#[tokio::test]
+async fn sdk_hierarchy_mode_is_idempotent_refuses_faces_and_keeps_select_node_exact() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("grouped.mb");
+    std::fs::write(&source, grouped_scene_bytes()).unwrap();
+    let context = egui::Context::default();
+    let (mut editor, client, server) = start(&context).await;
+    let old_token = editor.scene_token.to_string();
+    let opened = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "open_scene",
+        json!({"scene_token":old_token,"path":source}),
+    )
+    .await;
+    assert_eq!(
+        opened.structured_content.unwrap()["outcome"],
+        "document_applied"
+    );
+    let token = editor.scene_token.to_string();
+    let paths = editor.history.scene().transform_paths().unwrap();
+    assert_eq!(paths.len(), 2);
+    let child = &paths[1];
+    let child_node = child.node.to_decimal();
+    let child_path: Vec<_> = child.path.iter().map(|id| id.to_decimal()).collect();
+    assert_eq!(child_path.len(), 2);
+
+    let first = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "set_selection_mode",
+        json!({"scene_token":token,"mode":"hierarchy"}),
+    )
+    .await;
+    assert_ne!(first.is_error, Some(true));
+    assert_eq!(first.structured_content.unwrap()["outcome"], "changed");
+    assert_eq!(editor.selection_mode, SelectionMode::Hierarchy);
+    let inspected = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "inspect_scene",
+        json!({}),
+    )
+    .await
+    .structured_content
+    .unwrap();
+    assert_eq!(inspected["inspection"]["selection_mode"], "hierarchy");
+    assert_eq!(editor.scene_token.to_string(), token);
+    let repeat = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "set_selection_mode",
+        json!({"scene_token":token,"mode":"hierarchy"}),
+    )
+    .await;
+    assert_eq!(repeat.structured_content.unwrap()["outcome"], "unchanged");
+    assert_eq!(editor.scene_token.to_string(), token);
+
+    let selected = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "select_node",
+        json!({"scene_token":token,"node_id":child_node,"instance_path":child_path}),
+    )
+    .await;
+    assert_ne!(selected.is_error, Some(true));
+    assert_eq!(editor.selection_mode, SelectionMode::Hierarchy);
+    assert_eq!(editor.selected.unwrap().to_decimal(), child_node);
+    assert_eq!(
+        editor
+            .selected_path
+            .iter()
+            .map(|id| id.to_decimal())
+            .collect::<Vec<_>>(),
+        child_path
+    );
+    let inspected = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "inspect_scene",
+        json!({}),
+    )
+    .await
+    .structured_content
+    .unwrap();
+    assert_eq!(inspected["inspection"]["selected_node"], child_node);
+    assert_eq!(
+        inspected["inspection"]["selected_instance_path"],
+        json!(child_path)
+    );
+
+    let scene = editor.history.scene().clone();
+    let selection = (editor.selected, editor.selected_path.clone());
+    let shape_id = scene.shapes()[0].id().to_decimal();
+    let target =
+        json!({"node_id":child_node,"shape_id":shape_id,"instance_path":child_path,"face_index":0});
+    for target in [target, serde_json::Value::Null] {
+        let refused = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "select_face",
+            json!({"scene_token":token,"target":target}),
+        )
+        .await;
+        assert_eq!(refused.is_error, Some(true));
+        assert_eq!(
+            refused.structured_content.unwrap()["error"]["code"],
+            "invalid_input"
+        );
+        assert_eq!(editor.selection_mode, SelectionMode::Hierarchy);
+        assert_eq!((editor.selected, editor.selected_path.clone()), selection);
+        assert_eq!(editor.remembered_face, None);
+        assert_eq!(editor.history.scene(), &scene);
+        assert_eq!(editor.scene_token.to_string(), token);
+    }
+    client.cancel().await.unwrap();
+    drop(editor);
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn sdk_hierarchy_mode_guards_match_other_selection_modes() {
+    let context = egui::Context::default();
+    let (mut editor, client, server) = start(&context).await;
+    let token = editor.scene_token.to_string();
+    call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "create_primitive",
+        json!({"scene_token":token,"primitive":"cube"}),
+    )
+    .await;
+    let args = |token: &str, mode: &str| json!({"scene_token":token,"mode":mode});
+    let scene = editor.history.scene().clone();
+
+    let stale = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "set_selection_mode",
+        args(&Uuid::nil().to_string(), "hierarchy"),
+    )
+    .await;
+    assert_eq!(
+        stale.structured_content.unwrap()["error"]["code"],
+        "stale_scene"
+    );
+    assert_eq!(editor.selection_mode, SelectionMode::Object);
+
+    for mode in ["root", "leaf", "template", "Hierarchy", ""] {
+        let rejected = call_response(
+            &mut editor,
+            &context,
+            client.peer(),
+            "set_selection_mode",
+            args(&token, mode),
+        )
+        .await;
+        let Err(rmcp::ServiceError::McpError(error)) = rejected else {
+            panic!("expected a JSON-RPC error for {mode:?}");
+        };
+        assert_eq!(error.code, rmcp::model::ErrorCode::INVALID_PARAMS, "{mode}");
+        assert_eq!(editor.selection_mode, SelectionMode::Object);
+        assert_eq!(editor.scene_token.to_string(), token);
+        assert_eq!(editor.history.scene(), &scene);
+    }
+
+    editor.name = "human_draft".into();
+    let draft = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "set_selection_mode",
+        args(&token, "hierarchy"),
+    )
+    .await;
+    assert_eq!(
+        draft.structured_content.unwrap()["error"]["code"],
+        "busy_editing"
+    );
+    assert_eq!(editor.name, "human_draft");
+    assert_eq!(editor.selection_mode, SelectionMode::Object);
+    editor.sync_fields();
+
+    editor.request_close();
+    let modal = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "set_selection_mode",
+        args(&token, "hierarchy"),
+    )
+    .await;
+    assert_eq!(
+        modal.structured_content.unwrap()["error"]["code"],
+        "busy_editing"
+    );
+    assert_eq!(editor.selection_mode, SelectionMode::Object);
+    assert_eq!(editor.history.scene(), &scene);
+    client.cancel().await.unwrap();
+    drop(editor);
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn sdk_hierarchy_mode_is_busy_during_an_active_move() {
+    let context = egui::Context::default();
+    let (mut editor, client, server) = start(&context).await;
+    let token = editor.scene_token.to_string();
+    let created = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "create_primitive",
+        json!({"scene_token":token,"primitive":"cube"}),
+    )
+    .await
+    .structured_content
+    .unwrap();
+    let path: Vec<_> = editor
+        .selected_path
+        .iter()
+        .map(|id| id.to_decimal())
+        .collect();
+    call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "begin_move",
+        json!({"scene_token":token,"node_id":created["node_id"],"instance_path":path,"axis":"x"}),
+    )
+    .await;
+    let preview = editor.history.scene().clone();
+    let busy = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "set_selection_mode",
+        json!({"scene_token":token,"mode":"hierarchy"}),
+    )
+    .await;
+    assert_eq!(
+        busy.structured_content.unwrap()["error"]["code"],
+        "busy_manipulation"
+    );
+    assert_eq!(editor.selection_mode, SelectionMode::Object);
+    assert_eq!(editor.history.scene(), &preview);
+    client.cancel().await.unwrap();
+    drop(editor);
+    server.await.unwrap();
+}

@@ -685,6 +685,18 @@ impl NativeScene {
         }
         Ok(node)
     }
+    /// The root transform of the hierarchy containing `path`, for Hierarchy-mode picking.
+    pub fn root_transform(&self, path: &[NativeId]) -> Result<NodeId, NativeError> {
+        if path.len() > MAX_TRANSFORM_DEPTH {
+            return Err(NativeError::ResourceLimit);
+        }
+        self.transform_prefix(path)?;
+        self.nodes
+            .iter()
+            .find(|node| node.transform_id == path[0])
+            .map(|node| node.id)
+            .ok_or(NativeError::InvalidInstancePath)
+    }
     pub fn transform_paths(&self) -> Result<Vec<TransformTarget>, NativeError> {
         let mut paths = Vec::<TransformTarget>::new();
         for root in self.dag.iter().filter(|edge| edge.parent.is_none()) {

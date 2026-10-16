@@ -106,7 +106,7 @@ convention as documented in its
 [transformation API](https://help.autodesk.com/cloudhelp/2026/ENU/MAYA-API-REF/cpp_ref/class_m_transformation_matrix.html).
 With glam column vectors this uses `RZ * RY * RX`. Negative and zero
 scales are supported; a reflected transform also reverses geometric winding.
-Hierarchy editing remains a subsequent task.
+Hierarchy editing (grouping, reparenting) remains a subsequent task. The Hierarchy selection mode only selects root transforms; grouped hierarchy exists only in opened `.ma`/`.mb` files, where structural edits such as Delete on a group are refused.
 
 `mesh::Mesh` stores quad vertex/index arrays and remains available as `scene::Mesh`.
 Scene validation requires finite local/world coordinates, index bounds and four
@@ -136,7 +136,7 @@ add native face-editing controls or prove Maya equivalence.
 ## Face Center selection
 
 F11 or Select > Components > Face enters Face mode; F8 or Object/Component
-toggles Object/Face. The active transform contributes only directly attached
+toggles Object/Face (from Hierarchy it goes to Face). The active transform contributes only directly attached
 triangle/quad shapes in its exact instance path, not descendant meshes under a
 selected group. A plain primary click replaces the face or clears it when no
 eligible center is hit. The shared typed operations and inspection are available

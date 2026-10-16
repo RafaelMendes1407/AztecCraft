@@ -1427,6 +1427,7 @@ mod tests {
         for mode in [
             SelectionMode::Face,
             SelectionMode::Object,
+            SelectionMode::Hierarchy,
             SelectionMode::Face,
         ] {
             editor.native_operation(Operation::SetSelectionMode(mode));
