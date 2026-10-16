@@ -616,6 +616,14 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
                 Operation::SetActiveTool(ActiveTool::Move),
             ),
             sample(
+                "set_active_tool(rotate)",
+                Operation::SetActiveTool(ActiveTool::Rotate),
+            ),
+            sample(
+                "set_active_tool(scale)",
+                Operation::SetActiveTool(ActiveTool::Scale),
+            ),
+            sample(
                 "set_active_tool(select)",
                 Operation::SetActiveTool(ActiveTool::Select),
             ),
