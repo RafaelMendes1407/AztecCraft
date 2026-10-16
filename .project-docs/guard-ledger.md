@@ -85,6 +85,10 @@ The matrix records these asymmetries; treat a change as a behavior change that n
   `BusyManipulation` during a Move (`src/app/features/move_tool.rs:82`), and otherwise commits a valid
   draft first and refuses an invalid one (`src/app/dispatch.rs:222`). The handler is
   `src/app/dispatch.rs:253`; matrix cells are `set_sidebar_panel_visible(channel_box,false)`.
+- The File menu and the Status Line file buttons share `file_actions` (`src/app/menus.rs`), the one
+  native caller of `Operation::SaveScene`; New and Open go through `request_new` and `open_dialog`.
+  Enable state, disabled reason and handler come from the same helper, so the guards are those of
+  the menu path, and the entry-point allowlist names `file_actions` instead of `menus`.
 - Human-draft commits (`commit_pending`) are the only history mutation besides operations; the
   entry-point test names them.
 

@@ -103,6 +103,20 @@ impl Editor {
         ui.horizontal(|ui| {
             menu_set_selector(ui);
             ui.separator();
+            for action in self.file_actions() {
+                let response = icon_button(
+                    ui,
+                    action.label,
+                    action.icon,
+                    action.enabled,
+                    false,
+                    action.hover(),
+                );
+                if response.clicked() {
+                    (action.run)(self);
+                }
+            }
+            ui.separator();
             for button in &SELECTION_MODES {
                 let selected = button
                     .target

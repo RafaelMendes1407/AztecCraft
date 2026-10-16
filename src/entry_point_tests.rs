@@ -219,9 +219,9 @@ fn native_operation_callers_are_the_known_ui_handlers() {
         "native_operation(",
         &[
             "create",
+            "file_actions",
             "frame_selected",
             "history_step",
-            "menus",
             "outliner",
             "render",
             "select",
