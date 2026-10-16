@@ -295,6 +295,8 @@ impl NativeMesh {
     pub(super) fn primitive(primitive: Primitive) -> Result<Self, NativeError> {
         match primitive {
             Primitive::Sphere => Ok(Self::polygon_sphere()),
+            Primitive::Cylinder => Ok(Self::polygon_cylinder()),
+            Primitive::Cone => Ok(Self::polygon_cone()),
             Primitive::Cube | Primitive::Plane => {
                 Ok(Self::from_legacy(&Mesh::primitive(primitive)?))
             }
@@ -523,6 +525,8 @@ impl NativeMesh {
     }
 }
 
+mod cone;
+mod cylinder;
 mod sphere;
 #[cfg(test)]
 mod tests;

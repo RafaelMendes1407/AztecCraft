@@ -3616,3 +3616,30 @@ fn create_menu_polygon_sphere_item_creates_a_selectable_framed_movable_sphere() 
     let view = ViewScene::from_native(editor.history.scene(), 256 * 1024 * 1024).unwrap();
     assert_eq!(view.instances()[0].faces().len(), 400);
 }
+
+#[test]
+fn cylinder_and_cone_names_count_up_and_skip_collisions() {
+    let mut editor = Editor::default();
+    for (primitive, names) in [
+        (
+            Primitive::Cylinder,
+            ["pCylinder1", "pCylinder2", "pCylinder4"],
+        ),
+        (Primitive::Cone, ["pCone1", "pCone2", "pCone4"]),
+    ] {
+        let base = names[0].trim_end_matches('1');
+        for (expected, taken) in names.iter().zip([None, None, Some(format!("{base}3"))]) {
+            if let Some(taken) = taken {
+                editor
+                    .apply_operation(Operation::Create {
+                        primitive: Primitive::Cube,
+                        name: Some(taken),
+                    })
+                    .unwrap();
+            }
+            editor.create(primitive);
+            let id = editor.selected.unwrap();
+            assert_eq!(editor.history.scene().node(id).unwrap().name(), *expected);
+        }
+    }
+}

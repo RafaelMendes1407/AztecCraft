@@ -27,6 +27,8 @@ pub enum Primitive {
     Cube,
     Plane,
     Sphere,
+    Cylinder,
+    Cone,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -317,7 +319,7 @@ impl fmt::Display for SceneError {
             Self::UndefinedFaceNormal => f.write_str("selected face has no finite nonzero normal"),
             Self::UnsupportedPrimitive(primitive) => write!(
                 f,
-                "{primitive:?} needs triangles, which the quad-only legacy mesh cannot hold"
+                "{primitive:?} needs triangles or n-gons, which the quad-only legacy mesh cannot hold"
             ),
         }
     }
