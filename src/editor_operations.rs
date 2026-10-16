@@ -26,21 +26,7 @@ pub enum SidebarPanel {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AttributeEditorTab {
     Transform(NodeId),
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "constructed by the Attribute Editor UI (T3) and MCP (T4)"
-        )
-    )]
     Shape(NativeId),
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "constructed by the Attribute Editor UI (T3) and MCP (T4)"
-        )
-    )]
     Material(NativeId),
 }
 
@@ -197,13 +183,6 @@ pub enum Operation {
         panel: SidebarPanel,
         visible: bool,
     },
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "constructed by the Attribute Editor UI (T3) and MCP (T4)"
-        )
-    )]
     SelectAttributeEditorTab {
         tab: AttributeEditorTab,
     },

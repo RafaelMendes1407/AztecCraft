@@ -16,6 +16,9 @@ const PRESETS: &str = "Selection mode menu";
 const FILES: [&str; 3] = ["New scene", "Open...", "Save"];
 const HIERARCHY: &str = "Hierarchy selection";
 const CHANNEL_BOX: &str = "Channel Box / Layer Editor";
+const ATTRIBUTE_EDITOR: &str = "Attribute Editor";
+/// Toggles that are live; every other toggle is a disabled placeholder.
+const LIVE: [&str; 2] = [CHANNEL_BOX, ATTRIBUTE_EDITOR];
 const TOGGLES: [&str; 5] = [
     "Modeling Toolkit",
     "HumanIK",
@@ -200,7 +203,7 @@ fn clicking_disabled_strip_buttons_changes_nothing() {
     let before = snapshot(&editor);
     for control in strip(&output)
         .iter()
-        .filter(|c| TOGGLES.contains(&c.label.as_str()) && c.label != CHANNEL_BOX)
+        .filter(|c| TOGGLES.contains(&c.label.as_str()) && !LIVE.contains(&c.label.as_str()))
     {
         assert!(control.disabled, "{}", control.label);
         click(&mut editor, &context, control.rect.center());
@@ -270,7 +273,7 @@ fn every_strip_control_has_its_label_and_disabled_state() {
         assert_eq!(control.role, accesskit::Role::Button, "{name}");
         assert_eq!(
             control.disabled,
-            TOGGLES.contains(name) && *name != CHANNEL_BOX,
+            TOGGLES.contains(name) && !LIVE.contains(name),
             "{name}"
         );
     }
@@ -297,7 +300,7 @@ fn tab_to_combo(editor: &mut Editor, context: &egui::Context) {
         match focused {
             Some(c) if c.role == accesskit::Role::ComboBox && c.label == MENU_SET => return,
             Some(c) if c.label == PRESETS => panic!("Tab focused the disabled presets combo"),
-            Some(c) if TOGGLES.contains(&c.label.as_str()) && c.label != CHANNEL_BOX => {
+            Some(c) if TOGGLES.contains(&c.label.as_str()) && !LIVE.contains(&c.label.as_str()) => {
                 panic!("Tab focused disabled strip button {}", c.label)
             }
             Some(_) => {}
@@ -323,7 +326,7 @@ fn keyboard_activates_the_enabled_combo_and_skips_disabled_buttons() {
         let focused = controls(&output).into_iter().find(|c| Some(c.id) == focus);
         if let Some(c) = focused {
             assert!(
-                (!TOGGLES.contains(&c.label.as_str()) || c.label == CHANNEL_BOX)
+                (!TOGGLES.contains(&c.label.as_str()) || LIVE.contains(&c.label.as_str()))
                     && c.label != PRESETS,
                 "Tab focused disabled {}",
                 c.label

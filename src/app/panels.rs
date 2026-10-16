@@ -5,6 +5,7 @@ impl Editor {
     pub(super) fn render(&mut self, ui: &mut egui::Ui) {
         let frame_token = self.scene_token;
         self.sidebar_panel_request = None;
+        self.attribute_editor_tab_request = None;
         let frame_admitted = !self.files.is_modal() && !self.files.is_closing();
         let keyboard_admitted = frame_admitted && !egui::Popup::is_any_open(ui.ctx());
         let (face, toggle, delete) = ui.input(|input| {
@@ -115,18 +116,30 @@ impl Editor {
             .default_size(200.0)
             .size_range(150.0..=350.0)
             .show(ui, |ui| self.outliner(ui));
-        if self.sidebar_panel_visible(SidebarPanel::ChannelBox) {
-            egui::Panel::right("channels")
-                .default_size(255.0)
-                .size_range(230.0..=400.0)
-                .show(ui, |ui| {
-                    ui.add_enabled_ui(
-                        !self.files.is_closing()
-                            && !self.files.is_modal()
-                            && self.history.active_manipulation().is_none(),
-                        |ui| self.channels(ui, &mut delete_intent),
-                    );
-                });
+        // Exactly one sidebar panel is drawn: the dock holds a single active panel.
+        let sidebar_enabled = !self.files.is_closing()
+            && !self.files.is_modal()
+            && self.history.active_manipulation().is_none();
+        match self.sidebar_dock {
+            Some(SidebarPanel::ChannelBox) => {
+                egui::Panel::right("channels")
+                    .default_size(255.0)
+                    .size_range(230.0..=400.0)
+                    .show(ui, |ui| {
+                        ui.add_enabled_ui(sidebar_enabled, |ui| {
+                            self.channels(ui, &mut delete_intent)
+                        });
+                    });
+            }
+            Some(SidebarPanel::AttributeEditor) => {
+                egui::Panel::right("attribute_editor")
+                    .default_size(255.0)
+                    .size_range(230.0..=400.0)
+                    .show(ui, |ui| {
+                        ui.add_enabled_ui(sidebar_enabled, |ui| self.attribute_editor(ui));
+                    });
+            }
+            None => {}
         }
         egui::CentralPanel::default().show(ui, |ui| {
             self.viewport(
@@ -184,6 +197,7 @@ impl Editor {
         let admitted = frame_admitted && !self.files.is_modal() && !self.files.is_closing();
         self.file_modal(ui.ctx());
         let sidebar_request = self.sidebar_panel_request.take();
+        let tab_request = self.attribute_editor_tab_request.take();
         if grid_requested && self.scene_token == frame_token {
             self.native_operation(Operation::SetGridVisible {
                 visible: !self.grid_visible,
@@ -193,6 +207,11 @@ impl Editor {
             && self.scene_token == frame_token
         {
             self.native_operation(Operation::SetSidebarPanelVisible { panel, visible });
+        }
+        if let Some(tab) = tab_request
+            && self.scene_token == frame_token
+        {
+            self.native_operation(Operation::SelectAttributeEditorTab { tab });
         }
         if let Some(tool) = tool_intent
             && frame_token == self.scene_token

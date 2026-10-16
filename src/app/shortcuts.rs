@@ -31,6 +31,24 @@ impl Editor {
                 i.modifiers.command && i.modifiers.shift && i.key_pressed(Key::S),
             )
         });
+        // Maya documents Ctrl+A on every platform, so the modifier is explicit Ctrl, never Command.
+        let toggle_sidebar = ctx.input(|i| {
+            i.events.iter().any(|event| {
+                matches!(event, egui::Event::Key {
+                    key: Key::A,
+                    pressed: true,
+                    repeat: false,
+                    modifiers,
+                    ..
+                } if modifiers.ctrl && !modifiers.mac_cmd && !modifiers.shift && !modifiers.alt)
+            })
+        });
+        if toggle_sidebar {
+            self.native_operation(Operation::SetSidebarPanelVisible {
+                panel: features::attribute_editor::ctrl_a_target(self.sidebar_dock),
+                visible: true,
+            });
+        }
         if undo {
             self.history_step(false);
         }

@@ -80,5 +80,106 @@ impl Editor {
     }
 }
 
+/// Most shape tabs drawn; a scene can parent an unbounded number of shapes to one transform.
+const MAX_SHAPE_TABS: usize = 16;
+
+/// Ctrl+A target: Channel Box and Attribute Editor swap, and a hidden dock opens the Attribute
+/// Editor. The result goes through `SetSidebarPanelVisible`, so the transition table decides.
+pub(in crate::app) fn ctrl_a_target(dock: Option<SidebarPanel>) -> SidebarPanel {
+    match dock {
+        Some(SidebarPanel::AttributeEditor) => SidebarPanel::ChannelBox,
+        Some(SidebarPanel::ChannelBox) | None => SidebarPanel::AttributeEditor,
+    }
+}
+
+impl Editor {
+    pub(in crate::app) fn attribute_editor(&mut self, ui: &mut egui::Ui) {
+        ui.label(RichText::new("Attribute Editor").strong());
+        let read_only_reason = self.history.scene().authoring_read_only_reason();
+        let authoring = read_only_reason.is_none();
+        if let Some(reason) = read_only_reason {
+            ui.weak(reason.to_string());
+        }
+        if !self.history.scene().curves().is_empty() {
+            ui.weak("Curves: select in the Outliner and frame with F. Curve attributes are unavailable.");
+        }
+        self.appearance_summary(ui);
+        ui.separator();
+        let Some(active) = self.effective_attribute_editor_tab() else {
+            ui.weak("Select an object to edit its attributes.");
+            return;
+        };
+        self.attribute_editor_tabs(ui, active);
+        ui.separator();
+        match active {
+            AttributeEditorTab::Transform(_) => {
+                self.transform_section(ui, authoring);
+            }
+            AttributeEditorTab::Shape(shape) => self.shape_section(ui, shape),
+            AttributeEditorTab::Material(_) => self.material_controls(ui),
+        }
+    }
+
+    fn attribute_editor_tabs(&mut self, ui: &mut egui::Ui, active: AttributeEditorTab) {
+        let scene = self.history.scene();
+        let Some(node) = self.selected.and_then(|id| scene.node(id).ok()) else {
+            return;
+        };
+        let shapes: Vec<_> = scene
+            .dag_edges()
+            .iter()
+            .filter(|edge| edge.parent() == Some(node.transform_id()))
+            .filter_map(|edge| scene.shape(edge.child()).ok())
+            .collect();
+        let mut tabs = vec![(
+            AttributeEditorTab::Transform(node.id()),
+            node.name().to_owned(),
+        )];
+        for shape in shapes.iter().take(MAX_SHAPE_TABS) {
+            tabs.push((
+                AttributeEditorTab::Shape(shape.id()),
+                shape.name().to_owned(),
+            ));
+            if scene.material_for_shape(shape.id()).is_ok() {
+                tabs.push((
+                    AttributeEditorTab::Material(shape.id()),
+                    format!("{} material", shape.name()),
+                ));
+            }
+        }
+        let omitted = shapes.len().saturating_sub(MAX_SHAPE_TABS);
+        ui.horizontal_wrapped(|ui| {
+            for (tab, title) in tabs {
+                if ui.selectable_label(tab == active, title).clicked() && tab != active {
+                    self.attribute_editor_tab_request = Some(tab);
+                }
+            }
+            ui.add_enabled(false, egui::Button::new("Pin Tab"))
+                .on_disabled_hover_text("Pin Tab: not implemented yet");
+        });
+        if omitted > 0 {
+            ui.weak(format!("{omitted} more shapes are not shown as tabs."));
+        }
+    }
+
+    fn shape_section(&self, ui: &mut egui::Ui, shape: NativeId) {
+        let Ok(shape) = self.history.scene().shape(shape) else {
+            ui.weak("Shape unavailable.");
+            return;
+        };
+        ui.label(format!("Shape: {}", shape.name()));
+        ui.label(format!(
+            "{} points, {} edges, {} faces",
+            shape.mesh().point_count(),
+            shape.mesh().edges().len(),
+            shape.mesh().faces().len()
+        ));
+        ui.weak("Shape attributes are read-only in this slice.");
+    }
+}
+
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod ui_tests;

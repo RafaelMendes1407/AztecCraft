@@ -64,8 +64,8 @@ const SIDEBAR_TOGGLES: [StripButton; 5] = [
     StripButton {
         label: "Attribute Editor",
         icon: UiIcon::SidebarAttributeEditor,
-        hover: "Attribute Editor: not implemented yet",
-        panel: None,
+        hover: "Show or hide the Attribute Editor",
+        panel: Some(SidebarPanel::AttributeEditor),
     },
     StripButton {
         label: "Tool Settings",
@@ -83,16 +83,17 @@ const SIDEBAR_TOGGLES: [StripButton; 5] = [
 
 impl Editor {
     /// Enabled hover text, or the reason a live toggle is disabled.
-    fn sidebar_toggle_hover(&self, button: &StripButton) -> &'static str {
-        if self.files.is_closing() {
-            "Channel Box / Layer Editor: unavailable while the window is closing"
+    fn sidebar_toggle_hover(&self, button: &StripButton) -> String {
+        let reason = if self.files.is_closing() {
+            "the window is closing"
         } else if self.files.is_modal() {
-            "Channel Box / Layer Editor: unavailable while a dialog is open"
+            "a dialog is open"
         } else if self.history.active_manipulation().is_some() {
-            "Channel Box / Layer Editor: unavailable while a Move is active"
+            "a Move is active"
         } else {
-            button.hover
-        }
+            return button.hover.into();
+        };
+        format!("{}: unavailable while {reason}", button.label)
     }
 
     pub(in crate::app) fn status_line(
@@ -147,7 +148,7 @@ impl Editor {
                                 button.icon,
                                 enabled,
                                 visible,
-                                self.sidebar_toggle_hover(button),
+                                &self.sidebar_toggle_hover(button),
                             );
                             if response.clicked() {
                                 self.sidebar_panel_request = Some((panel, !visible));
