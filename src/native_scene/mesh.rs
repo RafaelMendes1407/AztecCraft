@@ -227,6 +227,35 @@ impl NativeMesh {
         }
         Ok(point)
     }
+    /// Test mesh of independent faces; each loop gets its own edges so large loops stay linear.
+    #[cfg(test)]
+    pub(super) fn polygon_fixture(points: Vec<[f64; 3]>, loops: &[Vec<usize>]) -> Self {
+        let mut mesh = Self {
+            point_offsets: Vec::new(),
+            points: Points::Double3(points),
+            edges: Vec::new(),
+            faces: Vec::new(),
+            unsupported_channels: Vec::new(),
+        };
+        for corners in loops {
+            let outer = (0..corners.len())
+                .map(|i| mesh.append_edge([corners[i], corners[(i + 1) % corners.len()]]))
+                .collect();
+            mesh.faces.push(NativeFace {
+                outer,
+                holes: Vec::new(),
+            });
+        }
+        mesh
+    }
+    /// Gives the first face a hole loop with its own edges.
+    #[cfg(test)]
+    pub(super) fn add_hole_fixture(&mut self, hole: &[usize]) {
+        let loop_edges = (0..hole.len())
+            .map(|i| self.append_edge([hole[i], hole[(i + 1) % hole.len()]]))
+            .collect();
+        self.faces[0].holes.push(loop_edges);
+    }
     #[cfg(test)]
     pub(super) fn triangle_double_fixture() -> Self {
         Self {

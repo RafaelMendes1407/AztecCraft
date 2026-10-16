@@ -118,6 +118,13 @@ vendor streams is JOIN; other unseen layouts and curve semantics remain pending.
 This framing coverage does not establish complete container parsing, scene Open,
 NURBS rendering, native writing or Euler behavior.
 
+## Convex n-gon display is best effort
+
+ViewScene shows faces with five or more corners when they are hole-free, strictly
+convex and wound once. Strongly skew (non-planar) n-gons may be accepted yet
+overlap in projection; display only, no safety impact. Concave and holed faces
+still refuse the whole view.
+
 ## Face Center selection is a provisional subset
 
 **Severity:** medium

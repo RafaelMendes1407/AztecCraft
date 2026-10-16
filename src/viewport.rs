@@ -272,17 +272,14 @@ impl Camera {
             .iter()
             .find(|face| face.source_index() == target.face_index)
             .ok_or(InvalidCameraInput)?;
-        let mut corners = [Vec3::ZERO; 4];
-        for (slot, &index) in face.corners().iter().enumerate() {
-            *corners.get_mut(slot).ok_or(InvalidCameraInput)? = *instance
-                .world_vertices()
-                .get(index)
-                .ok_or(InvalidCameraInput)?;
+        let vertices = instance.world_vertices();
+        if face.corners().iter().any(|&index| index >= vertices.len()) {
+            return Err(InvalidCameraInput);
         }
-        self.frame_points(
-            corners
-                .get(..face.corners().len())
-                .ok_or(InvalidCameraInput)?,
+        self.frame_iter(
+            face.corners()
+                .iter()
+                .filter_map(|&index| vertices.get(index).copied()),
             aspect,
         )
     }

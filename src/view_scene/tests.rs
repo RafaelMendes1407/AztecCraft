@@ -1180,7 +1180,7 @@ fn center_work_admission_counts_only_click_eligible_faces_and_checks_exact_produ
         Err(ViewError::ResourceLimit)
     );
     assert!(crate::viewport::face_center_work(0, usize::MAX).is_ok());
-    let face = view.instances[0].faces[0];
+    let face = view.instances[0].faces[0].clone();
     view.instances[0].faces = vec![face; 1000];
     assert_eq!(
         front_camera().pick_face_center(
@@ -1231,11 +1231,11 @@ fn center_work_boundary_is_enforced_on_the_actual_picker() {
         ],
         ViewCorners::Triangle([0, 1, 2]),
     );
-    let face = view.instances[0].faces[0];
+    let face = view.instances[0].faces[0].clone();
     view.instances[0].faces = (0..1000)
         .map(|index| ViewFace {
             source_index: index,
-            ..face
+            ..face.clone()
         })
         .collect();
     let camera = front_camera();
@@ -1562,4 +1562,282 @@ fn center_depth_tolerance_admits_rounding_gaps_but_not_half_percent_occluders() 
             .map(|hit| hit.face_index);
         assert_eq!(hit, expected, "gap {gap}");
     }
+}
+
+fn ngon_points(count: usize, radius: f64) -> Vec<[f64; 3]> {
+    (0..count)
+        .map(|i| {
+            let angle = std::f64::consts::TAU * i as f64 / count as f64;
+            [radius * angle.cos(), radius * angle.sin(), 0.0]
+        })
+        .collect()
+}
+
+fn ngon_view(points: Vec<[f64; 3]>) -> Result<(ViewScene, NativeScene, NodeId), ViewError> {
+    let corners = (0..points.len()).collect();
+    let (native, owner) = test_fixtures::polygon_shape(points, &[corners]);
+    ViewScene::from_native(&native, VIEW_BUDGET).map(|view| (view, native, owner))
+}
+
+fn refused(points: Vec<[f64; 3]>, order: Vec<usize>) -> ViewError {
+    let (native, _) = test_fixtures::polygon_shape(points, &[order]);
+    ViewScene::from_native(&native, VIEW_BUDGET).unwrap_err()
+}
+
+#[test]
+fn convex_pentagon_and_twenty_gon_are_accepted_as_one_face_each() {
+    for count in [5, 20] {
+        let (view, _, _) = ngon_view(ngon_points(count, 1.0)).unwrap();
+        let instance = &view.instances()[0];
+        assert_eq!(instance.faces().len(), 1);
+        let face = &instance.faces()[0];
+        assert!(matches!(face.corners, ViewCorners::Polygon(_)));
+        assert_eq!(face.source_index(), 0);
+        assert_eq!(face.corners(), (0..count).collect::<Vec<_>>());
+        let expected: Vec<[usize; 3]> = (1..count - 1).map(|i| [0, i, i + 1]).collect();
+        assert_eq!(face.triangles().collect::<Vec<_>>(), expected);
+        assert_eq!(face.triangles().count(), count - 2);
+    }
+}
+
+#[test]
+fn quad_and_triangle_keep_their_variants_and_the_pinned_fan() {
+    let quad = ViewFace {
+        source_index: 0,
+        corners: ViewCorners::Quad([4, 5, 6, 7]),
+    };
+    assert_eq!(quad.triangles().collect::<Vec<_>>(), [[4, 5, 6], [4, 6, 7]]);
+    let (view, _, _) = ngon_view(ngon_points(4, 1.0)).unwrap();
+    assert!(matches!(
+        view.instances()[0].faces()[0].corners,
+        ViewCorners::Quad(_)
+    ));
+}
+
+#[test]
+fn twenty_gon_picks_every_fan_triangle_as_its_one_source_face() {
+    let (view, _, _) = ngon_view(ngon_points(20, 1.0)).unwrap();
+    let instance = &view.instances()[0];
+    let camera = front_camera();
+    for triangle in instance.faces()[0].triangles() {
+        let [a, b, c] = triangle.map(|i| instance.world_vertices()[i]);
+        let ndc = camera.project((a + b + c) / 3.0, 1.0).unwrap().unwrap();
+        let hit = camera
+            .pick_view(&view, Vec2::new(ndc.x, ndc.y), 1.0)
+            .unwrap()
+            .unwrap();
+        assert_eq!(hit.face_index, 0);
+    }
+}
+
+#[test]
+fn twenty_gon_center_marker_is_the_corner_average_and_clickable() {
+    let (view, _, owner) = ngon_view(ngon_points(20, 1.0)).unwrap();
+    let instance = &view.instances()[0];
+    let center = instance.faces()[0]
+        .center(instance.world_vertices())
+        .unwrap();
+    assert!(center.abs_diff_eq(Vec3::ZERO, 1e-6));
+    let path = instance.path()[..instance.path().len() - 1].to_vec();
+    let camera = front_camera();
+    let pointer = center_pointer(&camera, center, [600, 600], 1.0);
+    let hit = camera
+        .pick_face_center(&view, Some((owner, &path)), pointer, [600, 600], 1.0)
+        .unwrap()
+        .unwrap();
+    assert_eq!(hit.face_index, 0);
+}
+
+#[test]
+fn frame_face_frames_a_twenty_gon_like_its_points() {
+    let (view, _, owner) = ngon_view(ngon_points(20, 1.0)).unwrap();
+    let instance = &view.instances()[0];
+    let target = crate::native_scene::FaceTarget {
+        transform: owner,
+        shape: instance.shape(),
+        path: instance.path().to_vec(),
+        face_index: 0,
+    };
+    let mut camera = front_camera();
+    camera.frame_face(&view, &target, 1.5).unwrap();
+    let mut expected = front_camera();
+    expected
+        .frame_points(instance.world_vertices(), 1.5)
+        .unwrap();
+    assert_eq!(camera, expected);
+    let mut missing = target.clone();
+    missing.face_index = 1;
+    let before = camera.clone();
+    assert!(camera.frame_face(&view, &missing, 1.5).is_err());
+    assert_eq!(camera, before);
+}
+
+#[test]
+fn degenerate_and_non_convex_polygons_stay_unsupported() {
+    fn hexagon_with_vertex3_at_vertex0() -> Vec<[f64; 3]> {
+        let mut points = ngon_points(6, 1.0);
+        points[3] = points[0];
+        points
+    }
+    // Every corner turns the same way, but the turning sum is 1.44 turns: only the
+    // winding residual refuses it.
+    fn twisted_hexagon() -> Vec<[f64; 3]> {
+        vec![
+            [0.8950132017937551, 0.0, -1.291038920799824],
+            [0.37030449220567174, 0.480610265934816, 0.14929456192631818],
+            [-0.6930633823964827, 0.9551455910595742, 0.2611957344943887],
+            [-0.5035827461915017, 0.0, -0.41636237197246473],
+            [-0.365708081106396, -0.6692425642592846, -0.8132736901807922],
+            [
+                0.43060902699800346,
+                -1.2488456432197155,
+                -0.043411437531646335,
+            ],
+        ]
+    }
+    let pentagram = {
+        let points = ngon_points(5, 1.0);
+        (points, vec![0, 2, 4, 1, 3])
+    };
+    let mut collinear = ngon_points(5, 1.0);
+    collinear[1] = [
+        (collinear[0][0] + collinear[2][0]) / 2.0,
+        (collinear[0][1] + collinear[2][1]) / 2.0,
+        0.0,
+    ];
+    let mut concave = ngon_points(5, 1.0);
+    concave[2] = [0.1, 0.1, 0.0];
+    let zero_area = vec![
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [2.0, 0.0, 0.0],
+        [3.0, 0.0, 0.0],
+        [4.0, 0.0, 0.0],
+    ];
+    for (points, order) in [
+        pentagram,
+        (collinear, (0..5).collect()),
+        (concave, (0..5).collect()),
+        (zero_area, (0..5).collect()),
+        (ngon_points(6, 1.0), vec![0, 1, 2, 3, 1, 4]),
+        (hexagon_with_vertex3_at_vertex0(), (0..6).collect()),
+        (ngon_points(5, 1.0), vec![0, 1, 2, 3, 4, 0, 1, 2, 3, 4]),
+        (twisted_hexagon(), (0..6).collect()),
+    ] {
+        assert_eq!(refused(points, order), ViewError::UnsupportedPolygon);
+    }
+}
+
+#[test]
+fn polygon_with_a_hole_stays_unsupported() {
+    let mut points = ngon_points(5, 1.0);
+    points.extend(ngon_points(3, 0.2));
+    let (mut native, _) = test_fixtures::polygon_shape(points, &[(0..5).collect()]);
+    test_fixtures::add_hole_to_first_face(&mut native, &[5, 6, 7]);
+    assert_eq!(
+        ViewScene::from_native(&native, VIEW_BUDGET).unwrap_err(),
+        ViewError::UnsupportedPolygon
+    );
+}
+
+#[test]
+fn reversed_winding_is_judged_by_the_faces_own_normal() {
+    let mut points = ngon_points(5, 1.0);
+    points.reverse();
+    let (view, _, _) = ngon_view(points).unwrap();
+    assert_eq!(view.instances()[0].faces()[0].corners().len(), 5);
+    let pentagram_reversed = refused(ngon_points(5, 1.0), vec![0, 3, 1, 4, 2]);
+    assert_eq!(pentagram_reversed, ViewError::UnsupportedPolygon);
+}
+
+#[test]
+fn large_polygon_is_budgeted_per_corner_and_refuses_below_the_minimum_budget() {
+    let count = 20_000;
+    let (view, native, _) = ngon_view(ngon_points(count, 1.0)).unwrap();
+    assert_eq!(
+        view.instances()[0].faces()[0].triangles().count(),
+        count - 2
+    );
+    let mut order: Vec<usize> = (0..count).collect();
+    order.insert(count / 2, 5);
+    assert_eq!(
+        refused(ngon_points(count, 1.0), order),
+        ViewError::UnsupportedPolygon
+    );
+
+    let needed = count * (size_of::<Vec3>() + size_of::<usize>());
+    let measure = |budget| ViewScene::from_native(&native, budget);
+    let mut low = 0;
+    let mut high = VIEW_BUDGET;
+    while low + 1 < high {
+        let mid = low + (high - low) / 2;
+        if measure(mid).is_ok() {
+            high = mid;
+        } else {
+            low = mid;
+        }
+    }
+    assert!(
+        high >= needed,
+        "budget {high} ignores {needed} corner bytes"
+    );
+    assert!(measure(high).is_ok());
+    assert_eq!(measure(high - 1).unwrap_err(), ViewError::ResourceLimit);
+}
+
+#[test]
+fn cylinder_shaped_scene_picks_a_face_center_within_the_work_bound() {
+    let mut points = Vec::new();
+    for y in [1.0, -1.0] {
+        points.extend(ngon_points(20, 1.0).into_iter().map(|[x, z, _]| [x, y, z]));
+    }
+    let top: Vec<usize> = (0..20).rev().collect();
+    let bottom: Vec<usize> = (20..40).collect();
+    let mut loops = vec![top, bottom];
+    for i in 0..20 {
+        let j = (i + 1) % 20;
+        loops.push(vec![i, j, 20 + j, 20 + i]);
+    }
+    let (native, owner) = test_fixtures::polygon_shape(points, &loops);
+    let view = ViewScene::from_native(&native, VIEW_BUDGET).unwrap();
+    let instance = &view.instances()[0];
+    assert_eq!(instance.faces().len(), 22);
+    let triangles: usize = instance.faces().iter().map(|f| f.triangles().count()).sum();
+    assert_eq!(triangles, 2 * 18 + 20 * 2);
+    let path = instance.path()[..instance.path().len() - 1].to_vec();
+    let camera = front_camera();
+    let face = &instance.faces()[6];
+    let center = face.center(instance.world_vertices()).unwrap();
+    let pointer = center_pointer(&camera, center, [600, 600], 1.0);
+    let hit = camera
+        .pick_face_center(&view, Some((owner, &path)), pointer, [600, 600], 1.0)
+        .unwrap()
+        .unwrap();
+    assert_eq!(hit.face_index, 6);
+}
+
+fn lifted_ngon(count: usize, lift: f64) -> Vec<[f64; 3]> {
+    let mut points = ngon_points(count, 1.0);
+    points[1][2] = lift;
+    points
+}
+
+#[test]
+fn slightly_non_planar_convex_polygons_display_best_effort() {
+    for count in [5, 20] {
+        for lift in [1e-2, 0.1] {
+            let (view, _, _) = ngon_view(lifted_ngon(count, lift)).unwrap();
+            assert_eq!(view.instances()[0].faces()[0].corners().len(), count);
+        }
+    }
+}
+
+#[test]
+fn far_from_origin_polygon_is_judged_relative_to_its_first_corner() {
+    let points = ngon_points(5, 1.0)
+        .into_iter()
+        .map(|[x, y, z]| [x + 1e9, y + 1e9, z + 1e9])
+        .collect();
+    let (view, _, _) = ngon_view(points).unwrap();
+    assert_eq!(view.instances()[0].faces()[0].corners().len(), 5);
 }
