@@ -136,7 +136,7 @@ impl History {
             .next_move_id
             .checked_add(1)
             .ok_or(MoveError::IdsExhausted)?;
-        let (frame, baseline) = self.scene.begin_move_translation(target)?;
+        let (frame, baseline) = self.scene.begin_move_translation(target, axis)?;
         let mut path = Vec::new();
         path.try_reserve_exact(target.path.len())
             .map_err(|_| NativeError::ResourceLimit)?;

@@ -590,3 +590,90 @@ async fn move_sdk_refuses_begin_on_a_read_only_ascii_curve_scene_with_a_typed_er
     drop(editor);
     server.await.unwrap();
 }
+
+#[tokio::test]
+async fn move_sdk_refuses_a_binary_scene_lacking_the_translate_leaf_with_a_typed_error() {
+    use binary_fixture::{chunk, creation, group, mesh_payload, scene_with_units};
+    let original = scene_with_units(
+        &[
+            group(b"XFRM", &creation(b"object", None), 4),
+            group(
+                b"DMSH",
+                &[
+                    creation(b"shape", Some(b"object")),
+                    chunk(b"MESH", &mesh_payload(&[0, 1, 0x6000_0002]), 8),
+                ]
+                .concat(),
+                4,
+            ),
+        ]
+        .concat(),
+        b"cm",
+        b"deg",
+    );
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("absent-leaf.mb");
+    std::fs::write(&source, &original).unwrap();
+    let context = egui::Context::default();
+    let (mut editor, client, server) = start(&context).await;
+    let old_token = editor.scene_token.to_string();
+    call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "open_scene",
+        json!({"scene_token":old_token,"path":source}),
+    )
+    .await;
+    let token = editor.scene_token.to_string();
+    let target = editor.history.scene().transform_paths().unwrap().remove(0);
+    let node = target.node.to_decimal();
+    let path: Vec<_> = target.path.iter().map(|id| id.to_decimal()).collect();
+    call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "select_node",
+        json!({"scene_token":token,"node_id":node,"instance_path":path}),
+    )
+    .await;
+    let before = editor.history.scene().clone();
+    let refused = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "begin_move",
+        json!({"scene_token":token,"node_id":node,"instance_path":path,"axis":"x"}),
+    )
+    .await;
+    let error = &refused.structured_content.unwrap()["error"];
+    assert_eq!(error["code"], "absent_channel_leaf");
+    assert!(error["message"].as_str().unwrap().contains("translateX"));
+    assert!(editor.history.active_move().is_none());
+    assert_eq!(editor.history.scene(), &before);
+    let inspected = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "inspect_scene",
+        json!({}),
+    )
+    .await
+    .structured_content
+    .unwrap();
+    let tool = &inspected["inspection"]["move_tool"];
+    assert_eq!(tool["numeric_available"], false);
+    assert!(
+        tool["numeric_unavailable_reason"]
+            .as_str()
+            .unwrap()
+            .contains("translateX")
+    );
+    assert_eq!(
+        std::fs::read(&source).unwrap().as_slice(),
+        original.as_ref()
+    );
+    client.cancel().await.unwrap();
+    drop(editor);
+    server.await.unwrap();
+}

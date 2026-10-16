@@ -282,11 +282,13 @@ fn admission_refuses_pivots_drivers_source_gaps_and_bad_paths_without_mutation()
         leaves: vec![],
         appearance: None,
     });
+    let frame = scene.world_move_frame(&selected).unwrap();
     assert!(matches!(
-        scene.world_move_frame(&selected),
-        Err(NativeError::UnsupportedMove(
-            WorldMoveUnsupported::TranslationSource
-        ))
+        frame.require_leaves(WorldAxis::X),
+        Err(NativeError::AbsentChannelLeaf {
+            channel: ChannelLeaf::Translate,
+            component: 0
+        })
     ));
     scene.source.as_mut().unwrap().format = SourceFormat::Ascii;
     assert!(matches!(
@@ -421,6 +423,41 @@ fn binary_nonbinary_units_check_actual_stored_displacement() {
         assert!((stored_distance - distance).abs() <= 128.0 * f64::EPSILON * distance);
         assert_eq!(scene.source, before.source);
         assert_eq!(scene.nodes[0].channels[1..], before.nodes[0].channels[1..]);
+    }
+}
+
+#[test]
+fn absent_translate_leaf_in_a_binary_source_is_refused_on_every_axis_without_mutation() {
+    let (mut scene, node) = test_fixtures::cube();
+    scene.source = Some(SourceRetention {
+        bytes: [1].into(),
+        format: SourceFormat::Binary,
+        records: std::iter::once(0..1).collect(),
+        leaves: vec![],
+        appearance: None,
+    });
+    let selected = target(&scene, node);
+    let before = scene.clone();
+    for axis in [WorldAxis::X, WorldAxis::Y, WorldAxis::Z] {
+        let result = scene.begin_move_translation(&selected, axis);
+        assert!(matches!(
+            result,
+            Err(NativeError::AbsentChannelLeaf {
+                channel: ChannelLeaf::Translate,
+                ..
+            })
+        ));
+        assert_eq!(scene, before);
+    }
+}
+
+#[test]
+fn source_free_scene_without_leaves_is_not_refused() {
+    let (scene, node) = test_fixtures::cube();
+    assert!(scene.source.is_none());
+    let selected = target(&scene, node);
+    for axis in [WorldAxis::X, WorldAxis::Y, WorldAxis::Z] {
+        scene.begin_move_translation(&selected, axis).unwrap();
     }
 }
 

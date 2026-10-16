@@ -26,6 +26,8 @@ denominator are still missing, so overall coverage remains unmeasured.
 
 The original first-push restriction required 80–90% of the complete Maya 2026 workflow inventory to pass. The user's later explicit instruction to push/merge to `main` authorizes early prototype publication, superseding that restriction. The full-functionality target remains unmet, and missing essential workflows must stay visible rather than be hidden in a broad percentage. Exact parity remains a separate acceptance requirement.
 
+Object-space transform editing of a Maya binary scene needs the target channel's leaf to exist in the file. Maya omits default leaves (translate 0, rotate 0, scale 1) and leaf insertion is not implemented, so Move refuses such objects with the typed `AbsentChannelLeaf` error. The refusal rate on real Maya files is unmeasured and expected to be high, so Move on `.mb` is currently narrow (see [known issues](../known-issues.md)).
+
 Core suites cover scene edits, command history, document validation, OBJ export
 and camera mathematics, while UI tests cover editing/file-action events. They
 don't replace native file-dialog checks or Maya comparison. History is unbounded

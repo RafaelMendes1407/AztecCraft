@@ -4,7 +4,7 @@ use super::{
     transport::{Control, Shared, check_serialized_size},
 };
 use crate::editor_operations::{MAX_RESULT_BYTES, OperationError, OperationReply};
-use azteccraft::history::MoveError;
+use azteccraft::{history::MoveError, native_scene::NativeError};
 use rmcp::{
     RoleServer, ServerHandler,
     model::{
@@ -62,12 +62,18 @@ fn tool_reply(reply: Result<OperationReply, OperationError>) -> CallToolResult {
                     MoveError::StaleMove => "stale_move",
                     MoveError::WrongOwner => "move_owner",
                     MoveError::Busy => "busy_manipulation",
+                    MoveError::Native(NativeError::AbsentChannelLeaf { .. }) => {
+                        "absent_channel_leaf"
+                    }
                     _ => "move_error",
                 },
                 OperationError::StaleScene => "stale_scene",
                 OperationError::TooLarge => "too_large",
                 OperationError::NoSelection => "no_selection",
                 OperationError::InvalidInput(_) => "invalid_input",
+                OperationError::Scene(NativeError::AbsentChannelLeaf { .. }) => {
+                    "absent_channel_leaf"
+                }
                 OperationError::Scene(_) => "scene_error",
                 OperationError::Camera(_) => "camera_error",
                 OperationError::File(_) => "file_error",
