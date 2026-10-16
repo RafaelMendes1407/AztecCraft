@@ -76,6 +76,8 @@ pub struct ViewInstance {
     /// Inverse transpose of the world matrix's linear part; zero if it is singular.
     normal_matrix: Mat3,
     faces: Vec<ViewFace>,
+    /// Endpoints of every native edge in `NativeMesh::edges()` order.
+    edges: Vec<[usize; 2]>,
     appearance_incomplete: bool,
     base_rgb: [u8; 3],
 }
@@ -183,6 +185,7 @@ impl ViewScene {
                                 world_vertices: vertices,
                                 normal_matrix: normal_matrix(&world),
                                 faces: view_faces(mesh)?,
+                                edges: view_edges(mesh)?,
                                 appearance_incomplete: admission.appearance_incomplete(),
                                 base_rgb: scene
                                     .session_material(shape)
@@ -278,6 +281,9 @@ impl ViewInstance {
     }
     pub fn faces(&self) -> &[ViewFace] {
         &self.faces
+    }
+    pub fn edges(&self) -> &[[usize; 2]] {
+        &self.edges
     }
     pub fn appearance_incomplete(&self) -> bool {
         self.appearance_incomplete
@@ -390,6 +396,19 @@ fn world_point(world: DMat4, point: DVec3) -> Result<Vec3, ViewError> {
 /// Cheap structural test shared by the budget preflight and `view_faces`.
 fn face_is_viewable_shape(face: &NativeFace) -> bool {
     face.holes().is_empty() && face.outer().len() >= 3
+}
+
+fn view_edges(mesh: &NativeMesh) -> Result<Vec<[usize; 2]>, ViewError> {
+    let count = mesh.point_count();
+    let mut result = reserve(mesh.edges().len())?;
+    for edge in mesh.edges() {
+        let endpoints = edge.endpoints();
+        if endpoints.iter().any(|&point| point >= count) {
+            return Err(ViewError::InvalidGeometry);
+        }
+        result.push(endpoints);
+    }
+    Ok(result)
 }
 
 fn view_faces(mesh: &NativeMesh) -> Result<Vec<ViewFace>, ViewError> {
@@ -738,7 +757,10 @@ impl<'a> Graph<'a> {
                             buffer_bytes::<Vec3>(points)?,
                             checked_add(
                                 buffer_bytes::<ViewFace>(shape.mesh().faces().len())?,
-                                corner_bytes,
+                                checked_add(
+                                    corner_bytes,
+                                    buffer_bytes::<[usize; 2]>(shape.mesh().edges().len())?,
+                                )?,
                             )?,
                         )?,
                     )?
