@@ -439,18 +439,8 @@ impl Camera {
         viewport_pixels: [u32; 2],
         pixels_per_point: f32,
     ) -> Result<Option<FaceTarget>, ViewError> {
-        let [width, height] = viewport_pixels;
-        if width == 0 || height == 0 || !pixels_per_point.is_finite() || pixels_per_point <= 0.0 {
-            return Err(ViewError::Camera(InvalidCameraInput));
-        }
-        let size = Vec2::new(width as f32, height as f32);
-        let pointer = pointer_points * pixels_per_point;
-        if !pointer.is_finite() || pointer.min_element() < 0.0 || pointer.cmpgt(size).any() {
-            return Err(ViewError::Camera(InvalidCameraInput));
-        }
-        let aspect = size.x / size.y;
-        let view = self.view_matrix();
-        let matrix = self.projection_matrix(aspect).map_err(ViewError::Camera)? * view;
+        let frame = self.pick_frame(pointer_points, viewport_pixels, pixels_per_point)?;
+        let (size, pointer, matrix) = (frame.size, frame.pointer, frame.matrix);
         let Some((owner, path)) = active else {
             return Ok(None);
         };
@@ -500,30 +490,11 @@ impl Camera {
                 let Some((center, ndc)) = candidate(instance, face)? else {
                     continue;
                 };
-                let center_depth = -view.transform_point3(center).z;
-                let ray = self
-                    .ray(ndc.truncate(), aspect)
-                    .map_err(ViewError::Camera)?;
-                let mut closest = None;
-                for occluder in scene.instances() {
-                    let triangles = occluder.faces().iter().flat_map(|surface| {
-                        surface.triangles().map(|triangle| {
-                            ((), triangle.map(|index| occluder.world_vertices()[index]))
-                        })
-                    });
-                    self.closest_triangle(ray, triangles, &mut closest);
-                }
-                if let Some((distance, ())) = closest {
-                    // Compare linear view depth: the center lies on its own face, so f32
-                    // rounding between the ray hit and the center must not self-occlude.
-                    let hit_depth = -view
-                        .transform_point3(ray.origin + distance * ray.direction)
-                        .z;
-                    if hit_depth < center_depth * (1.0 - FACE_CENTER_DEPTH_TOLERANCE) {
-                        continue;
-                    }
-                }
-                let depth = center_depth;
+                let Some(depth) =
+                    self.unoccluded_depth(scene, &frame, center, ndc, FACE_CENTER_DEPTH_TOLERANCE)?
+                else {
+                    continue;
+                };
                 let key = (
                     instance.path(),
                     instance.transform().value(),
@@ -550,6 +521,70 @@ impl Camera {
             .transpose()
     }
 
+    /// Validates the pointer and viewport and builds the matrices every screen-space pick shares.
+    fn pick_frame(
+        &self,
+        pointer_points: Vec2,
+        viewport_pixels: [u32; 2],
+        pixels_per_point: f32,
+    ) -> Result<PickFrame, ViewError> {
+        let [width, height] = viewport_pixels;
+        if width == 0 || height == 0 || !pixels_per_point.is_finite() || pixels_per_point <= 0.0 {
+            return Err(ViewError::Camera(InvalidCameraInput));
+        }
+        let size = Vec2::new(width as f32, height as f32);
+        let pointer = pointer_points * pixels_per_point;
+        if !pointer.is_finite() || pointer.min_element() < 0.0 || pointer.cmpgt(size).any() {
+            return Err(ViewError::Camera(InvalidCameraInput));
+        }
+        let aspect = size.x / size.y;
+        let view = self.view_matrix();
+        let matrix = self.projection_matrix(aspect).map_err(ViewError::Camera)? * view;
+        Ok(PickFrame {
+            size,
+            pointer,
+            aspect,
+            view,
+            matrix,
+        })
+    }
+
+    /// Linear view depth of `point` when no surface hides it along the ray through `ndc`.
+    fn unoccluded_depth(
+        &self,
+        scene: &ViewScene,
+        frame: &PickFrame,
+        point: Vec3,
+        ndc: Vec3,
+        tolerance: f32,
+    ) -> Result<Option<f32>, ViewError> {
+        let depth = -frame.view.transform_point3(point).z;
+        let ray = self
+            .ray(ndc.truncate(), frame.aspect)
+            .map_err(ViewError::Camera)?;
+        let mut closest = None;
+        for occluder in scene.instances() {
+            let triangles = occluder.faces().iter().flat_map(|surface| {
+                surface
+                    .triangles()
+                    .map(|triangle| ((), triangle.map(|index| occluder.world_vertices()[index])))
+            });
+            self.closest_triangle(ray, triangles, &mut closest);
+        }
+        if let Some((distance, ())) = closest {
+            // Compare linear view depth: the point lies on its own surface, so f32
+            // rounding between the ray hit and the point must not self-occlude.
+            let hit_depth = -frame
+                .view
+                .transform_point3(ray.origin + distance * ray.direction)
+                .z;
+            if hit_depth < depth * (1.0 - tolerance) {
+                return Ok(None);
+            }
+        }
+        Ok(Some(depth))
+    }
+
     fn closest_triangle<T>(
         &self,
         ray: Ray,
@@ -573,6 +608,14 @@ impl Camera {
             }
         }
     }
+}
+
+struct PickFrame {
+    size: Vec2,
+    pointer: Vec2,
+    aspect: f32,
+    view: Mat4,
+    matrix: Mat4,
 }
 
 pub(crate) fn face_center_work(eligible: usize, triangles: usize) -> Result<(), ViewError> {
@@ -618,3 +661,7 @@ fn intersect(ray: Ray, a: Vec3, b: Vec3, c: Vec3) -> Option<f32> {
     let distance = (edge2.dot(q) / determinant) as f32;
     (distance.is_finite() && distance >= 0.0).then_some(distance)
 }
+
+#[cfg(test)]
+#[path = "viewport/tests.rs"]
+mod tests;
