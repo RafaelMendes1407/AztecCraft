@@ -556,14 +556,8 @@ impl InternalTransform {
         let Some(extras) = self.extras else {
             return Some(rotate_frame::rotation_matrix(self.rotation_radians));
         };
-        let [ax, ay, az] = extras.rotate_axis_radians;
         let order = transform_extras::rotation_matrix(extras.rotate_order, self.rotation_radians)?;
-        Some(
-            DMat3::from_mat4(order)
-                * DMat3::from_rotation_z(az)
-                * DMat3::from_rotation_y(ay)
-                * DMat3::from_rotation_x(ax),
-        )
+        Some(DMat3::from_mat4(order * extras.rotate_axis_matrix()))
     }
 
     pub(crate) fn matrix(self) -> Option<DMat4> {

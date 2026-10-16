@@ -31,7 +31,7 @@ impl NativeScene {
             .map(|rotation| DMat3::from_mat4(parent_world) * rotation)
             .ok_or(refused.clone())?;
         let object_axes = [axes.x_axis, axes.y_axis, axes.z_axis];
-        if !origin_cm.is_finite() {
+        if !origin_cm.is_finite() || object_axes.iter().any(|axis| !axis.is_finite()) {
             return Err(refused);
         }
         Ok(ManipulatorFrame {

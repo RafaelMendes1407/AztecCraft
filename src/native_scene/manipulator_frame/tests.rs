@@ -298,3 +298,42 @@ fn a_nodes_own_shear_and_rotate_axis_orient_the_frame_without_skewing_it() {
         near(axis, DVec3::from_array(expected));
     }
 }
+
+#[test]
+fn multi_axis_rotate_axis_frame_matches_the_matrix_and_the_row_vector_reference() {
+    let (mut scene, node) = test_fixtures::cube();
+    let r = [23.0, -41.0, 67.0];
+    let ra = [17.0, -33.0, 52.0];
+    scene
+        .set_transform(
+            node,
+            NativeTransform {
+                rotation: r,
+                ..NativeTransform::default()
+            },
+        )
+        .unwrap();
+    test_fixtures::set_extras(
+        &mut scene,
+        node,
+        TransformExtras {
+            rotate_order: Some(1),
+            rotate_axis: Some(ra),
+            ..TransformExtras::default()
+        },
+    );
+    let internal = scene.internal_transform(node).unwrap();
+    let frame = internal.rotation_frame().unwrap();
+    let linear = DMat3::from_mat4(internal.matrix().unwrap());
+    let rad = |v: [f64; 3]| v.map(f64::to_radians);
+    let want = crate::native_scene::transform_extras::tests::row_vector_axes(1, rad(r), rad(ra));
+    for (i, column) in [frame.x_axis, frame.y_axis, frame.z_axis]
+        .into_iter()
+        .enumerate()
+    {
+        near(column, [linear.x_axis, linear.y_axis, linear.z_axis][i]);
+        near(column, DVec3::from_array(want[i]));
+    }
+    let handles = scene.manipulator_frame(&target_of(&scene, node)).unwrap();
+    near(handles.object_axes[0], frame.x_axis);
+}
