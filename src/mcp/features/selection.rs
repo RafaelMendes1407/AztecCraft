@@ -1,13 +1,17 @@
 use crate::{
     editor_operations::{
         FaceSelectionTarget, Operation, RemoteRequest, SelectionMode as EditorMode,
+        VertexSelectionTarget,
     },
     mcp::{
         args::{decode, native_id, node_id, schema, scoped, token},
         registry::ToolSpec,
     },
 };
-use azteccraft::{native_scene::FaceTarget, scene::Primitive};
+use azteccraft::{
+    native_scene::{FaceTarget, VertexTarget},
+    scene::Primitive,
+};
 use rmcp::{
     model::{ErrorData, JsonObject},
     schemars::{self, JsonSchema},
@@ -49,6 +53,7 @@ enum SelectionMode {
     Object,
     Face,
     Hierarchy,
+    Vertex,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -63,6 +68,13 @@ struct SelectionModeArgs {
 struct SelectFaceArgs {
     scene_token: String,
     target: Option<FaceSelectionTarget>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SelectVertexArgs {
+    scene_token: String,
+    target: Option<VertexSelectionTarget>,
 }
 
 fn parse_create_primitive(arguments: JsonObject) -> Result<RemoteRequest, ErrorData> {
@@ -120,6 +132,7 @@ fn parse_set_selection_mode(arguments: JsonObject) -> Result<RemoteRequest, Erro
         SelectionMode::Object => EditorMode::Object,
         SelectionMode::Face => EditorMode::Face,
         SelectionMode::Hierarchy => EditorMode::Hierarchy,
+        SelectionMode::Vertex => EditorMode::Vertex,
     };
     Ok(scoped(
         token(&args.scene_token)?,
@@ -162,8 +175,49 @@ fn parse_select_face(arguments: JsonObject) -> Result<RemoteRequest, ErrorData> 
     ))
 }
 
+fn parse_select_vertex(arguments: JsonObject) -> Result<RemoteRequest, ErrorData> {
+    if !arguments.contains_key("target") {
+        return Err(ErrorData::invalid_params(
+            "target must be a complete vertex target or null",
+            None,
+        ));
+    }
+    let args: SelectVertexArgs = decode(arguments)?;
+    let target = args
+        .target
+        .map(|target| {
+            if !(2..=257).contains(&target.instance_path.len()) {
+                return Err(ErrorData::invalid_params(
+                    "Vertex selection requires 2 to 257 path IDs",
+                    None,
+                ));
+            }
+            Ok(VertexTarget {
+                transform: node_id(&target.node_id)?,
+                shape: native_id(&target.shape_id)?,
+                path: target
+                    .instance_path
+                    .iter()
+                    .map(|value| native_id(value))
+                    .collect::<Result<_, _>>()?,
+                vertex_index: target.vertex_index,
+            })
+        })
+        .transpose()?;
+    Ok(scoped(
+        token(&args.scene_token)?,
+        Operation::SelectVertex { target },
+    ))
+}
+
 fn select_face_schema() -> JsonObject {
     let mut input = schema::<SelectFaceArgs>();
+    input.insert("required".into(), json!(["scene_token", "target"]));
+    input
+}
+
+fn select_vertex_schema() -> JsonObject {
+    let mut input = schema::<SelectVertexArgs>();
     input.insert("required".into(), json!(["scene_token", "target"]));
     input
 }
@@ -187,7 +241,7 @@ pub(in crate::mcp) const TOOLS: &[ToolSpec] = &[
     },
     ToolSpec {
         name: "set_selection_mode",
-        description: "Set Object, Face or Hierarchy (Root sub-mask only) selection mode without editing the scene; a valid remembered face stays inactive outside Face mode",
+        description: "Set Object, Face, Vertex or Hierarchy (Root sub-mask only) selection mode without editing the scene; a valid remembered face or vertex stays inactive outside its own mode",
         schema: schema::<SelectionModeArgs>,
         parse: parse_set_selection_mode,
         idempotent: true,
@@ -198,6 +252,14 @@ pub(in crate::mcp) const TOOLS: &[ToolSpec] = &[
         description: "Select a complete canonical face target in Face mode, or clear it with null; explicit targets need not be visible and select their owning instance",
         schema: select_face_schema,
         parse: parse_select_face,
+        idempotent: true,
+        read_only: false,
+    },
+    ToolSpec {
+        name: "select_vertex",
+        description: "Select a complete canonical vertex target in Vertex mode, or clear it with null; explicit targets need not be visible and select their owning instance",
+        schema: select_vertex_schema,
+        parse: parse_select_vertex,
         idempotent: true,
         read_only: false,
     },

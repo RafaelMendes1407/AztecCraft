@@ -51,18 +51,21 @@ impl Editor {
                     .and_then(|sum| sum.checked_add(64))
             })
             .ok_or(OperationError::TooLarge)?;
-        let face_bytes = self
-            .remembered_face
-            .as_ref()
-            .map_or(Some(0), |target| {
-                if target.path.len() > azteccraft::native_scene::MAX_TRANSFORM_DEPTH + 1 {
-                    return None;
-                }
-                target.path.len().checked_mul(24)?.checked_add(128)
-            })
-            .ok_or(OperationError::TooLarge)?;
+        let remembered_bytes = |path_len: Option<usize>| {
+            path_len
+                .map_or(Some(0), |len| {
+                    if len > azteccraft::native_scene::MAX_TRANSFORM_DEPTH + 1 {
+                        return None;
+                    }
+                    len.checked_mul(24)?.checked_add(128)
+                })
+                .ok_or(OperationError::TooLarge)
+        };
+        let face_bytes = remembered_bytes(self.remembered_face.as_ref().map(|t| t.path.len()))?;
+        let vertex_bytes = remembered_bytes(self.remembered_vertex.as_ref().map(|t| t.path.len()))?;
         if path_bytes
             .checked_add(face_bytes)
+            .and_then(|bytes| bytes.checked_add(vertex_bytes))
             .is_none_or(|bytes| bytes > crate::editor_operations::MAX_RESULT_BYTES / 2)
         {
             return Err(OperationError::TooLarge);
@@ -276,6 +279,14 @@ impl Editor {
                     instance_path: target.path.iter().map(|id| id.to_decimal()).collect(),
                     face_index: target.face_index,
                 }),
+            remembered_vertex: self.remembered_vertex.as_ref().map(|target| {
+                VertexSelectionTarget {
+                    node_id: target.transform.to_decimal(),
+                    shape_id: target.shape.to_decimal(),
+                    instance_path: target.path.iter().map(|id| id.to_decimal()).collect(),
+                    vertex_index: target.vertex_index,
+                }
+            }),
             face_selection_policy: FaceSelectionPolicy::VisibleCentersOnly,
             can_undo: self.history.can_undo(),
             can_redo: self.history.can_redo(),

@@ -117,6 +117,7 @@ mod official_client {
     mod snapshots;
     mod sphere;
     mod status_line;
+    mod vertex_edge;
 
     async fn call_response(
         editor: &mut Editor,

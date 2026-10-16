@@ -107,6 +107,7 @@
     "pending_action": null,
     "read_only_reason": "Maya ASCII scenes are read-only in this version",
     "remembered_face": null,
+    "remembered_vertex": null,
     "retained_source_bytes": 446,
     "retained_source_records": 10,
     "save_as_available": false,
