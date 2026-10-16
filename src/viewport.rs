@@ -265,15 +265,7 @@ impl Camera {
         target: &FaceTarget,
         aspect: f32,
     ) -> Result<(), InvalidCameraInput> {
-        let instance = scene
-            .instances()
-            .iter()
-            .find(|instance| {
-                instance.transform() == target.transform
-                    && instance.shape() == target.shape
-                    && instance.path() == target.path
-            })
-            .ok_or(InvalidCameraInput)?;
+        let instance = component_instance(scene, target.transform, target.shape, &target.path)?;
         let face = instance
             .faces()
             .iter()
@@ -289,6 +281,41 @@ impl Camera {
                 .filter_map(|&index| vertices.get(index).copied()),
             aspect,
         )
+    }
+
+    pub fn frame_vertex(
+        &mut self,
+        scene: &ViewScene,
+        target: &VertexTarget,
+        aspect: f32,
+    ) -> Result<(), InvalidCameraInput> {
+        let instance = component_instance(scene, target.transform, target.shape, &target.path)?;
+        let point = instance
+            .world_vertices()
+            .get(target.vertex_index)
+            .copied()
+            .ok_or(InvalidCameraInput)?;
+        self.frame_points(&[point], aspect)
+    }
+
+    pub fn frame_edge(
+        &mut self,
+        scene: &ViewScene,
+        target: &EdgeTarget,
+        aspect: f32,
+    ) -> Result<(), InvalidCameraInput> {
+        let instance = component_instance(scene, target.transform, target.shape, &target.path)?;
+        let [a, b] = instance
+            .edges()
+            .get(target.edge_index)
+            .copied()
+            .ok_or(InvalidCameraInput)?;
+        let vertices = instance.world_vertices();
+        let ends = [
+            vertices.get(a).copied().ok_or(InvalidCameraInput)?,
+            vertices.get(b).copied().ok_or(InvalidCameraInput)?,
+        ];
+        self.frame_points(&ends, aspect)
     }
 
     fn frame_iter(
@@ -904,6 +931,23 @@ pub fn face_center_work(eligible: usize, triangles: usize) -> Result<(), ViewErr
         Some(checks) if checks <= MAX_FACE_CENTER_INTERSECTIONS => Ok(()),
         _ => Err(ViewError::ResourceLimit),
     }
+}
+
+fn component_instance<'a>(
+    scene: &'a ViewScene,
+    transform: NodeId,
+    shape: NativeId,
+    path: &[NativeId],
+) -> Result<&'a ViewInstance, InvalidCameraInput> {
+    scene
+        .instances()
+        .iter()
+        .find(|instance| {
+            instance.transform() == transform
+                && instance.shape() == shape
+                && instance.path() == path
+        })
+        .ok_or(InvalidCameraInput)
 }
 
 fn face_target(instance: &ViewInstance, face_index: usize) -> Result<FaceTarget, ViewError> {

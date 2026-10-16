@@ -4812,3 +4812,116 @@ fn undo_making_only_the_face_pick_stale_keeps_vertex_and_edge_picks() {
     assert_eq!(editor.remembered_vertex.as_ref().unwrap().vertex_index, 0);
     assert_eq!(editor.remembered_edge.as_ref().unwrap().edge_index, 0);
 }
+
+fn translated_cube_editor() -> Editor {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    editor.channels[0] = "2".into();
+    editor.commit_pending();
+    editor
+}
+
+fn world_points(editor: &Editor, indices: &[usize]) -> Vec<glam::Vec3> {
+    let view = ViewScene::from_native(editor.history.scene(), 256 * 1024 * 1024).unwrap();
+    let instance = &view.instances()[0];
+    indices
+        .iter()
+        .map(|&index| instance.world_vertices()[index])
+        .collect()
+}
+
+#[test]
+fn frame_selected_frames_the_remembered_vertex_in_world_space() {
+    let mut editor = translated_cube_editor();
+    set_mode(&mut editor, SelectionMode::Vertex);
+    pick_vertex(&mut editor, 3);
+    let points = world_points(&editor, &[3]);
+    let mut expected = editor.camera.clone();
+    expected.frame_points(&points, editor.aspect).unwrap();
+    assert!(expected.target().x > 1.0, "world, not local, coordinates");
+    let scene = editor.history.scene().clone();
+    let token = editor.scene_token;
+    remote(&mut editor, Operation::FrameSelected).unwrap();
+    assert_eq!(editor.camera, expected);
+    assert_eq!(editor.camera.target(), points[0]);
+    assert_eq!(editor.history.scene(), &scene);
+    assert_eq!(editor.scene_token, token);
+    assert!(matches!(
+        remote(&mut editor, Operation::FrameSelected),
+        Ok(OperationReply::Unchanged)
+    ));
+}
+
+#[test]
+fn frame_selected_frames_both_endpoints_of_the_remembered_edge() {
+    let mut editor = translated_cube_editor();
+    set_mode(&mut editor, SelectionMode::Edge);
+    pick_edge(&mut editor, 5);
+    let shape = selected_face(&editor, 0).shape;
+    let [a, b] = editor.history.scene().shape(shape).unwrap().mesh().edges()[5].endpoints();
+    let points = world_points(&editor, &[a, b]);
+    assert_ne!(points[0], points[1]);
+    let mut expected = editor.camera.clone();
+    expected.frame_points(&points, editor.aspect).unwrap();
+    remote(&mut editor, Operation::FrameSelected).unwrap();
+    assert_eq!(editor.camera, expected);
+    assert!(
+        editor
+            .camera
+            .target()
+            .abs_diff_eq((points[0] + points[1]) * 0.5, 1e-5)
+    );
+    let mut single = editor.camera.clone();
+    single.frame_points(&points[..1], editor.aspect).unwrap();
+    assert!(editor.camera.distance() > single.distance());
+}
+
+#[test]
+fn frame_selected_without_a_pick_or_with_a_stale_pick_keeps_the_camera() {
+    for mode in [SelectionMode::Vertex, SelectionMode::Edge] {
+        let mut editor = Editor::default();
+        editor.create(Primitive::Cube);
+        set_mode(&mut editor, mode);
+        let camera = editor.camera.clone();
+        assert!(matches!(
+            remote(&mut editor, Operation::FrameSelected),
+            Err(OperationError::NoSelection)
+        ));
+        // A remembered pick that no longer resolves is a typed scene error.
+        editor.remembered_vertex = Some(selected_vertex(&editor, 9999));
+        editor.remembered_edge = Some(selected_edge(&editor, 9999));
+        assert!(matches!(
+            remote(&mut editor, Operation::FrameSelected),
+            Err(OperationError::Scene(_))
+        ));
+        assert_eq!(editor.camera, camera);
+    }
+}
+
+#[test]
+fn frame_selected_after_undo_of_the_picked_object_is_no_selection() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    set_mode(&mut editor, SelectionMode::Vertex);
+    pick_vertex(&mut editor, 2);
+    remote(&mut editor, Operation::Undo).unwrap();
+    let camera = editor.camera.clone();
+    assert!(matches!(
+        remote(&mut editor, Operation::FrameSelected),
+        Err(OperationError::NoSelection)
+    ));
+    assert_eq!(editor.camera, camera);
+}
+
+#[test]
+fn frame_selected_in_object_mode_ignores_vertex_and_edge_picks() {
+    let mut editor = translated_cube_editor();
+    set_mode(&mut editor, SelectionMode::Vertex);
+    pick_vertex(&mut editor, 3);
+    set_mode(&mut editor, SelectionMode::Object);
+    let mut expected = editor.camera.clone();
+    let view = ViewScene::from_native(editor.history.scene(), 256 * 1024 * 1024).unwrap();
+    expected.frame_view(&view, None, editor.aspect).unwrap();
+    remote(&mut editor, Operation::FrameSelected).unwrap();
+    assert_eq!(editor.camera, expected);
+}

@@ -561,28 +561,37 @@ impl Editor {
                 });
             }
             Operation::FrameSelected => {
-                if matches!(
+                let component = matches!(
                     self.selection_mode,
-                    SelectionMode::Vertex | SelectionMode::Edge
-                ) {
-                    return Err(OperationError::NoSelection);
+                    SelectionMode::Face | SelectionMode::Vertex | SelectionMode::Edge
+                );
+                if component {
+                    let scene = self.history.scene();
+                    match self.selection_mode {
+                        SelectionMode::Face => self
+                            .remembered_face
+                            .as_ref()
+                            .map(|target| scene.resolve_face_target(target)),
+                        SelectionMode::Vertex => self
+                            .remembered_vertex
+                            .as_ref()
+                            .map(|target| scene.resolve_vertex_target(target)),
+                        _ => self
+                            .remembered_edge
+                            .as_ref()
+                            .map(|target| scene.resolve_edge_target(target)),
+                    }
+                    .ok_or(OperationError::NoSelection)?
+                    .map_err(OperationError::Scene)?;
                 }
-                let path = if self.selection_mode != SelectionMode::Face {
+                let path = if component {
+                    None
+                } else {
                     let id = self.selected.ok_or(OperationError::NoSelection)?;
                     Some(self.selection_path(
                         id,
                         (!self.selected_path.is_empty()).then(|| self.selected_path.clone()),
                     )?)
-                } else {
-                    let target = self
-                        .remembered_face
-                        .as_ref()
-                        .ok_or(OperationError::NoSelection)?;
-                    self.history
-                        .scene()
-                        .resolve_face_target(target)
-                        .map_err(OperationError::Scene)?;
-                    None
                 };
                 let view = ViewScene::from_native(self.history.scene(), 256 * 1024 * 1024)
                     .map_err(|error| OperationError::File(error.to_string()))?;
@@ -590,13 +599,21 @@ impl Editor {
                 if let Some(path) = path {
                     self.camera.frame_view(&view, Some(&path), self.aspect)
                 } else {
-                    self.camera.frame_face(
-                        &view,
-                        self.remembered_face
+                    match self.selection_mode {
+                        SelectionMode::Face => self
+                            .remembered_face
                             .as_ref()
-                            .ok_or(OperationError::NoSelection)?,
-                        self.aspect,
-                    )
+                            .map(|target| self.camera.frame_face(&view, target, self.aspect)),
+                        SelectionMode::Vertex => self
+                            .remembered_vertex
+                            .as_ref()
+                            .map(|target| self.camera.frame_vertex(&view, target, self.aspect)),
+                        _ => self
+                            .remembered_edge
+                            .as_ref()
+                            .map(|target| self.camera.frame_edge(&view, target, self.aspect)),
+                    }
+                    .ok_or(OperationError::NoSelection)?
                 }
                 .map_err(OperationError::Camera)?;
                 return Ok(if self.camera == before {

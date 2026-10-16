@@ -1685,6 +1685,128 @@ fn frame_face_frames_a_twenty_gon_like_its_points() {
 }
 
 #[test]
+fn frame_vertex_and_edge_use_world_points_and_reject_missing_targets() {
+    use crate::native_scene::{EdgeTarget, VertexTarget};
+    let (view, _, owner) = ngon_view(ngon_points(5, 1.0)).unwrap();
+    let instance = &view.instances()[0];
+    let vertex = VertexTarget {
+        transform: owner,
+        shape: instance.shape(),
+        path: instance.path().to_vec(),
+        vertex_index: 2,
+    };
+    let mut camera = front_camera();
+    camera.frame_vertex(&view, &vertex, 1.5).unwrap();
+    let mut expected = front_camera();
+    expected
+        .frame_points(&[instance.world_vertices()[2]], 1.5)
+        .unwrap();
+    assert_eq!(camera, expected);
+    let edge = EdgeTarget {
+        transform: owner,
+        shape: instance.shape(),
+        path: instance.path().to_vec(),
+        edge_index: 1,
+    };
+    let [a, b] = instance.edges()[1];
+    let mut camera = front_camera();
+    camera.frame_edge(&view, &edge, 1.5).unwrap();
+    let mut expected = front_camera();
+    expected
+        .frame_points(
+            &[instance.world_vertices()[a], instance.world_vertices()[b]],
+            1.5,
+        )
+        .unwrap();
+    assert_eq!(camera, expected);
+    let before = camera.clone();
+    let mut bad_vertex = vertex.clone();
+    bad_vertex.vertex_index = instance.world_vertices().len();
+    let mut bad_edge = edge.clone();
+    bad_edge.edge_index = instance.edges().len();
+    let mut wrong_path = vertex.clone();
+    wrong_path.path.clear();
+    assert!(camera.frame_vertex(&view, &bad_vertex, 1.5).is_err());
+    assert!(camera.frame_vertex(&view, &wrong_path, 1.5).is_err());
+    assert!(camera.frame_edge(&view, &bad_edge, 1.5).is_err());
+    assert!(camera.frame_vertex(&view, &vertex, f32::NAN).is_err());
+    assert_eq!(camera, before);
+}
+
+#[test]
+fn frame_vertex_and_edge_are_keyed_to_their_own_instance() {
+    use crate::native_scene::{EdgeTarget, VertexTarget};
+    let (mut shared, _, second, _) = test_fixtures::shared_shape();
+    shared
+        .set_transform(
+            second,
+            NativeTransform {
+                translation: [3.0, 0.0, 0.0],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let (mut grouped, root, child, _) = test_fixtures::grouped_shape();
+    grouped
+        .set_transform(
+            root,
+            NativeTransform {
+                translation: [0.0, 4.0, 0.0],
+                scale: [2.0, 2.0, 2.0],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    grouped
+        .set_transform(
+            child,
+            NativeTransform {
+                translation: [1.0, 0.0, 0.0],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    for native in [shared, grouped] {
+        let view = ViewScene::from_native(&native, VIEW_BUDGET).unwrap();
+        assert!(!view.instances().is_empty());
+        let mut targets = Vec::new();
+        for instance in view.instances() {
+            let [a, b] = instance.edges()[1];
+            let vertices = instance.world_vertices();
+            let (vertex, edge) = (
+                VertexTarget {
+                    transform: instance.transform(),
+                    shape: instance.shape(),
+                    path: instance.path().to_vec(),
+                    vertex_index: 3,
+                },
+                EdgeTarget {
+                    transform: instance.transform(),
+                    shape: instance.shape(),
+                    path: instance.path().to_vec(),
+                    edge_index: 1,
+                },
+            );
+            let mut camera = front_camera();
+            camera.frame_vertex(&view, &vertex, 1.0).unwrap();
+            assert_eq!(camera.target(), vertices[3]);
+            let mut camera = front_camera();
+            camera.frame_edge(&view, &edge, 1.0).unwrap();
+            assert!(
+                camera
+                    .target()
+                    .abs_diff_eq((vertices[a] + vertices[b]) * 0.5, 1e-5)
+            );
+            targets.push(vertices[3]);
+        }
+        assert!(
+            targets.windows(2).all(|pair| pair[0] != pair[1]),
+            "instances must differ in world space"
+        );
+    }
+}
+
+#[test]
 fn degenerate_and_non_convex_polygons_stay_unsupported() {
     fn hexagon_with_vertex3_at_vertex0() -> Vec<[f64; 3]> {
         let mut points = ngon_points(6, 1.0);
