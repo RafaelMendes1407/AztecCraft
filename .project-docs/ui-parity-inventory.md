@@ -147,7 +147,7 @@ The Channel Box panel docks right at src/app.rs:1636 and draws from Editor::chan
 | Channel Box panel, right side | [channelbox] | Supported | src/app.rs:1636-1642 "channels", :1363 "channels" | `inspect_scene` | P1 | S4 Attribute Editor and Channel Box (#60) |
 | Object name field | [channelbox] | Supported | src/app.rs:1371 "Object name" | `rename_node`, `edit_node` | P1 | S4 Attribute Editor and Channel Box (#60) |
 | Transform channels (Translate, Rotate, Scale X/Y/Z) | [channelbox] | Supported | src/app.rs:1381-1389 "Translate X" | `set_transform`, `edit_node` | P1 | S4 Attribute Editor and Channel Box (#60) |
-| Visibility channel | [channelbox] | Missing | absent from the channel list at src/app.rs:1380 | none | P1 | S4 Attribute Editor and Channel Box (#60) |
+| Visibility channel | [channelbox] | Partial | read-only row for the selected transform's own `.v` (on/off/unknown), disabled with "visibility edit not implemented"; src/app/features/node_edit.rs | `inspect_scene` (`nodes[].visible`, read-only) | P1 | S4 Attribute Editor and Channel Box (#60) |
 | SHAPES section | [channelbox] | Missing | no shape channels; the nearby src/app.rs:1434-1500 is the Materials block with Diffuse | `set_material_diffuse` | P2 | S4 Attribute Editor and Channel Box (#60) |
 | INPUTS section | [channelbox] | Visible-unsupported | src/app.rs:1428-1429 "construction history" (disabled; source-verified) | none | P2 | S4 Attribute Editor and Channel Box (#60) |
 | OUTPUTS section | [channelbox] | Missing | absent | none | P3 | S4 Attribute Editor and Channel Box (#60) |

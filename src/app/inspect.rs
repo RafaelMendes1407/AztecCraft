@@ -75,6 +75,7 @@ impl Editor {
                     id: node.id().to_decimal(),
                     transform_id: node.transform_id().to_decimal(),
                     name: node.name().into(),
+                    visible: node.local_visibility(),
                     transform: self.transform_input(node.transform())?,
                     authoring_transform: node.transform().into(),
                     shape_ids: self

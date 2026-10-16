@@ -101,6 +101,11 @@ The synthetic extruded-cube example and core journey tests exercise geometry,
 history, document persistence, OBJ export and camera picking. They don't replace
 native face-tool interaction checks or comparison against a pinned Maya scene.
 
+The Channel Box Visibility row and `inspect_scene` `nodes[].visible` show only a
+transform's own `.v`: an attribute absent from the source reads as on (the decoders'
+default, not yet compared with a pinned Maya scene), and inherited visibility,
+shape `.v` and visibility editing are not reported or supported.
+
 ## Maya binary curve and remaining container coverage
 
 **Severity:** high

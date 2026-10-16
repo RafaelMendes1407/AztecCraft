@@ -326,6 +326,8 @@ pub struct NodeInspection {
     pub id: String,
     pub name: String,
     pub transform_id: String,
+    /// The node's own `.v`, not effective visibility; null when the source did not prove it.
+    pub visible: Option<bool>,
     pub transform: TransformInput,
     pub authoring_transform: AuthoringTransformInspection,
     pub instance_paths: Vec<Vec<String>>,
@@ -474,6 +476,8 @@ pub struct RemoteRequest {
 #[cfg(any(test, feature = "mcp"))]
 const APPEARANCE_SUMMARY_MAX_BYTES: usize = 1024;
 #[cfg(any(test, feature = "mcp"))]
+const NODE_VISIBLE_FIELD_MAX_BYTES: usize = "\"visible\":false,".len();
+#[cfg(any(test, feature = "mcp"))]
 const MOVE_INSPECTION_MAX_BYTES: usize = 32 * 1024;
 
 #[cfg(any(test, feature = "mcp"))]
@@ -486,7 +490,8 @@ pub fn check_inspection_size(
         estimated_bytes = estimated_bytes
             .saturating_add(1024)
             .saturating_add(node.name().len().saturating_mul(6))
-            .saturating_add(512);
+            .saturating_add(512)
+            .saturating_add(NODE_VISIBLE_FIELD_MAX_BYTES);
         if estimated_bytes > limit {
             return Err(OperationError::TooLarge);
         }
@@ -560,6 +565,38 @@ mod tests {
             check_inspection_size(&scene),
             Err(OperationError::TooLarge)
         ));
+    }
+
+    #[test]
+    fn node_visible_field_is_covered_by_the_preflight_estimate() {
+        let node = |visible| NodeInspection {
+            id: String::new(),
+            name: String::new(),
+            transform_id: String::new(),
+            visible,
+            transform: TransformInput {
+                translation: [0.0; 3],
+                rotation_degrees: [0.0; 3],
+                scale: [0.0; 3],
+            },
+            authoring_transform: AuthoringTransformInspection {
+                translation: [0.0; 3],
+                rotation: [0.0; 3],
+                scale: [0.0; 3],
+            },
+            instance_paths: Vec::new(),
+            shape_ids: Vec::new(),
+        };
+        let base = serde_json::to_vec(&node(None)).unwrap().len();
+        for visible in [Some(true), Some(false)] {
+            let with = serde_json::to_vec(&node(visible)).unwrap().len();
+            assert!(with - base <= NODE_VISIBLE_FIELD_MAX_BYTES);
+        }
+        assert!(
+            String::from_utf8(serde_json::to_vec(&node(None)).unwrap())
+                .unwrap()
+                .contains("\"visible\":null")
+        );
     }
 
     #[test]

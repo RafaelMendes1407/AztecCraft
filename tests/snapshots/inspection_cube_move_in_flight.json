@@ -113,7 +113,8 @@
             0.0
           ]
         },
-        "transform_id": "1"
+        "transform_id": "1",
+        "visible": true
       }
     ],
     "pending_action": null,

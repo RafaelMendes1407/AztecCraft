@@ -2932,3 +2932,70 @@ fn create_allocates_name_after_committing_pending_rename() {
         "pCube1"
     );
 }
+
+fn open_ascii(body: &str) -> Editor {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("scene.ma");
+    std::fs::write(
+        &path,
+        format!("//Maya ASCII 2016 scene\nrequires maya \"2016\"; currentUnit -l centimeter -a degree -t film; {body}"),
+    )
+    .unwrap();
+    let mut editor = Editor::default();
+    editor
+        .apply_operation(Operation::OpenScene { path })
+        .unwrap();
+    editor
+}
+
+fn channel_box_text(editor: &mut Editor) -> (String, Vec<egui::Shape>) {
+    let context = egui::Context::default();
+    let mut output = context.run_ui(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(420.0, 900.0),
+            )),
+            ..Default::default()
+        },
+        |ui| editor.channels(ui, &mut false),
+    );
+    output.textures_delta.clear();
+    let text = output
+        .shapes
+        .iter()
+        .filter_map(|shape| match &shape.shape {
+            egui::Shape::Text(text) => Some(text.galley.job.text.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("|");
+    (text, output.shapes.into_iter().map(|s| s.shape).collect())
+}
+
+#[test]
+fn channel_box_visibility_row_is_read_only_and_never_defaults_to_on() {
+    const CC: &str = "setAttr \".cc\" -type \"nurbsCurve\" 3 1 0 no 3 6 0 0 0 1 1 1 4 0 -0 0 1 2 3 4 -3 2 6 0 -1;";
+    for (v, expected) in [
+        ("setAttr \".v\" no;", "off"),
+        ("setAttr \".v\" yes;", "on"),
+        ("", "on"),
+    ] {
+        let mut editor = open_ascii(&format!(
+            "createNode transform -n \"c\"; {v} createNode nurbsCurve -n \"cShape\" -p \"c\"; {CC}"
+        ));
+        let id = editor.history.scene().nodes()[0].id();
+        assert_eq!(
+            editor.inspect(false).unwrap().nodes[0].visible,
+            Some(expected == "on")
+        );
+        editor.select(Some(id));
+        let before = editor.history.scene().clone();
+        let (text, _) = channel_box_text(&mut editor);
+        assert!(text.contains("Visibility"), "{text}");
+        assert!(text.contains(expected), "{text}");
+        assert!(!text.contains("unknown"));
+        assert!(!editor.has_draft());
+        assert_eq!(editor.history.scene(), &before);
+    }
+}

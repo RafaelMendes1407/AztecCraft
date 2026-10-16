@@ -923,3 +923,26 @@ fn independent_bindings(
         }
     }
 }
+
+fn visibility(value: f64) -> Vec<u8> {
+    let mut bytes = b"v\0\x24".to_vec();
+    bytes.extend(value.to_be_bytes());
+    chunk(b"DBLE", &bytes, 8)
+}
+
+#[test]
+fn binary_transform_reports_its_recorded_local_visibility() {
+    for (record, expected) in [
+        (Vec::new(), Some(true)),
+        (visibility(0.0), Some(false)),
+        (visibility(1.0), Some(true)),
+    ] {
+        let bytes = scene(&group(
+            b"XFRM",
+            &[creation(b"object", None), record].concat(),
+            4,
+        ));
+        let scene = decode(bytes).unwrap();
+        assert_eq!(scene.nodes()[0].local_visibility(), expected);
+    }
+}
