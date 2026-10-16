@@ -30,7 +30,7 @@ use source::{ScalarOrigin, SourceFormat, SourceRetention, TransformField};
 pub use transform_extras::{InternalExtras, TransformExtras};
 
 use crate::scene::{NodeId, Primitive, Scene, SceneError, Transform};
-use glam::{DMat4, DVec3, Vec3};
+use glam::{DMat3, DMat4, DVec3, Vec3};
 use std::fmt;
 #[cfg(test)]
 use std::ops::Range;
@@ -540,6 +540,26 @@ pub struct InternalTransform {
 }
 
 impl InternalTransform {
+    /// T + RT in the parent's space: the Move and Rotate pivot, since both refuse a nonzero
+    /// rotate pivot (RP) and `T + RT + RP` is then the same point.
+    pub(crate) fn origin_cm(self) -> DVec3 {
+        let translate = DVec3::from_array(self.translation_cm);
+        match self.extras {
+            Some(extras) => translate + DVec3::from_array(extras.rotate_pivot_translate_cm),
+            None => translate,
+        }
+    }
+
+    /// R(ro) * RA as a linear map: the node's own axes before shear and scale.
+    /// `None` for a rotate order validation would have rejected.
+    pub(crate) fn rotation_frame(self) -> Option<DMat3> {
+        let Some(extras) = self.extras else {
+            return Some(rotate_frame::rotation_matrix(self.rotation_radians));
+        };
+        let order = transform_extras::rotation_matrix(extras.rotate_order, self.rotation_radians)?;
+        Some(DMat3::from_mat4(order * extras.rotate_axis_matrix()))
+    }
+
     pub(crate) fn matrix(self) -> Option<DMat4> {
         if let Some(extras) = self.extras {
             let matrix = extras.matrix(

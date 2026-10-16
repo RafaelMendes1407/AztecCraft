@@ -135,3 +135,205 @@ fn refusals_report_what_begin_would_refuse() {
         ))
     );
 }
+
+fn assert_orthonormal_right_handed(axes: [DVec3; 3]) {
+    for axis in axes {
+        assert!((axis.length() - 1.0).abs() < 1e-12, "{axis}");
+    }
+    assert!(axes[0].dot(axes[1]).abs() < 1e-12);
+    assert!(axes[1].dot(axes[2]).abs() < 1e-12);
+    assert!(axes[2].dot(axes[0]).abs() < 1e-12);
+    assert!(axes[0].cross(axes[1]).dot(axes[2]) > 0.0);
+}
+
+#[test]
+fn a_sheared_parent_keeps_the_handles_skewed_frame_refusal() {
+    use crate::manipulator_handles::HandleFrame;
+    use crate::move_handles::HandleError;
+    let (mut scene, root, node, _) = test_fixtures::grouped_shape();
+    scene
+        .set_transform(
+            root,
+            NativeTransform {
+                rotation: [0.0, 0.0, 90.0],
+                ..NativeTransform::default()
+            },
+        )
+        .unwrap();
+    test_fixtures::set_extras(
+        &mut scene,
+        root,
+        TransformExtras {
+            shear: Some([0.5, 0.25, -0.75]),
+            ..TransformExtras::default()
+        },
+    );
+    let frame = scene.manipulator_frame(&target_of(&scene, node)).unwrap();
+    assert_eq!(
+        HandleFrame::new(frame.origin_cm, frame.object_axes).err(),
+        Some(HandleError::SkewedFrame)
+    );
+}
+
+#[test]
+fn uneven_scale_above_a_rotation_stays_refused_without_any_extras() {
+    use crate::manipulator_handles::HandleFrame;
+    use crate::move_handles::HandleError;
+    let (mut scene, root, mid, leaf) = test_fixtures::chain_of_three();
+    scene
+        .set_transform(
+            root,
+            NativeTransform {
+                scale: [2.0, 1.0, 1.0],
+                ..NativeTransform::default()
+            },
+        )
+        .unwrap();
+    scene
+        .set_transform(
+            mid,
+            NativeTransform {
+                rotation: [0.0, 0.0, 45.0],
+                ..NativeTransform::default()
+            },
+        )
+        .unwrap();
+    let frame = scene.manipulator_frame(&target_of(&scene, leaf)).unwrap();
+    assert_eq!(
+        HandleFrame::new(frame.origin_cm, frame.object_axes).err(),
+        Some(HandleError::SkewedFrame)
+    );
+}
+
+#[test]
+fn a_default_translation_keeps_negative_zero_in_the_frame_origin() {
+    let (mut scene, node) = test_fixtures::cube();
+    scene
+        .set_transform(
+            node,
+            NativeTransform {
+                translation: [-0.0, 1.0, -0.0],
+                ..NativeTransform::default()
+            },
+        )
+        .unwrap();
+    let internal = scene.internal_transform(node).unwrap();
+    assert!(internal.extras.is_none());
+    let origin = internal.origin_cm();
+    assert!(origin.x.is_sign_negative() && origin.z.is_sign_negative());
+}
+
+#[test]
+fn move_and_rotate_refuse_a_rotate_pivot_so_the_frame_origin_is_the_world_pivot() {
+    let (mut scene, node) = test_fixtures::cube();
+    scene.nodes[0].rotate_pivot[1] = Scalar::new(0.25);
+    test_fixtures::set_extras(
+        &mut scene,
+        node,
+        TransformExtras {
+            rotate_pivot_translate: Some([0.0, 3.0, 0.0]),
+            ..TransformExtras::default()
+        },
+    );
+    let selected = target_of(&scene, node);
+    assert!(matches!(
+        scene.world_move_frame(&selected),
+        Err(NativeError::UnsupportedMove(
+            WorldMoveUnsupported::SelectedPivot
+        ))
+    ));
+    assert!(matches!(
+        scene.begin_rotation(&selected, RotateAxis::X, RotateSpace::Object),
+        Err(NativeError::UnsupportedRotate(
+            RotateUnsupported::SelectedPivot
+        ))
+    ));
+}
+
+#[test]
+fn a_nodes_own_shear_and_rotate_axis_orient_the_frame_without_skewing_it() {
+    let (mut scene, node) = test_fixtures::cube();
+    scene
+        .set_transform(
+            node,
+            NativeTransform {
+                rotation: [10.0, 20.0, 30.0],
+                scale: [2.0, 3.0, 4.0],
+                ..NativeTransform::default()
+            },
+        )
+        .unwrap();
+    let plain = scene.manipulator_frame(&target_of(&scene, node)).unwrap();
+    test_fixtures::set_extras(
+        &mut scene,
+        node,
+        TransformExtras {
+            shear: Some([0.5, 0.25, -0.75]),
+            ..TransformExtras::default()
+        },
+    );
+    let sheared = scene.manipulator_frame(&target_of(&scene, node)).unwrap();
+    assert_orthonormal_right_handed(sheared.object_axes);
+    for (a, b) in plain.object_axes.into_iter().zip(sheared.object_axes) {
+        near(a, b);
+    }
+    test_fixtures::set_extras(
+        &mut scene,
+        node,
+        TransformExtras {
+            rotate_order: Some(5),
+            rotate_axis: Some([0.0, 0.0, 90.0]),
+            ..TransformExtras::default()
+        },
+    );
+    let turned = scene.manipulator_frame(&target_of(&scene, node)).unwrap();
+    assert_orthonormal_right_handed(turned.object_axes);
+    // Independent row-vector reference: order zyx (5), RA turns 90 degrees about Z.
+    let want = crate::native_scene::transform_extras::tests::row_vector_axes(
+        5,
+        [10f64.to_radians(), 20f64.to_radians(), 30f64.to_radians()],
+        [0.0, 0.0, 90f64.to_radians()],
+    );
+    for (axis, expected) in turned.object_axes.into_iter().zip(want) {
+        near(axis, DVec3::from_array(expected));
+    }
+}
+
+#[test]
+fn multi_axis_rotate_axis_frame_matches_the_matrix_and_the_row_vector_reference() {
+    let (mut scene, node) = test_fixtures::cube();
+    let r = [23.0, -41.0, 67.0];
+    let ra = [17.0, -33.0, 52.0];
+    scene
+        .set_transform(
+            node,
+            NativeTransform {
+                rotation: r,
+                ..NativeTransform::default()
+            },
+        )
+        .unwrap();
+    test_fixtures::set_extras(
+        &mut scene,
+        node,
+        TransformExtras {
+            rotate_order: Some(1),
+            rotate_axis: Some(ra),
+            ..TransformExtras::default()
+        },
+    );
+    let internal = scene.internal_transform(node).unwrap();
+    let frame = internal.rotation_frame().unwrap();
+    let linear = DMat3::from_mat4(internal.matrix().unwrap());
+    let rad = |v: [f64; 3]| v.map(f64::to_radians);
+    let want = crate::native_scene::transform_extras::tests::row_vector_axes(1, rad(r), rad(ra));
+    for (i, column) in [frame.x_axis, frame.y_axis, frame.z_axis]
+        .into_iter()
+        .enumerate()
+    {
+        near(column, [linear.x_axis, linear.y_axis, linear.z_axis][i]);
+        near(column, DVec3::from_array(want[i]));
+    }
+    let handles = scene.manipulator_frame(&target_of(&scene, node)).unwrap();
+    near(handles.object_axes[0], frame.x_axis);
+}

@@ -74,6 +74,24 @@ pub(crate) fn grouped_shape() -> (NativeScene, NodeId, NodeId, NativeId) {
     (scene, root, child, shape)
 }
 
+/// root > mid > leaf, with the only shape under leaf.
+pub(crate) fn chain_of_three() -> (NativeScene, NodeId, NodeId, NodeId) {
+    let (mut scene, root, mid, _) = grouped_shape();
+    let leaf = scene.create(Primitive::Cube, "leaf").unwrap();
+    let discarded = scene.shapes.remove(0).id;
+    let mid_native = scene.node(mid).unwrap().transform_id;
+    let leaf_native = scene.node(leaf).unwrap().transform_id;
+    scene.dag.retain(|edge| {
+        edge.child != discarded && !(edge.child == leaf_native && edge.parent.is_none())
+    });
+    scene.dag.push(DagEdge {
+        parent: Some(mid_native),
+        child: leaf_native,
+    });
+    scene.validate().unwrap();
+    (scene, root, mid, leaf)
+}
+
 pub(crate) fn pivoted_shape() -> (NativeScene, NodeId) {
     let (mut scene, id) = cube();
     scene.nodes[0].channels = NativeTransform {
@@ -195,4 +213,13 @@ pub(crate) fn three_level_chain(
     scene.set_transform(middle_id, middle).unwrap();
     scene.set_transform(leaf_id, leaf).unwrap();
     (scene, leaf_id)
+}
+
+pub(crate) fn set_extras(scene: &mut NativeScene, node: NodeId, extras: TransformExtras) {
+    scene
+        .nodes
+        .iter_mut()
+        .find(|entry| entry.id == node)
+        .unwrap()
+        .extras = extras;
 }

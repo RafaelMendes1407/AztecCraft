@@ -130,6 +130,12 @@ fn shear_matrix(shear: [f64; 3]) -> DMat4 {
 }
 
 impl InternalExtras {
+    /// RA as xyz Euler (Rz * Ry * Rx). The single source for the matrix and the handle frame.
+    pub(crate) fn rotate_axis_matrix(&self) -> DMat4 {
+        let [ax, ay, az] = self.rotate_axis_radians;
+        DMat4::from_rotation_z(az) * DMat4::from_rotation_y(ay) * DMat4::from_rotation_x(ax)
+    }
+
     /// T * RT * RP * R(ro) * RA * RP^-1 * ST * SP * SH * S * SP^-1 (column form).
     pub(crate) fn matrix(
         &self,
@@ -139,7 +145,6 @@ impl InternalExtras {
         rp: DVec3,
         sp: DVec3,
     ) -> Option<DMat4> {
-        let [ax, ay, az] = self.rotate_axis_radians;
         // PROVISIONAL: RA is composed as xyz Euler, but the 2026 transform page says
         // rotateAxis is stored as a quaternion; unconfirmed against a Maya reference scene.
         Some(
@@ -147,9 +152,7 @@ impl InternalExtras {
                 * DMat4::from_translation(DVec3::from_array(self.rotate_pivot_translate_cm))
                 * DMat4::from_translation(rp)
                 * rotation_matrix(self.rotate_order, rotation)?
-                * DMat4::from_rotation_z(az)
-                * DMat4::from_rotation_y(ay)
-                * DMat4::from_rotation_x(ax)
+                * self.rotate_axis_matrix()
                 * DMat4::from_translation(-rp)
                 * DMat4::from_translation(DVec3::from_array(self.scale_pivot_translate_cm))
                 * DMat4::from_translation(sp)
@@ -161,4 +164,4 @@ impl InternalExtras {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

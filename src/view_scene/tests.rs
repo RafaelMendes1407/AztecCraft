@@ -2325,3 +2325,48 @@ fn view_budget_charges_every_source_edge_per_instance() {
     };
     assert_eq!(required(100) - required(0), 100 * size_of::<[usize; 2]>());
 }
+
+#[test]
+fn native_extras_reach_the_view_through_the_shared_matrix() {
+    use crate::native_scene::TransformExtras;
+    let (mut native, root, child, _) = test_fixtures::grouped_shape();
+    native
+        .set_transform(
+            root,
+            NativeTransform {
+                translation: [10.0, 0.0, 0.0],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    native
+        .set_transform(
+            child,
+            NativeTransform {
+                translation: [1.0, 2.0, 3.0],
+                rotation: [0.0, 0.0, 90.0],
+                scale: [2.0, 3.0, 4.0],
+            },
+        )
+        .unwrap();
+    test_fixtures::set_extras(
+        &mut native,
+        child,
+        TransformExtras {
+            shear: Some([0.5, 0.0, 0.0]),
+            rotate_pivot_translate: Some([0.0, 0.0, 5.0]),
+            ..TransformExtras::default()
+        },
+    );
+    let view = ViewScene::from_native(&native, VIEW_BUDGET).unwrap();
+    let Points::Float3(points) = native.shapes()[0].mesh().points() else {
+        panic!("canonical cube must use Float3 points");
+    };
+    // Row-vector reference for R(z 90) * SH(xy 0.5) * S then T + RT, under a translated parent.
+    for (actual, [x, y, z]) in view.instances()[0].world_vertices().iter().zip(points) {
+        let (sx, sy, sz) = (2.0 * x, 3.0 * y, 4.0 * z);
+        let (hx, hy) = (sx + 0.5 * sy, sy);
+        let expected = Vec3::new(10.0 + 1.0 - hy, 2.0 + hx, 3.0 + 5.0 + sz);
+        assert!(actual.distance(expected) < 1e-5, "{actual} != {expected}");
+    }
+}

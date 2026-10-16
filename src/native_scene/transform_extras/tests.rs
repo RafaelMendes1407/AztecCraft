@@ -154,6 +154,12 @@ fn apply_row(m: &Row, p: [f64; 3]) -> [f64; 3] {
     out
 }
 
+/// Images of the unit axes under RA then R(order), as row-vector directions (no translation).
+pub(crate) fn row_vector_axes(order: u8, r: [f64; 3], ra: [f64; 3]) -> [[f64; 3]; 3] {
+    let m = mul(&euler([0, 1, 2], ra), &euler(AXES[usize::from(order)], r));
+    [0, 1, 2].map(|i| [m[i][0], m[i][1], m[i][2]])
+}
+
 fn assert_matches(c: &Case) {
     let column = internal(c).matrix().unwrap();
     let row = reference_matrix(c);
