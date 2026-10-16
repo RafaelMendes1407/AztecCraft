@@ -333,7 +333,12 @@ impl Editor {
             ManipulationSpace::Object => frame.object_axes,
             ManipulationSpace::World => [DVec3::X, DVec3::Y, DVec3::Z],
         };
-        let handle = HandleFrame::new(frame.origin_cm, axes).map_err(|e| handle_error(tool, e))?;
+        let origin = if tool == ActiveTool::Scale {
+            frame.scale_origin_cm
+        } else {
+            frame.origin_cm
+        };
+        let handle = HandleFrame::new(origin, axes).map_err(|e| handle_error(tool, e))?;
         Ok((target, handle))
     }
 

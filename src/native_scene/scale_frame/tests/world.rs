@@ -429,3 +429,77 @@ fn world_axis_leaf_need_follows_the_mapped_channel() {
         ));
     }
 }
+
+fn with_extras(scene: &mut NativeScene, node: NodeId, extras: TransformExtras) {
+    test_fixtures::set_extras(scene, node, extras);
+}
+
+#[test]
+fn rotate_order_yzx_decides_which_local_channel_a_world_axis_edits() {
+    // Rx(90) * Rz(90) (yzx) sends local X, Y, Z to world Z, -X, -Y; the xyz order sends them to
+    // world Y, Z, X, so a world X drag edits local Y (channel 1) here and local Z under xyz.
+    let (mut scene, node) = test_fixtures::cube();
+    scene
+        .set_transform(
+            node,
+            NativeTransform {
+                rotation: [90.0, 0.0, 90.0],
+                scale: [1.0, 1.0, 1.0],
+                ..NativeTransform::default()
+            },
+        )
+        .unwrap();
+    let plain = world_frame(&scene, node, ScaleHandle::X);
+    assert_eq!(plain.scale(ScaleHandle::X, 2.0).unwrap(), [1.0, 1.0, 2.0]);
+    with_extras(
+        &mut scene,
+        node,
+        TransformExtras {
+            rotate_order: Some(1),
+            ..TransformExtras::default()
+        },
+    );
+    let yzx = world_frame(&scene, node, ScaleHandle::X);
+    assert_eq!(yzx.scale(ScaleHandle::X, 2.0).unwrap(), [1.0, 2.0, 1.0]);
+    let yzx = world_frame(&scene, node, ScaleHandle::Y);
+    assert_eq!(yzx.scale(ScaleHandle::Y, 2.0).unwrap(), [1.0, 1.0, 2.0]);
+    let yzx = world_frame(&scene, node, ScaleHandle::Z);
+    assert_eq!(yzx.scale(ScaleHandle::Z, 2.0).unwrap(), [2.0, 1.0, 1.0]);
+}
+
+#[test]
+fn rotate_pivot_translate_leaves_world_scale_channels_unchanged() {
+    // RT is a translation left of R, so it cannot change which channel a world drag edits.
+    let (mut scene, root, node, _) = test_fixtures::grouped_shape();
+    let parent = NativeTransform {
+        rotation: [0.0, 0.0, 90.0],
+        scale: [2.0, 2.0, 2.0],
+        ..NativeTransform::default()
+    };
+    scene.set_transform(root, parent).unwrap();
+    scene
+        .set_transform(
+            node,
+            NativeTransform {
+                rotation: [0.0, 0.0, 90.0],
+                ..NativeTransform::default()
+            },
+        )
+        .unwrap();
+    let run = |scene: &NativeScene| {
+        world_frame(scene, node, ScaleHandle::X)
+            .scale(ScaleHandle::X, 1.5)
+            .unwrap()
+    };
+    // Parent Rz90 then node Rz90 send local X to world -X, so world X edits channel 0.
+    assert_eq!(run(&scene), [1.5, 1.0, 1.0]);
+    with_extras(
+        &mut scene,
+        node,
+        TransformExtras {
+            rotate_pivot_translate: Some([4.0, -5.0, 6.0]),
+            ..TransformExtras::default()
+        },
+    );
+    assert_eq!(run(&scene), [1.5, 1.0, 1.0]);
+}

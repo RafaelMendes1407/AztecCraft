@@ -518,14 +518,13 @@ table holds at most 512 materials, far inside the `inspect_scene` budget (tested
 is shown as sRGB bytes, so no parity is claimed. No MCP test creates two instances of one shape
 (no instancing operation exists yet); that case is covered by core and `ViewScene` unit tests.
 
-## Scale handle origin ignores some transform extras
+## World Scale on a sheared node is not refused yet
 
 **Severity:** low
-**Area:** manipulator display
+**Area:** manipulation policy
 **Issue:** cristim/AztecCraft#105
 
-The Scale handle sits at the parent's map of T + RT. With transform extras, Scale's fixed point
-is M*sp, so the drawn handle drifts from it when the node has a nonzero scalePivotTranslate, or a
-nonzero rotatePivot with a rotation other than identity. Maya's own placement is unverified.
-Display only: no edit math reads the frame origin, and Move and Rotate refuse a nonzero rotate
-pivot, so T + RT is their pivot.
+World Scale on a node with a nonzero shear edits one scale channel, which cannot express the
+world scale (SH^-1 * D * SH is not diagonal). The refusal is planned for the transform-extras
+policy commit. It is latent because no source with shear opens yet in Binary; commit 5 must land
+before any `.mb` extras parse, and `.ma` scenes are read-only.
