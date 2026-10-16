@@ -946,3 +946,36 @@ fn binary_transform_reports_its_recorded_local_visibility() {
         assert_eq!(scene.nodes()[0].local_visibility(), expected);
     }
 }
+
+#[test]
+fn transform_records_outside_the_modeled_channels_are_refused_at_open() {
+    // The on-disk encoding of these attributes is unconfirmed by any fixture; the test only
+    // pins that an undeclared record on a transform is refused, whatever its key.
+    for (tag, key, kind, value) in [
+        (b"DBLE", b"it".as_slice(), 0x24u8, 0.0f64),
+        (b"DBLE", b"it", 0x24, 1.0),
+        (b"DBLE", b"inheritsTransform", 0x24, 0.0),
+        (b"DBLE", b"ro", 0x24, 2.0),
+        (b"DBLE", b"shxy", 0x24, 0.5),
+        (b"DBLE", b"opm", 0x24, 0.0),
+    ] {
+        let mut record = key.to_vec();
+        record.extend([0, kind]);
+        record.extend(value.to_be_bytes());
+        let bytes = scene(&group(
+            b"XFRM",
+            &[creation(b"object", None), chunk(tag, &record, 8)].concat(),
+            4,
+        ));
+        let error = decode(bytes).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Unsupported, "{key:?}");
+    }
+    for key in [b"ra".as_slice(), b"sh"] {
+        let bytes = scene(&group(
+            b"XFRM",
+            &[creation(b"object", None), triple(key, [10.0, 0.0, 0.0])].concat(),
+            4,
+        ));
+        assert_eq!(decode(bytes).unwrap_err().kind(), ErrorKind::Unsupported);
+    }
+}

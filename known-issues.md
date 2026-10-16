@@ -268,11 +268,24 @@ cube). Pole triangles cannot be extruded; body quads can. The new node is named
 `pSphere1` with shape `pSphere1Shape`, whereas Maya names the shape `pSphereShape1`.
 The legacy quad-only JSON/OBJ scene refuses spheres with a typed error.
 
-## World-space Rotate and inheritsTransform
+## World-space Rotate
 
-`NativeScene` does not model a node's `inheritsTransform` attribute, so world-space
-Rotate assumes every ancestor in the path contributes its transform. A scene that
-turns `inheritsTransform` off would be rotated against the wrong parent frame. The
-importer's handling of that attribute is unverified; object-space Rotate is not
-affected. World-space Rotate also refuses parents that are not a rotation times a
-uniform positive scale (tolerance 1e-9 relative).
+`NativeScene` does not model a node's `inheritsTransform` attribute. World-space
+Rotate relies on the importers refusing it: the ASCII importer rejects any `.it`
+line (and `.ro`, `.ra`, `.sh`), and the binary importer rejects any undeclared
+transform record with such a key (`it`, `inheritsTransform`, `ro`, `ra`, `sh*`),
+so these scenes do not open. Maya's on-disk encoding of these attributes is not
+confirmed by any fixture in the repo; the tests only pin the refusal of the keys.
+A scene is therefore safe from `inheritsTransform` off only while that importer
+behavior holds. Follow-up: `ro` (non-xyz rotate order), `ra`, `sh*` and
+`opm` must stay refused if the importers ever accept them, because Euler
+decomposition and `matrix()` assume xyz order without them.
+
+World-space Rotate refuses parents that are not a rotation times a uniform
+positive scale (relative tolerance 1e-9) and nodes with non-positive scale (a
+policy choice consistent with Move).
+
+The World ring treats the channel that moves most as intended and snaps changes
+below 1e-12 rad on the other channels back to the baseline. That is a heuristic: with
+a parent rotated 45 degrees about Z, a World X ring of 1e-11 degrees changes
+rotateX and rotateY by about the same amount, and one of them is snapped away.
