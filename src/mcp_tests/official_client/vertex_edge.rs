@@ -516,8 +516,8 @@ async fn refuses_stale_token_draft_modal_and_active_move(kind: Kind) {
         &mut editor,
         &context,
         peer,
-        "begin_move",
-        json!({"scene_token":token,"node_id":id,"instance_path":path,"axis":"x"}),
+        "begin_manipulation",
+        json!({"scene_token":token,"node_id":id,"instance_path":path,"kind":"move","axis":"x"}),
     )
     .await;
     let before = baseline(&editor);
