@@ -92,11 +92,17 @@ async fn move_sdk_absolute_preview_cancel_commit_busy_and_tokens_share_one_histo
             "set_grid_visibility",
             json!({"scene_token":token,"visible":false}),
         ),
+        (
+            "set_shading_mode",
+            json!({"scene_token":token,"mode":"wireframe"}),
+        ),
     ] {
         let grid = editor.grid_visible;
+        let shading = editor.shading;
         let mode = editor.selection_mode;
         let result = call(&mut editor, &context, client.peer(), name, arguments).await;
         assert_eq!((editor.grid_visible, editor.selection_mode), (grid, mode));
+        assert_eq!(editor.shading, shading);
         assert_eq!(
             result.structured_content.unwrap()["error"]["code"],
             "busy_manipulation",

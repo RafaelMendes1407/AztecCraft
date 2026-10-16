@@ -12,7 +12,7 @@ use std::fmt;
 const MAX_FACE_CENTER_INTERSECTIONS: usize = 1_000_000;
 
 /// Relative view-depth slack for a face center against its own surface hit (f32 rounding).
-const FACE_CENTER_DEPTH_TOLERANCE: f32 = 1e-4;
+pub const FACE_CENTER_DEPTH_TOLERANCE: f32 = 1e-4;
 /// Same slack for a vertex, or a point on an edge, against the surface it lies on. Edges share
 /// it so a drawn edge and a picked edge agree; kept apart from the face constant so loosening
 /// one never moves the other (a provisional policy value, see `known-issues.md`).
@@ -653,6 +653,15 @@ impl Camera {
         if !pointer.is_finite() || pointer.min_element() < 0.0 || pointer.cmpgt(size).any() {
             return Err(ViewError::Camera(InvalidCameraInput));
         }
+        self.build_frame(size, pointer)
+    }
+
+    /// Matrices for occlusion tests outside picking (the renderer passes the physical viewport size).
+    pub fn occlusion_frame(&self, size: Vec2) -> Result<PickFrame, ViewError> {
+        self.build_frame(size, Vec2::ZERO)
+    }
+
+    fn build_frame(&self, size: Vec2, pointer: Vec2) -> Result<PickFrame, ViewError> {
         let aspect = size.x / size.y;
         let view = self.view_matrix();
         let matrix = self.projection_matrix(aspect).map_err(ViewError::Camera)? * view;
@@ -666,7 +675,7 @@ impl Camera {
     }
 
     /// Linear view depth of `point` when no surface hides it along the ray through `ndc`.
-    fn unoccluded_depth(
+    pub fn unoccluded_depth(
         &self,
         scene: &ViewScene,
         frame: &PickFrame,
@@ -726,7 +735,7 @@ impl Camera {
     }
 }
 
-struct PickFrame {
+pub struct PickFrame {
     size: Vec2,
     pointer: Vec2,
     aspect: f32,
@@ -890,7 +899,7 @@ fn instance_path(instance: &ViewInstance) -> Result<Vec<NativeId>, ViewError> {
     Ok(path)
 }
 
-pub(crate) fn face_center_work(eligible: usize, triangles: usize) -> Result<(), ViewError> {
+pub fn face_center_work(eligible: usize, triangles: usize) -> Result<(), ViewError> {
     match eligible.checked_mul(triangles) {
         Some(checks) if checks <= MAX_FACE_CENTER_INTERSECTIONS => Ok(()),
         _ => Err(ViewError::ResourceLimit),

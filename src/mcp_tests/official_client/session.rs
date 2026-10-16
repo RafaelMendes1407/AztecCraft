@@ -96,6 +96,7 @@ async fn legacy_sdk_cancellation_and_eof_skip_hidden_queued_edits() {
         "edit_node",
         "extrude_face",
         "set_grid_visibility",
+        "set_shading_mode",
         "set_selection_mode",
         "select_face",
     ] {
@@ -120,6 +121,8 @@ async fn legacy_sdk_cancellation_and_eof_skip_hidden_queued_edits() {
         );
         let args = if tool == "set_grid_visibility" {
             json!({"scene_token":editor.scene_token.to_string(),"visible":false})
+        } else if tool == "set_shading_mode" {
+            json!({"scene_token":editor.scene_token.to_string(),"mode":"wireframe"})
         } else if tool == "edit_node" {
             json!({"scene_token":editor.scene_token.to_string(),"node_id":editor.selected.unwrap().to_decimal(),"translation":[3,null,null]})
         } else if tool == "extrude_face" {
@@ -155,6 +158,10 @@ async fn legacy_sdk_cancellation_and_eof_skip_hidden_queued_edits() {
         assert_eq!(editor.history.scene(), &before);
         assert!(editor.grid_visible);
         assert_eq!(
+            editor.shading,
+            crate::editor_operations::ShadingMode::default()
+        );
+        assert_eq!(
             (
                 editor.selection_mode,
                 editor.selected,
@@ -181,6 +188,10 @@ async fn legacy_sdk_cancellation_and_eof_skip_hidden_queued_edits() {
         assert_eq!(editor.history.scene(), &before);
         assert!(editor.grid_visible);
         assert_eq!(
+            editor.shading,
+            crate::editor_operations::ShadingMode::default()
+        );
+        assert_eq!(
             (
                 editor.selection_mode,
                 editor.selected,
@@ -197,11 +208,18 @@ async fn legacy_sdk_cancellation_and_eof_skip_hidden_queued_edits() {
 
 #[tokio::test]
 async fn ui_deadline_drops_receiver_before_paused_editor_can_apply_request() {
-    for tool in ["create_primitive", "extrude_face", "set_grid_visibility"] {
+    for tool in [
+        "create_primitive",
+        "extrude_face",
+        "set_grid_visibility",
+        "set_shading_mode",
+    ] {
         let context = egui::Context::default();
         let (mut editor, client, server) = start(&context).await;
         let args = if tool == "set_grid_visibility" {
             json!({"scene_token":editor.scene_token.to_string(),"visible":false})
+        } else if tool == "set_shading_mode" {
+            json!({"scene_token":editor.scene_token.to_string(),"mode":"wireframe"})
         } else if tool == "extrude_face" {
             editor.create(Primitive::Cube);
             let id = editor.selected.unwrap();
@@ -225,6 +243,10 @@ async fn ui_deadline_drops_receiver_before_paused_editor_can_apply_request() {
         frame(&mut editor, &context, vec![]);
         assert_eq!(editor.history.scene(), &before);
         assert!(editor.grid_visible);
+        assert_eq!(
+            editor.shading,
+            crate::editor_operations::ShadingMode::default()
+        );
         if tool == "create_primitive" {
             assert!(editor.history.scene().nodes().is_empty());
         }

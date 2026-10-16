@@ -208,9 +208,11 @@ Inspection reports authoritative `shading` even without a GPU. The setting start
 `smooth_shade_all`, survives New/Open and belongs to this viewport's session. It
 does not edit NativeScene, create an undo entry, mark the document dirty or change
 its token. It shares the Grid guards: stale token, differing draft, text focus,
-modal, closing and an active Move refuse. Wireframe skips only the surface fill:
-picking and face-center selection are unchanged, so Maya's edge/marquee Wireframe
-picking is not reproduced. Wireframe on Shaded, Use Default Material, textured
+modal, closing and an active Move refuse. Wireframe skips the surface fill:
+triangle picking and the face-center occlusion filter are unchanged, and Face-mode
+center markers are drawn only where that filter accepts them (no surface depth
+exists to hide the rest). Maya's edge/marquee Wireframe picking is not
+reproduced. Selected-face fill is not drawn in Wireframe; only the orange edges show. Wireframe on Shaded, Use Default Material, textured
 shading and lights are unsupported and have no mode value. Native hotkeys 4 and 5
 (provisional source) select the modes; 6 and 7 only set a status message. This scope
 does not establish Maya shading or lighting parity.

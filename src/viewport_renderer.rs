@@ -11,7 +11,7 @@ use eframe::{
     egui_wgpu::{self, CallbackResources, CallbackTrait},
     wgpu,
 };
-use glam::{Mat4, Vec3, Vec4};
+use glam::{Mat4, Vec2, Vec3, Vec4};
 use std::{fmt, ops::Range, sync::Arc};
 
 /// Selection tint, averaged with a face's base colour. On the grey base fill (83) the result is
@@ -449,6 +449,28 @@ impl Submission {
         submission.surfaces = 0..surface_end;
         submission.lines = surface_end..submission.vertex_count();
         let center_start = submission.vertex_count();
+        if shading == ShadingMode::Wireframe {
+            // No surface depth exists, so draw only the centers the CPU picker can reach.
+            let mut eligible = 0_usize;
+            let mut triangles = 0_usize;
+            for instance in scene.instances() {
+                for face in instance.faces() {
+                    triangles = triangles
+                        .checked_add(face.triangles().count())
+                        .ok_or(RenderError::ResourceLimit)?;
+                }
+                if selection.centers(instance) {
+                    eligible = eligible
+                        .checked_add(instance.faces().len())
+                        .ok_or(RenderError::ResourceLimit)?;
+                }
+            }
+            azteccraft::viewport::face_center_work(eligible, triangles)
+                .map_err(|_| RenderError::ResourceLimit)?;
+        }
+        let frame = camera
+            .occlusion_frame(Vec2::new(physical_size[0] as f32, physical_size[1] as f32))
+            .map_err(|_| RenderError::NonFiniteClip)?;
         for instance in scene
             .instances()
             .iter()
@@ -467,6 +489,20 @@ impl Submission {
                     || clip.z > clip.w
                     || clip.x.abs() > clip.w
                     || clip.y.abs() > clip.w
+                {
+                    continue;
+                }
+                if shading == ShadingMode::Wireframe
+                    && camera
+                        .unoccluded_depth(
+                            scene,
+                            &frame,
+                            center,
+                            clip.truncate() / clip.w,
+                            azteccraft::viewport::FACE_CENTER_DEPTH_TOLERANCE,
+                        )
+                        .map_err(|_| RenderError::NonFiniteClip)?
+                        .is_none()
                 {
                     continue;
                 }

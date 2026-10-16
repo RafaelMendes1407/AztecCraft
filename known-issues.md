@@ -393,7 +393,9 @@ from behind; Maya's two-sided default is unverified.
 ## Wireframe shading keeps triangle picking
 
 Wireframe skips the surface fill but picking stays the CPU triangle ray test and face-center
-filter, so a click inside a face still selects it. Maya's Wireframe picks by edge or marquee.
+filter, so a click inside a face still selects it. Face-mode center markers are drawn only for
+centers that filter accepts. The selected-face fill disappears in Wireframe, leaving only the
+orange edges (current behaviour, not changed). Maya's Wireframe picks by edge or marquee.
 Edges are always drawn in Smooth Shade All (Maya's default is off). The 4 and 5 hotkeys and the
 Shading menu contents come from 2025 pages and are provisional for 2026.
 

@@ -2178,3 +2178,54 @@ fn cpu_picking_and_face_centre_occlusion_are_independent_of_shading_mode() {
         assert_eq!(centre.map(|face| face.face_index), Some(near.0));
     }
 }
+
+#[test]
+fn wireframe_emits_only_face_centres_the_cpu_occlusion_filter_accepts() {
+    let view = ViewScene::from_native(&cube(), VIEW_BUDGET).unwrap();
+    let camera = camera(0.01);
+    let instance = &view.instances()[0];
+    let active = (
+        instance.transform(),
+        &instance.path()[..instance.path().len() - 1],
+    );
+    let build = |shading| {
+        Submission::new(
+            &view,
+            &camera,
+            [SIZE; 2],
+            SelectionFeedback::Face {
+                active: Some(active),
+                selected: None,
+            },
+            false,
+            shading,
+            FORMAT,
+            u64::MAX,
+        )
+        .unwrap()
+    };
+    let visible = instance
+        .faces()
+        .iter()
+        .filter(|face| {
+            let centre = face.center(instance.world_vertices()).unwrap();
+            let ndc = camera.project(centre, 1.0).unwrap().unwrap();
+            !camera
+                .unoccluded_depth(
+                    &view,
+                    &camera.occlusion_frame(Vec2::splat(SIZE as f32)).unwrap(),
+                    centre,
+                    ndc,
+                    azteccraft::viewport::FACE_CENTER_DEPTH_TOLERANCE,
+                )
+                .unwrap()
+                .is_none()
+        })
+        .count();
+    assert!((1..6).contains(&visible));
+    let smooth = build(ShadingMode::SmoothShadeAll);
+    let wire = build(ShadingMode::Wireframe);
+    // Smooth Shade All leaves occlusion to the GPU depth test, so every in-frustum centre is emitted.
+    assert_eq!(smooth.centers.len(), 6 * 6);
+    assert_eq!(wire.centers.len(), visible * 6);
+}
