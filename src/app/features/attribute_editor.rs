@@ -15,7 +15,10 @@ impl Editor {
         self.direct_shapes(transform).position(|id| id == shape)
     }
 
-    fn direct_shapes(&self, transform: NativeId) -> impl Iterator<Item = NativeId> + '_ {
+    pub(in crate::app) fn direct_shapes(
+        &self,
+        transform: NativeId,
+    ) -> impl Iterator<Item = NativeId> + '_ {
         let scene = self.history.scene();
         scene
             .dag_edges()
@@ -124,7 +127,7 @@ impl Editor {
 }
 
 /// Most shape tabs drawn; a scene can parent an unbounded number of shapes to one transform.
-const MAX_SHAPE_TABS: usize = 16;
+pub(in crate::app) const MAX_SHAPE_TABS: usize = 16;
 
 /// Ctrl+A target: Channel Box and Attribute Editor swap, and a hidden dock opens the Attribute
 /// Editor. The result goes through `SetSidebarPanelVisible`, so the transition table decides.

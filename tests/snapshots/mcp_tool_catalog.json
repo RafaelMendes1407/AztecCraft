@@ -874,7 +874,7 @@
   },
   {
     "name": "select_attribute_editor_tab",
-    "description": "Select the Attribute Editor tab for the selected node: transform, a direct shape, or the material of a direct shape. Session-only and idempotent; does not edit the scene. Refused unless attribute_editor is the active sidebar panel or when the tab does not resolve for the current selection",
+    "description": "Select the Attribute Editor tab for the selected node: transform, a direct shape, or the material of a direct shape; only the first 16 direct shapes have tabs. Session-only and idempotent; does not edit the scene. Refused unless attribute_editor is the active sidebar panel when the tab does not resolve for the current selection, or for a shape beyond the 16th",
     "inputSchema": {
       "$defs": {
         "TabInput": {

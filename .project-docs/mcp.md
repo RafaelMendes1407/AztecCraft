@@ -226,7 +226,7 @@ this is not Maya dock or tab parity).
 unknown kinds, missing or extra fields and non-decimal ids are `invalid_params`. A tab
 that does not resolve (a node other than the selected one, a shape that is not a direct shape
 of the selected transform, a material without a supported shader) or a call while the
-Attribute Editor is not the active panel is `invalid_input` with no change. The tab is
+Attribute Editor is not the active panel is `invalid_input` with no change. Only the first 16 direct shapes of a transform have shape and material tabs; a shape or material tab for a later shape is refused as `invalid_input` naming the cap, for native and remote callers alike. The tab is
 view state only: it never enters history, resets to the transform tab on selection change, scene
 replacement, node deletion, shape removal or when it stops resolving, and is reported as
 `inspect_scene` `attribute_editor_tab` (`{kind, id}`, null while the Attribute Editor is hidden

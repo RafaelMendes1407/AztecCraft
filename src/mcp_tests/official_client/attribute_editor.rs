@@ -136,11 +136,15 @@ async fn sdk_transition_table_every_cell() {
 async fn sdk_tab_selection_resolves_reports_and_refuses() {
     let context = egui::Context::default();
     let (mut editor, client, server) = start(&context).await;
+    // Two creations so no id in this test is the trivial "1".
     editor.create(Primitive::Cube);
+    editor.create(Primitive::Plane);
     frame(&mut editor, &context, vec![]);
     let token = editor.scene_token.to_string();
     let node = editor.selected.unwrap().to_decimal();
-    let shape = editor.history.scene().shapes()[0].id().to_decimal();
+    assert_ne!(node, "1");
+    let shape = editor.history.scene().shapes()[1].id().to_decimal();
+    assert_ne!(shape, "1");
     let transform_tab = json!({"kind": "transform", "id": node});
     let shape_tab = json!({"kind": "shape", "id": shape});
 
@@ -374,6 +378,93 @@ async fn sdk_attribute_editor_operations_are_busy_during_an_active_move() {
     assert_eq!(editor.sidebar_dock, Some(AE));
     assert_eq!(editor.attribute_editor_tab, None);
     assert_eq!(editor.history.scene(), &preview);
+    client.cancel().await.unwrap();
+    drop(editor);
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn sdk_shape_tab_beyond_the_cap_is_refused_as_invalid_input() {
+    use crate::app::features::attribute_editor::MAX_SHAPE_TABS;
+    let mut children = binary_fixture::group(
+        b"XFRM",
+        &[
+            binary_fixture::creation(b"object", None),
+            binary_fixture::triple(b"t", [0.0, 0.0, 0.0]),
+        ]
+        .concat(),
+        4,
+    );
+    for index in 0..MAX_SHAPE_TABS + 2 {
+        children.extend(binary_fixture::group(
+            b"DMSH",
+            &[
+                binary_fixture::creation(format!("shape{index}").as_bytes(), Some(b"object")),
+                binary_fixture::chunk(
+                    b"MESH",
+                    &binary_fixture::mesh_payload(&[0, 1, 0x6000_0002]),
+                    8,
+                ),
+            ]
+            .concat(),
+            4,
+        ));
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("many.mb");
+    std::fs::write(
+        &path,
+        binary_fixture::scene_with_units(&children, b"cm", b"deg"),
+    )
+    .unwrap();
+    let context = egui::Context::default();
+    let (mut editor, client, server) = start(&context).await;
+    let before_open = editor.scene_token.to_string();
+    call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "open_scene",
+        json!({"scene_token": before_open, "path": path}),
+    )
+    .await;
+    let token = editor.scene_token.to_string();
+    let node = editor.history.scene().nodes()[0].id();
+    editor.select(Some(node));
+    set_panel(&mut editor, &context, &client, AE, true).await;
+    let transform = editor.history.scene().nodes()[0].transform_id();
+    let shapes: Vec<_> = editor.direct_shapes(transform).collect();
+    assert_eq!(shapes.len(), MAX_SHAPE_TABS + 2);
+    let last_allowed = shapes[MAX_SHAPE_TABS - 1].to_decimal();
+    let ok = select_tab(
+        &mut editor,
+        &context,
+        &client,
+        &token,
+        json!({"kind": "shape", "id": last_allowed}),
+    )
+    .await;
+    assert_eq!(ok["outcome"], "changed");
+    let state = inspect(&mut editor, &context, &client).await;
+    for kind in ["shape", "material"] {
+        let refused = select_tab(
+            &mut editor,
+            &context,
+            &client,
+            &token,
+            json!({"kind": kind, "id": shapes[MAX_SHAPE_TABS].to_decimal()}),
+        )
+        .await;
+        assert_eq!(refused["error"]["code"], "invalid_input", "{kind}");
+        assert!(
+            refused["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains(&MAX_SHAPE_TABS.to_string()),
+            "{refused}"
+        );
+        assert_eq!(inspect(&mut editor, &context, &client).await, state);
+    }
     client.cancel().await.unwrap();
     drop(editor);
     server.await.unwrap();
