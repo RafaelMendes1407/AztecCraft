@@ -418,6 +418,10 @@ grid still draw. Hidden, not unfiltered, because unfiltered markers would show u
 the picker rejects. Picking is unaffected apart from its own budget error. A cache or spatial index
 would lift the limit.
 
+## Edited Rotate channel in a radian scene may be 1 ulp off (#128)
+
+Rotate works internally in degrees, so an edited rotate channel in a radian scene may differ from the requested value by about 1 ulp after save. Untouched channels are preserved byte for byte. Inspection echoes the requested value exactly.
+
 ## Rotate and Scale handle limits are provisional
 
 The Rotate ring angle comes from a ray-plane hit. Just above the edge-on limit
