@@ -302,7 +302,7 @@ No reference scene, embedded script or private manifest is distributed.
 
 ```sh
 cargo test --locked --no-default-features --lib document::native_open_tests::genuine_ascii_native_open_and_frame_keeps_retained_source -- --ignored --exact
-cargo test --locked --features mcp-test-client --bin azteccraft app::mcp_editor_tests::official_client::genuine_ascii_sdk_open_inspect_select_frame_uses_actual_editor -- --ignored --exact --test-threads=1
+cargo test --locked --features mcp-test-client --bin azteccraft app::mcp_editor_tests::official_client::ascii::genuine_ascii_sdk_open_inspect_select_frame_uses_actual_editor -- --ignored --exact --test-threads=1
 cargo test --locked --features mcp-test-client --bin azteccraft app::gpu_viewport_tests::headless_gpu_ascii_editor_open_select_frame_reaches_actual_curve_callback -- --ignored --exact --test-threads=1
 ```
 
