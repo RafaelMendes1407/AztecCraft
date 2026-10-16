@@ -16,7 +16,7 @@ pub use curve::{CurveForm, NativeCurveShape};
 pub use mesh::{DirectedEdge, NativeEdge, NativeFace, NativeMesh, Points};
 pub(crate) use move_translation::ChannelBaseline;
 pub use move_translation::{ChannelLeaf, WorldAxis, WorldMoveFrame, WorldMoveUnsupported};
-pub use rotate_frame::{ObjectRotateFrame, RotateAxis, RotateUnsupported};
+pub use rotate_frame::{RotateAxis, RotateFrame, RotateSpace, RotateUnsupported};
 pub use scale_frame::{ObjectScaleFrame, ScaleHandle, ScaleUnsupported};
 use source::{ScalarOrigin, SourceFormat, SourceRetention, TransformField};
 

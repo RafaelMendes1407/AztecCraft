@@ -267,3 +267,12 @@ new nodes are not persisted (Save is unavailable for created scenes, as for the
 cube). Pole triangles cannot be extruded; body quads can. The new node is named
 `pSphere1` with shape `pSphere1Shape`, whereas Maya names the shape `pSphereShape1`.
 The legacy quad-only JSON/OBJ scene refuses spheres with a typed error.
+
+## World-space Rotate and inheritsTransform
+
+`NativeScene` does not model a node's `inheritsTransform` attribute, so world-space
+Rotate assumes every ancestor in the path contributes its transform. A scene that
+turns `inheritsTransform` off would be rotated against the wrong parent frame. The
+importer's handling of that attribute is unverified; object-space Rotate is not
+affected. World-space Rotate also refuses parents that are not a rotation times a
+uniform positive scale (tolerance 1e-9 relative).

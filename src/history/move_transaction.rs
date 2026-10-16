@@ -1,7 +1,7 @@
 use super::{Command, EditOutcome, History};
 use crate::native_scene::{
-    ChannelBaseline, NativeError, NativeId, NativeScene, ObjectRotateFrame, ObjectScaleFrame,
-    RotateAxis, ScaleHandle, TransformTarget, WorldAxis, WorldMoveFrame,
+    ChannelBaseline, NativeError, NativeId, NativeScene, ObjectScaleFrame, RotateAxis, RotateFrame,
+    RotateSpace, ScaleHandle, TransformTarget, WorldAxis, WorldMoveFrame,
 };
 use crate::view_scene::{ViewError, ViewScene};
 use std::{fmt, mem::size_of};
@@ -73,9 +73,16 @@ impl std::error::Error for ManipulationError {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ManipulationKindState {
-    Move { axis: WorldAxis },
-    Rotate { axis: RotateAxis },
-    Scale { handle: ScaleHandle },
+    Move {
+        axis: WorldAxis,
+    },
+    Rotate {
+        axis: RotateAxis,
+        space: RotateSpace,
+    },
+    Scale {
+        handle: ScaleHandle,
+    },
 }
 
 /// Read-only view of the active manipulation; `parameter` is in the kind's internal unit
@@ -110,7 +117,7 @@ enum ManipulationKind {
     },
     Rotate {
         axis: RotateAxis,
-        frame: ObjectRotateFrame,
+        frame: RotateFrame,
         baseline: ChannelBaseline,
     },
     Scale {
@@ -131,7 +138,10 @@ impl ManipulationKind {
     fn state(&self) -> ManipulationKindState {
         match self {
             Self::Move { axis, .. } => ManipulationKindState::Move { axis: *axis },
-            Self::Rotate { axis, .. } => ManipulationKindState::Rotate { axis: *axis },
+            Self::Rotate { axis, frame, .. } => ManipulationKindState::Rotate {
+                axis: *axis,
+                space: frame.space(),
+            },
             Self::Scale { handle, .. } => ManipulationKindState::Scale { handle: *handle },
         }
     }
@@ -227,17 +237,18 @@ impl History {
         })
     }
 
-    /// Begins an object-space rotation; `update_move` then takes the angle in degrees.
+    /// Begins a rotation in object or world space; `update_move` then takes the angle in degrees.
     pub fn begin_rotate(
         &mut self,
         target: &TransformTarget,
         axis: RotateAxis,
+        space: RotateSpace,
         scene_token: Uuid,
         provenance: ManipulationProvenance,
         byte_budget: usize,
     ) -> Result<ManipulationId, ManipulationError> {
         self.begin_manipulation(target, scene_token, provenance, byte_budget, |scene| {
-            let (frame, baseline) = scene.begin_object_rotation(target, axis)?;
+            let (frame, baseline) = scene.begin_rotation(target, axis, space)?;
             Ok(ManipulationKind::Rotate {
                 axis,
                 frame,
