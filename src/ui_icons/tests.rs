@@ -13,9 +13,20 @@ fn index(icon: UiIcon) -> usize {
         UiIcon::Rotate => 4,
         UiIcon::Scale => 5,
         UiIcon::LastUsed => 6,
+        UiIcon::SelectHierarchy => 7,
+        UiIcon::SelectObject => 8,
+        UiIcon::SelectComponent => 9,
+        UiIcon::SidebarModelingToolkit => 10,
+        UiIcon::SidebarHumanIk => 11,
+        UiIcon::SidebarAttributeEditor => 12,
+        UiIcon::SidebarToolSettings => 13,
+        UiIcon::SidebarChannelBox => 14,
+        UiIcon::FileNew => 15,
+        UiIcon::FileOpen => 16,
+        UiIcon::FileSave => 17,
     }
 }
-const ICON_COUNT: usize = 7;
+const ICON_COUNT: usize = 18;
 
 struct Raster {
     w: usize,
@@ -239,6 +250,21 @@ fn alpha_grid(icon: UiIcon, size: f32, ppp: f32) -> (Vec<f32>, usize) {
     alpha_grid_at(icon, 1.0, size, ppp)
 }
 
+/// One alpha grid per shape, each rasterized alone. Regions are tiled with gaps that
+/// can legitimately dip below full alpha at small sizes, so seam and uniformity checks
+/// look inside each region. Cross-region overlap is covered at 32px@2x by
+/// `shapes_do_not_overlap` and at every size and scale by `regions_never_sum_above_full_coverage`.
+fn region_grids(icon: UiIcon, opacity: f32, size: f32, ppp: f32) -> Vec<(Vec<f32>, usize)> {
+    let rect = Rect::from_min_size(Pos2::new(MARGIN, MARGIN), egui::vec2(size, size));
+    dimmed(shapes(icon, rect), opacity)
+        .into_iter()
+        .map(|shape| {
+            let r = rasterize(vec![shape], size + 2.0 * MARGIN, ppp);
+            (r.px.iter().map(|p| p[3] / 255.0).collect(), r.w)
+        })
+        .collect()
+}
+
 fn alpha_grid_at(icon: UiIcon, opacity: f32, size: f32, ppp: f32) -> (Vec<f32>, usize) {
     let rect = Rect::from_min_size(Pos2::new(MARGIN, MARGIN), egui::vec2(size, size));
     let r = rasterize(
@@ -249,30 +275,37 @@ fn alpha_grid_at(icon: UiIcon, opacity: f32, size: f32, ppp: f32) -> (Vec<f32>, 
     (r.px.iter().map(|p| p[3] / 255.0).collect(), r.w)
 }
 
+/// Floor for eroded interior pixels per icon at 32px@2x. The sparsest glyphs measure
+/// 315 (LastUsed) and 330 (SelectComponent); 200 leaves slack for geometry tweaks but
+/// fails if a glyph collapses to hairlines.
+const MIN_ERODED_INTERIOR_PX: usize = 200;
+
 #[test]
 fn interior_is_solid_without_seams() {
     for &icon in ALL {
         for size in SIZES {
             for ppp in SCALES {
-                let (a, w) = alpha_grid(icon, size, ppp);
                 let mut checked = 0;
-                for y in 1..w - 1 {
-                    for x in 1..w - 1 {
-                        let eroded =
-                            (y - 1..=y + 1).all(|j| (x - 1..=x + 1).all(|i| a[j * w + i] >= 0.5));
-                        checked += usize::from(eroded);
-                        assert!(
-                            !eroded || a[y * w + x] >= 0.98,
-                            "{icon:?} {size}px@{ppp}x seam at ({x},{y}): alpha {}",
-                            a[y * w + x]
-                        );
+                for (a, w) in region_grids(icon, 1.0, size, ppp) {
+                    for y in 1..w - 1 {
+                        for x in 1..w - 1 {
+                            let eroded = (y - 1..=y + 1)
+                                .all(|j| (x - 1..=x + 1).all(|i| a[j * w + i] >= 0.5));
+                            checked += usize::from(eroded);
+                            assert!(
+                                !eroded || a[y * w + x] >= 0.98,
+                                "{icon:?} {size}px@{ppp}x seam at ({x},{y}): alpha {}",
+                                a[y * w + x]
+                            );
+                        }
                     }
                 }
-                // Thin strokes have no eroded interior at small sizes; the
-                // largest configuration must, so the check is never vacuous.
+                // Thin strokes have no eroded interior at small sizes; the largest
+                // configuration must have MIN_ERODED_INTERIOR_PX for every icon, so
+                // the check is never vacuous.
                 assert!(
-                    size < 32.0 || ppp < 2.0 || checked > 0,
-                    "{icon:?} no interior"
+                    size < 32.0 || ppp < 2.0 || checked >= MIN_ERODED_INTERIOR_PX,
+                    "{icon:?} only {checked} interior pixels"
                 );
             }
         }
@@ -289,6 +322,17 @@ fn golden(icon: UiIcon) -> [&'static str; 12] {
         UiIcon::Rotate => GOLDEN_ROTATE,
         UiIcon::Scale => GOLDEN_SCALE,
         UiIcon::LastUsed => GOLDEN_LAST_USED,
+        UiIcon::SelectHierarchy => GOLDEN_SELECT_HIERARCHY,
+        UiIcon::SelectObject => GOLDEN_SELECT_OBJECT,
+        UiIcon::SelectComponent => GOLDEN_SELECT_COMPONENT,
+        UiIcon::SidebarModelingToolkit => GOLDEN_SIDEBAR_MODELING_TOOLKIT,
+        UiIcon::SidebarHumanIk => GOLDEN_SIDEBAR_HUMAN_IK,
+        UiIcon::SidebarAttributeEditor => GOLDEN_SIDEBAR_ATTRIBUTE_EDITOR,
+        UiIcon::SidebarToolSettings => GOLDEN_SIDEBAR_TOOL_SETTINGS,
+        UiIcon::SidebarChannelBox => GOLDEN_SIDEBAR_CHANNEL_BOX,
+        UiIcon::FileNew => GOLDEN_FILE_NEW,
+        UiIcon::FileOpen => GOLDEN_FILE_OPEN,
+        UiIcon::FileSave => GOLDEN_FILE_SAVE,
     }
 }
 
@@ -316,9 +360,9 @@ const GOLDEN_LASSO: [&str; 12] = [
     "..#......##.",
     "..#.....##..",
     "..#..###....",
-    ".##.........",
-    ".##.........",
-    "............",
+    ".#..........",
+    "###.........",
+    ".#..........",
 ];
 const GOLDEN_PAINT_SELECT: [&str; 12] = [
     "............",
@@ -388,6 +432,165 @@ const GOLDEN_LAST_USED: [&str; 12] = [
     ".#......#...",
     ".#......#...",
     ".#.....#....",
+    "............",
+];
+
+const GOLDEN_SELECT_HIERARCHY: [&str; 12] = [
+    "............",
+    ".....##.....",
+    ".....##.....",
+    "............",
+    ".....##.....",
+    "............",
+    "..########..",
+    "..#......#..",
+    "..#......#..",
+    ".###....###.",
+    ".###....###.",
+    "..#......#..",
+];
+
+const GOLDEN_SELECT_OBJECT: [&str; 12] = [
+    "............",
+    "....####....",
+    "...######...",
+    "..########..",
+    ".##########.",
+    ".##########.",
+    ".##########.",
+    ".##########.",
+    ".##########.",
+    "...######...",
+    "....####....",
+    "............",
+];
+
+const GOLDEN_SELECT_COMPONENT: [&str; 12] = [
+    ".....##.....",
+    ".....##.....",
+    "...#....#...",
+    ".#........#.",
+    "...#....#...",
+    ".#...##...#.",
+    ".#...##...#.",
+    "............",
+    ".#........#.",
+    "...#....#...",
+    ".....##.....",
+    ".....##.....",
+];
+
+const GOLDEN_SIDEBAR_MODELING_TOOLKIT: [&str; 12] = [
+    "............",
+    ".....##.....",
+    "....####....",
+    "....####....",
+    ".....##.....",
+    "............",
+    ".#.########.",
+    ".#...#.####.",
+    "............",
+    ".#.########.",
+    "............",
+    "............",
+];
+const GOLDEN_SIDEBAR_HUMAN_IK: [&str; 12] = [
+    "............",
+    ".....##.....",
+    ".....##.....",
+    ".....##.....",
+    "..########..",
+    ".....##.....",
+    ".....##.....",
+    "............",
+    "....####....",
+    "....####....",
+    "....####....",
+    "............",
+];
+const GOLDEN_SIDEBAR_ATTRIBUTE_EDITOR: [&str; 12] = [
+    "............",
+    "............",
+    ".###.######.",
+    ".....######.",
+    "............",
+    ".###.####...",
+    ".###.####...",
+    "............",
+    ".....#####..",
+    ".###.#####..",
+    "............",
+    "............",
+];
+const GOLDEN_SIDEBAR_TOOL_SETTINGS: [&str; 12] = [
+    "............",
+    "...#........",
+    ".##########.",
+    "...#........",
+    "............",
+    ".##########.",
+    ".##########.",
+    "............",
+    "....##......",
+    ".##########.",
+    "....##......",
+    "............",
+];
+const GOLDEN_SIDEBAR_CHANNEL_BOX: [&str; 12] = [
+    "............",
+    ".##########.",
+    ".##########.",
+    ".##########.",
+    ".##########.",
+    ".##########.",
+    ".##########.",
+    ".##########.",
+    "............",
+    ".##########.",
+    ".##########.",
+    "............",
+];
+
+const GOLDEN_FILE_NEW: [&str; 12] = [
+    "............",
+    ".#######....",
+    ".########...",
+    ".#########..",
+    ".##########.",
+    ".#########..",
+    ".####...#...",
+    ".####...#...",
+    ".####.#####.",
+    ".####.####..",
+    ".####..##...",
+    "............",
+];
+const GOLDEN_FILE_OPEN: [&str; 12] = [
+    "............",
+    "..###.......",
+    ".####.......",
+    ".####.......",
+    ".##########.",
+    ".##########.",
+    "..#########.",
+    "...########.",
+    "..########..",
+    "..########..",
+    "..#######...",
+    "............",
+];
+const GOLDEN_FILE_SAVE: [&str; 12] = [
+    "............",
+    ".....##.....",
+    ".....##.....",
+    ".....##.....",
+    ".....##.....",
+    "....####....",
+    "..#..##..#..",
+    ".##..##..##.",
+    ".##......##.",
+    ".##########.",
+    "..########..",
     "............",
 ];
 
@@ -463,33 +666,36 @@ fn uniform_interior_under_disabled_opacity() {
     for &icon in ALL {
         for size in SIZES {
             for ppp in SCALES {
-                let (a, w) = alpha_grid_at(icon, disabled_alpha(), size, ppp);
-                let mut interior = Vec::new();
-                for y in 1..w - 1 {
-                    for x in 1..w - 1 {
-                        let solid = (y - 1..=y + 1).all(|j| {
-                            (x - 1..=x + 1).all(|i| a[j * w + i] >= 0.5 * disabled_alpha())
-                        });
-                        if solid {
-                            interior.push((x, y, a[y * w + x]));
+                let mut any_interior = false;
+                for (a, w) in region_grids(icon, disabled_alpha(), size, ppp) {
+                    let mut interior = Vec::new();
+                    for y in 1..w - 1 {
+                        for x in 1..w - 1 {
+                            let solid = (y - 1..=y + 1).all(|j| {
+                                (x - 1..=x + 1).all(|i| a[j * w + i] >= 0.5 * disabled_alpha())
+                            });
+                            if solid {
+                                interior.push((x, y, a[y * w + x]));
+                            }
                         }
                     }
+                    let mut sorted: Vec<f32> = interior.iter().map(|p| p.2).collect();
+                    sorted.sort_by(f32::total_cmp);
+                    any_interior |= !sorted.is_empty();
+                    let Some(&median) = sorted.get(sorted.len() / 2) else {
+                        continue;
+                    };
+                    for (x, y, v) in interior {
+                        assert!(
+                            (v - median).abs() <= 0.02,
+                            "{icon:?} {size}px@{ppp}x alpha {v} at ({x},{y}) vs median {median}"
+                        );
+                    }
                 }
-                let mut sorted: Vec<f32> = interior.iter().map(|p| p.2).collect();
-                sorted.sort_by(f32::total_cmp);
                 assert!(
-                    size < 32.0 || ppp < 2.0 || !sorted.is_empty(),
+                    size < 32.0 || ppp < 2.0 || any_interior,
                     "{icon:?} no interior"
                 );
-                let Some(&median) = sorted.get(sorted.len() / 2) else {
-                    continue;
-                };
-                for (x, y, v) in interior {
-                    assert!(
-                        (v - median).abs() <= 0.02,
-                        "{icon:?} {size}px@{ppp}x alpha {v} at ({x},{y}) vs median {median}"
-                    );
-                }
             }
         }
     }
@@ -651,5 +857,77 @@ fn every_shape_contributes_ink() {
         for (k, m) in shape_ink_masks(icon, 0.5).iter().enumerate() {
             assert!(m.iter().any(|&b| b), "{icon:?} shape {k} has no ink");
         }
+    }
+}
+
+/// Per pixel, the summed coverage of all shapes (each rasterized alone) may not exceed 1:
+/// deliberate gaps leave it below 1, an overlap pushes it above at every size and scale.
+#[test]
+fn regions_never_sum_above_full_coverage() {
+    // Calibrated to SIZES, SCALES and integer origins; at 1x with fractional origins the
+    // REGION_GAP feathers overlap (up to ~1.09), so re-measure before widening the grid.
+    const SUM_LIMIT: f32 = 1.02;
+    for &icon in ALL {
+        for size in SIZES {
+            for ppp in SCALES {
+                let grids = region_grids(icon, 1.0, size, ppp);
+                for i in 0..grids[0].0.len() {
+                    let sum: f32 = grids.iter().map(|(a, _)| a[i]).sum();
+                    assert!(
+                        sum <= SUM_LIMIT,
+                        "{icon:?} {size}px@{ppp}x pixel {i} coverage sum {sum}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Smallest empty space, in px, between the ink masks of two shapes: the centre distance of
+/// their nearest pixels minus one pixel. Overlapping or edge-adjacent ink measures 0 or less.
+fn mask_gap(a: &[bool], b: &[bool], w: usize) -> f32 {
+    let points = |m: &[bool]| -> Vec<(f32, f32)> {
+        (0..m.len())
+            .filter(|&i| m[i])
+            .map(|i| ((i % w) as f32, (i / w) as f32))
+            .collect()
+    };
+    let (pa, pb) = (points(a), points(b));
+    let mut best = f32::MAX;
+    for &(ax, ay) in &pa {
+        for &(bx, by) in &pb {
+            best = best.min((ax - bx).hypot(ay - by));
+        }
+    }
+    best - 1.0
+}
+
+/// Smallest gap between any two shapes of `icon` at 32px@2x, with the shape indices.
+fn min_shape_gap(icon: UiIcon) -> (f32, usize, usize) {
+    let masks = shape_ink_masks(icon, OVERLAP_ALPHA);
+    let w = shapes_alpha(vec![]).1;
+    let mut best = (f32::MAX, 0, 0);
+    for i in 0..masks.len() {
+        for j in i + 1..masks.len() {
+            let gap = mask_gap(&masks[i], &masks[j], w);
+            if gap < best.0 {
+                best = (gap, i, j);
+            }
+        }
+    }
+    best
+}
+
+/// Neighbouring shapes need at least this much empty space between their ink masks.
+const MIN_INK_GAP_PX: f32 = 1.0;
+
+#[test]
+fn regions_keep_a_visible_gap() {
+    for &icon in ALL {
+        let (gap, i, j) = min_shape_gap(icon);
+        assert!(
+            gap >= MIN_INK_GAP_PX,
+            "{icon:?} shapes {i} and {j} are only {gap} px apart"
+        );
     }
 }
