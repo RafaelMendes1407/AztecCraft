@@ -503,3 +503,158 @@ fn rotate_pivot_translate_leaves_world_scale_channels_unchanged() {
     );
     assert_eq!(run(&scene), [1.5, 1.0, 1.0]);
 }
+
+struct Spec {
+    t: DVec3,
+    r: [f64; 3],
+    s: DVec3,
+    rp: DVec3,
+    ro: u8,
+    ra: [f64; 3],
+    rpt: DVec3,
+    spt: DVec3,
+}
+
+fn rot(axis: usize, deg: f64, p: DVec3) -> DVec3 {
+    let a = deg.to_radians();
+    match axis {
+        0 => DMat3::from_rotation_x(a) * p,
+        1 => DMat3::from_rotation_y(a) * p,
+        _ => DMat3::from_rotation_z(a) * p,
+    }
+}
+
+// Maya row-vector chain, applied to a point left to right: SP^-1 S SP ST RP^-1 RA R RP RT T (sp = 0).
+fn node_point(sp: &Spec, p: DVec3) -> DVec3 {
+    let mut p = p * sp.s + sp.spt - sp.rp;
+    for axis in 0..3 {
+        p = rot(axis, sp.ra[axis], p);
+    }
+    let order: [usize; 3] = match sp.ro {
+        0 => [0, 1, 2],
+        1 => [1, 2, 0],
+        2 => [2, 0, 1],
+        3 => [0, 2, 1],
+        4 => [1, 0, 2],
+        _ => [2, 1, 0],
+    };
+    for axis in order {
+        p = rot(axis, sp.r[axis], p);
+    }
+    p + sp.rp + sp.rpt + sp.t
+}
+
+fn install(scene: &mut NativeScene, node: NodeId, sp: &Spec) {
+    scene
+        .set_transform(
+            node,
+            NativeTransform {
+                translation: sp.t.to_array(),
+                rotation: sp.r,
+                scale: sp.s.to_array(),
+            },
+        )
+        .unwrap();
+    let entry = scene.nodes.iter_mut().find(|n| n.id == node).unwrap();
+    entry.rotate_pivot = sp.rp.to_array().map(Scalar::new);
+    test_fixtures::set_extras(
+        scene,
+        node,
+        TransformExtras {
+            rotate_order: Some(sp.ro),
+            rotate_axis: Some(sp.ra),
+            rotate_pivot_translate: Some(sp.rpt.to_array()),
+            scale_pivot_translate: Some(sp.spt.to_array()),
+            ..TransformExtras::default()
+        },
+    );
+}
+
+// Scale pivot is zero, so the fixed point is the world image of the origin. Independent of
+// `matrix()`: points go through the Maya row-vector chain one factor at a time.
+#[test]
+fn world_scale_with_rotate_axis_and_non_xyz_order_scales_about_the_fixed_point() {
+    let turns = [[90.0, 0.0, 90.0], [180.0, 90.0, 270.0]];
+    let axes = [[90.0, 0.0, 0.0], [90.0, 90.0, 0.0], [0.0, 90.0, 90.0]];
+    let parent = Spec {
+        t: DVec3::new(5.0, -3.0, 2.0),
+        r: [0.0, 0.0, 90.0],
+        s: DVec3::splat(2.0),
+        rp: DVec3::new(1.0, 2.0, -1.0),
+        ro: 2,
+        ra: [0.0; 3],
+        rpt: DVec3::new(0.5, 0.25, 4.0),
+        spt: DVec3::new(-2.0, 1.0, 0.5),
+    };
+    let mut checked = 0;
+    for ro in 0..6u8 {
+        for r in turns {
+            for ra in axes {
+                let child = Spec {
+                    t: DVec3::new(1.0, 2.0, 3.0),
+                    r,
+                    s: DVec3::new(2.0, 3.0, 4.0),
+                    rp: DVec3::new(1.0, -2.0, 3.0),
+                    ro,
+                    ra,
+                    rpt: DVec3::new(0.7, -0.3, 0.9),
+                    spt: DVec3::new(0.5, -1.0, 2.0),
+                };
+                let (mut scene, root, node, _) = test_fixtures::grouped_shape();
+                install(&mut scene, root, &parent);
+                install(&mut scene, node, &child);
+                let selected = target(&scene, node);
+                let world_old = |p: DVec3| node_point(&parent, node_point(&child, p));
+                let fixed = world_old(DVec3::ZERO);
+                let frame = scene.manipulator_frame(&selected).unwrap();
+                assert!((frame.scale_origin_cm - fixed).length() < 1e-9, "ro={ro}");
+                for (handle, axis) in [
+                    (ScaleHandle::X, DVec3::X),
+                    (ScaleHandle::Y, DVec3::Y),
+                    (ScaleHandle::Z, DVec3::Z),
+                ] {
+                    let Ok((scale_frame, _)) =
+                        scene.begin_scale_frame(&selected, handle, ScaleSpace::World)
+                    else {
+                        continue;
+                    };
+                    let factor = 1.7;
+                    let scaled = scale_frame.scale(handle, factor).unwrap();
+                    let moved = Spec {
+                        s: DVec3::from_array(scaled),
+                        ..child_clone(&child)
+                    };
+                    let world_new = |p: DVec3| node_point(&parent, node_point(&moved, p));
+                    for p in [
+                        DVec3::new(1.0, 0.0, 0.0),
+                        DVec3::new(0.3, -2.0, 1.1),
+                        DVec3::new(-1.0, 1.0, 5.0),
+                    ] {
+                        let old = world_old(p) - fixed;
+                        let want = old + axis * axis.dot(old) * (factor - 1.0) + fixed;
+                        let got = world_new(p);
+                        assert!(
+                            (got - want).length() < 1e-8,
+                            "ro={ro} r={r:?} ra={ra:?} {handle:?}: {got:?} != {want:?}"
+                        );
+                    }
+                    checked += 1;
+                }
+            }
+        }
+    }
+    assert!(checked >= 20, "{checked} cases reached an aligned edit");
+}
+
+fn child_clone(c: &Spec) -> Spec {
+    Spec {
+        t: c.t,
+        r: c.r,
+        s: c.s,
+        rp: c.rp,
+        ro: c.ro,
+        ra: c.ra,
+        rpt: c.rpt,
+        spt: c.spt,
+    }
+}

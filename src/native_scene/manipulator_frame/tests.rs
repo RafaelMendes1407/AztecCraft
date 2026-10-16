@@ -410,3 +410,23 @@ fn axes_that_overflow_are_refused() {
         ))
     ));
 }
+
+#[test]
+fn scale_origin_includes_a_nonzero_scale_pivot() {
+    let (mut scene, node) = test_fixtures::cube();
+    scene
+        .set_transform(
+            node,
+            NativeTransform {
+                translation: [1.0, 0.0, 0.0],
+                scale: [3.0, 3.0, 3.0],
+                ..NativeTransform::default()
+            },
+        )
+        .unwrap();
+    scene.nodes[0].scale_pivot[0] = Scalar::new(2.0);
+    let frame = scene.manipulator_frame(&target_of(&scene, node)).unwrap();
+    // Scaling about the pivot leaves its image fixed: T + sp.
+    near(frame.scale_origin_cm, DVec3::new(3.0, 0.0, 0.0));
+    near(frame.origin_cm, DVec3::new(1.0, 0.0, 0.0));
+}

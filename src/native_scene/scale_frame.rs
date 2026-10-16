@@ -180,8 +180,8 @@ impl NativeScene {
     }
 
     // For each world axis, the local scale channel it maps to through the parent chain and the
-    // node's R(ro) * RA frame. Scaling along a world axis edits a single channel only when that axis is a
-    // local axis of the node's world orientation; otherwise the result would shear.
+    // node's R(ro) * RA frame. Scaling along a world axis edits a single channel only when that
+    // axis is a local axis of the node's world orientation; otherwise the result would shear.
     fn world_scale_components(
         &self,
         target: &TransformTarget,
