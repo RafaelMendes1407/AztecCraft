@@ -20,9 +20,9 @@ use eframe::egui::{self, Color32, Key, RichText};
 use glam::Vec3;
 use uuid::Uuid;
 
-#[path = "file_ui.rs"]
+#[path = "../file_ui.rs"]
 mod files;
-#[path = "move_ui.rs"]
+#[path = "../move_ui.rs"]
 mod manipulation;
 
 struct MaterialDraft {
@@ -5032,21 +5032,21 @@ mod tests {
 }
 
 #[cfg(test)]
-#[path = "snapshots.rs"]
+#[path = "../snapshots.rs"]
 mod snapshots;
 
 #[cfg(test)]
-#[path = "entry_point_tests.rs"]
+#[path = "../entry_point_tests.rs"]
 mod entry_point_tests;
 
 #[cfg(test)]
-#[path = "guard_matrix_tests.rs"]
+#[path = "../guard_matrix_tests.rs"]
 mod guard_matrix_tests;
 
 #[cfg(all(test, feature = "mcp"))]
-#[path = "mcp_editor_tests.rs"]
+#[path = "../mcp_tests/mod.rs"]
 mod mcp_editor_tests;
 
 #[cfg(test)]
-#[path = "gpu_viewport_tests.rs"]
+#[path = "../gpu_viewport_tests.rs"]
 mod gpu_viewport_tests;

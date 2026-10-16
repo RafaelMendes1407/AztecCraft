@@ -53,7 +53,7 @@ fn is_test_file(relative: &Path) -> bool {
         || name.ends_with("_tests.rs")
         || relative
             .components()
-            .any(|part| part.as_os_str() == "tests")
+            .any(|part| part.as_os_str() == "tests" || part.as_os_str() == "mcp_tests")
 }
 
 fn collect(directory: &Path, root: &Path, library: &BTreeSet<String>, out: &mut Vec<PathBuf>) {
