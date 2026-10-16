@@ -1,5 +1,5 @@
 use super::*;
-use crate::editor_operations::SidebarPanel;
+use crate::editor_operations::{SelectionMode, SidebarPanel};
 use azteccraft::native_scene::NativeError;
 use eframe::egui::{self, Event, Key, Modifiers, PointerButton, Pos2, Rect, Shape};
 
@@ -1324,10 +1324,10 @@ fn vertex_and_edge_modes_refuse_move_everywhere_face_does() {
             }),
             Err(OperationError::InvalidInput(message)) if message == refusal
         ));
-        let inspected = editor.inspect_move().unwrap();
-        assert!(!inspected.numeric_available);
+        let inspected = editor.inspect_manipulation().unwrap();
+        assert!(!inspected.kinds[0].available);
         assert_eq!(
-            inspected.numeric_unavailable_reason.as_deref(),
+            inspected.kinds[0].unavailable_reason.as_deref(),
             Some(refusal.as_str())
         );
         assert!(inspected.viewport.is_none());

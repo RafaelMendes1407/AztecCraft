@@ -646,18 +646,24 @@ fn unsupported_spaces_are_listed_disabled_with_the_reason() {
 }
 
 #[test]
-fn face_selection_refuses_rotate_and_scale_handles() {
-    for (tool_key, name) in [(Key::E, "Rotate"), (Key::R, "Scale")] {
-        let (mut editor, context, view) = setup(tool_key, 1.0);
-        editor.native_operation(Operation::SetSelectionMode(SelectionMode::Face));
-        let before = editor.history.scene().clone();
-        press(&mut editor, &context, 1.0, view.ring(Vec3::Y, 0.0));
-        assert!(editor.history.active_manipulation().is_none());
-        assert_eq!(
-            editor.status,
-            format!("{name} is unavailable in Face selection; switch to Object selection")
-        );
-        assert_eq!(editor.history.scene(), &before);
+fn face_vertex_and_edge_selection_refuse_rotate_and_scale_handles() {
+    for (mode, noun) in [
+        (SelectionMode::Face, "Face"),
+        (SelectionMode::Vertex, "Vertex"),
+        (SelectionMode::Edge, "Edge"),
+    ] {
+        for (tool_key, name) in [(Key::E, "Rotate"), (Key::R, "Scale")] {
+            let (mut editor, context, view) = setup(tool_key, 1.0);
+            editor.selection_mode = mode;
+            let before = editor.history.scene().clone();
+            press(&mut editor, &context, 1.0, view.ring(Vec3::Y, 0.0));
+            assert!(editor.history.active_manipulation().is_none());
+            assert_eq!(
+                editor.status,
+                format!("{name} is unavailable in {noun} selection; switch to Object selection")
+            );
+            assert_eq!(editor.history.scene(), &before);
+        }
     }
 }
 

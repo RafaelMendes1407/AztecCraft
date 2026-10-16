@@ -4,7 +4,6 @@ use super::manipulation_tool::{
 use crate::app::Editor;
 use crate::editor_operations::{
     ActiveTool, ManipulationValue, MoveDistance, Operation, OperationError, OperationReply,
-    SelectionMode,
 };
 use azteccraft::{
     history::{

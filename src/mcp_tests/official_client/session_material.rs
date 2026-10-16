@@ -338,8 +338,8 @@ async fn session_material_sdk_guards_stale_token_draft_modal_close_and_active_mo
         &mut editor,
         &context,
         &client,
-        "begin_move",
-        json!({"node_id": node, "instance_path": path, "axis": "x"}),
+        "begin_manipulation",
+        json!({"node_id": node, "instance_path": path, "kind": "move", "axis": "x"}),
     )
     .await;
     let preview = editor.history.scene().clone();
@@ -358,8 +358,8 @@ async fn session_material_sdk_guards_stale_token_draft_modal_close_and_active_mo
         &mut editor,
         &context,
         &client,
-        "finish_move",
-        json!({"move_id": move_id, "finish": "cancel"}),
+        "finish_manipulation",
+        json!({"manipulation_id": move_id, "finish": "cancel"}),
     )
     .await;
     assert_eq!(editor.history.scene(), &scene);
