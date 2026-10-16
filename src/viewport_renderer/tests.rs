@@ -1,7 +1,9 @@
 use super::*;
 use azteccraft::{
-    native_scene::{NativeScene, NativeTransform},
+    history::{Command, History},
+    native_scene::{MaterialChoice, NativeScene, NativeTransform},
     scene::Primitive,
+    shading::SURFACE_BASE_RGB,
 };
 use glam::Vec2;
 use std::{sync::mpsc, time::Duration};
@@ -1785,6 +1787,102 @@ fn selection_tint_is_lit_by_the_same_factor() {
             .iter()
             .all(|color| color[1] > color[0] && color[2] > color[1])
     );
+}
+
+fn assigned_cube(color: [f64; 3]) -> NativeScene {
+    let mut scene = cube();
+    let shape = scene.shapes()[0].id();
+    scene
+        .assign_session_material(shape, MaterialChoice::New { color })
+        .unwrap();
+    scene
+}
+
+fn front_colors(scene: &NativeScene, selected: bool) -> Vec<[f32; 4]> {
+    let view = ViewScene::from_native(scene, VIEW_BUDGET).unwrap();
+    let path = view.instances()[0].path();
+    let feedback = SelectionFeedback::Object(selected.then(|| &path[..path.len() - 1]));
+    let submission = Submission::new(
+        &view,
+        &camera(0.01),
+        [SIZE; 2],
+        feedback,
+        true,
+        FORMAT,
+        u64::MAX,
+    )
+    .unwrap();
+    surface_colors(&submission)
+}
+
+#[test]
+fn an_assigned_material_replaces_the_base_in_the_lit_surface_colours() {
+    let red = Color32::from_rgb(255, 0, 0).to_normalized_gamma_f32();
+    let colors = front_colors(&assigned_cube([1.0, 0.0, 0.0]), false);
+    assert_eq!(colors.iter().filter(|color| **color == red).count(), 6);
+    assert!(
+        colors
+            .iter()
+            .all(|color| color[1] == 0.0 && color[2] == 0.0)
+    );
+}
+
+#[test]
+fn selection_tint_blends_halfway_and_stays_distinct_on_coloured_faces() {
+    assert_eq!(selected_base([83; 3]), [95, 110, 120]);
+    assert_eq!(selected_base([255, 0, 0]), [181, 68, 78]);
+    for base in [[255; 3], [0; 3], [255, 0, 0], [83; 3], [250, 250, 250]] {
+        assert_ne!(selected_base(base), base);
+    }
+    let tint = SELECTION_TINT_RGB;
+    let mut bases: Vec<[u8; 3]> = (0..8)
+        .map(|mask| std::array::from_fn(|i| tint[i] - ((mask >> i) & 1)))
+        .collect();
+    for r in (0..=255u8).step_by(15) {
+        for g in (0..=255u8).step_by(15) {
+            for b in (0..=255u8).step_by(15) {
+                bases.push([r, g, b]);
+                bases.push([r, tint[1], tint[2]]);
+                bases.push([tint[0] - 1, g, b]);
+            }
+        }
+    }
+    for base in bases {
+        assert_ne!(selected_base(base), base, "{base:?}");
+    }
+    let scene = assigned_cube([1.0, 0.0, 0.0]);
+    let plain = front_colors(&scene, false);
+    let tinted = front_colors(&scene, true);
+    let tint = Color32::from_rgb(181, 68, 78).to_normalized_gamma_f32();
+    assert_eq!(tinted.iter().filter(|color| **color == tint).count(), 6);
+    assert!(tinted.iter().all(|color| !plain.contains(color)));
+    assert!(tinted.iter().all(|color| color[0] > color[1]));
+}
+
+#[test]
+#[ignore = "requires a real headless GPU adapter"]
+fn headless_gpu_red_assigned_face_renders_red_dominant_and_undo_restores_grey() {
+    let mut gpu = Offscreen::new();
+    let mut history = History::new(cube());
+    let shape = history.scene().shapes()[0].id();
+    let center = |gpu: &mut Offscreen, scene: &NativeScene| {
+        let view = ViewScene::from_native(scene, VIEW_BUDGET).unwrap();
+        let image = gpu.image(&view, &camera(0.01), None);
+        pixel(&image, 64, 64).to_vec()
+    };
+    assert_eq!(center(&mut gpu, history.scene()), [83, 83, 83, 255]);
+    history
+        .execute(Command::AssignSessionMaterial {
+            shape,
+            material: MaterialChoice::New {
+                color: [1.0, 0.0, 0.0],
+            },
+        })
+        .unwrap();
+    let red = center(&mut gpu, history.scene());
+    assert_eq!(red, [255, 0, 0, 255]);
+    assert!(history.undo());
+    assert_eq!(center(&mut gpu, history.scene()), [83, 83, 83, 255]);
 }
 
 fn rotated_cube(degrees_y: f64) -> NativeScene {
