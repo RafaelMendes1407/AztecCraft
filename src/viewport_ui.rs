@@ -250,7 +250,8 @@ impl ViewportInput {
         scene: &ViewScene,
         selection: SelectionFeedback<'_>,
         grid_visible: bool,
-    ) -> Result<(), RenderError> {
+        shading: crate::editor_operations::ShadingMode,
+    ) -> Result<bool, RenderError> {
         let painter = &self.painter;
         let rect = self.rect;
         painter.rect_filled(rect, 0.0, Color32::from_gray(31));
@@ -264,11 +265,15 @@ impl ViewportInput {
                     self.physical_size,
                     selection,
                     grid_visible,
+                    shading,
                 )
             });
-        let diagnostic = callback.as_ref().err().map(ToString::to_string);
-        if let Ok(callback) = &callback {
+        let mut diagnostic = callback.as_ref().err().map(ToString::to_string);
+        if let Ok((callback, degraded)) = &callback {
             painter.add(callback.clone());
+            if *degraded {
+                diagnostic = Some(FACE_CENTERS_HIDDEN.into());
+            }
         }
         let appearance = if scene
             .instances()
@@ -290,9 +295,11 @@ impl ViewportInput {
             egui::FontId::proportional(12.0),
             Color32::GRAY,
         );
-        callback.map(|_| ())
+        callback.map(|(_, degraded)| degraded)
     }
 }
+
+pub const FACE_CENTERS_HIDDEN: &str = "Face centres hidden: too many faces for occlusion check";
 
 #[cfg(test)]
 #[path = "viewport_ui/tests.rs"]

@@ -167,6 +167,7 @@ impl Editor {
         frame_admitted: bool,
     ) {
         let mut grid_requested = false;
+        let mut shading_requested = None;
         ui.horizontal(|ui| {
             ui.label("persp");
             ui.label(match self.selection_mode {
@@ -181,6 +182,28 @@ impl Editor {
                     egui::Button::new("Grid").selected(self.grid_visible),
                 )
                 .clicked();
+            ui.separator();
+            let shading_enabled = !self.files.is_modal() && !self.files.is_closing();
+            ui.add_enabled_ui(shading_enabled, |ui| {
+                ui.menu_button("Shading", |ui| {
+                    for (mode, label) in [
+                        (ShadingMode::Wireframe, "Wireframe (4)"),
+                        (ShadingMode::SmoothShadeAll, "Smooth Shade All (5)"),
+                    ] {
+                        if ui.selectable_label(self.shading == mode, label).clicked() {
+                            shading_requested = Some(mode);
+                            ui.close();
+                        }
+                    }
+                    ui.separator();
+                    for label in ["Wireframe on Shaded", "Use Default Material"] {
+                        ui.add_enabled(false, egui::Button::new(label))
+                            .on_disabled_hover_text(
+                                "Not implemented: edges are always drawn and materials do not affect display",
+                            );
+                    }
+                });
+            });
             ui.separator();
             ui.weak("Alt + left: orbit | Middle: pan | Right / wheel: dolly");
         });
@@ -202,6 +225,11 @@ impl Editor {
             self.native_operation(Operation::SetGridVisible {
                 visible: !self.grid_visible,
             });
+        }
+        if let Some(mode) = shading_requested
+            && self.scene_token == frame_token
+        {
+            self.native_operation(Operation::SetShadingMode(mode));
         }
         if let Some((panel, visible)) = sidebar_request
             && self.scene_token == frame_token
@@ -354,11 +382,13 @@ impl Editor {
                     },
                 },
                 self.grid_visible,
+                self.shading,
             );
             self.viewport_error = painted.as_ref().err().map(|error| error.category());
+            self.face_centres_hidden = matches!(painted, Ok(true));
             self.paint_move(&input);
             match painted {
-                Ok(()) | Err(crate::viewport_renderer::RenderError::Uninitialized) => Ok(()),
+                Ok(_) | Err(crate::viewport_renderer::RenderError::Uninitialized) => Ok(()),
                 Err(error) => Err(OperationError::File(error.to_string())),
             }
         })();

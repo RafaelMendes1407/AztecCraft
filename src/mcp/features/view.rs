@@ -1,5 +1,5 @@
 use crate::{
-    editor_operations::{Operation, RemoteRequest},
+    editor_operations::{Operation, RemoteRequest, ShadingMode},
     mcp::{
         args::{MutationArgs, decode, mutation, schema, scoped, token},
         registry::ToolSpec,
@@ -39,6 +39,13 @@ struct GridArgs {
     visible: bool,
 }
 
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ShadingArgs {
+    scene_token: String,
+    mode: ShadingMode,
+}
+
 fn parse_frame_selected(arguments: JsonObject) -> Result<RemoteRequest, ErrorData> {
     mutation(arguments, Operation::FrameSelected)
 }
@@ -50,6 +57,14 @@ fn parse_set_grid_visibility(arguments: JsonObject) -> Result<RemoteRequest, Err
         Operation::SetGridVisible {
             visible: args.visible,
         },
+    ))
+}
+
+fn parse_set_shading_mode(arguments: JsonObject) -> Result<RemoteRequest, ErrorData> {
+    let args: ShadingArgs = decode(arguments)?;
+    Ok(scoped(
+        token(&args.scene_token)?,
+        Operation::SetShadingMode(args.mode),
     ))
 }
 
@@ -97,6 +112,14 @@ pub(in crate::mcp) const TOOLS: &[ToolSpec] = &[
         description: "Set the current viewport's grid visibility explicitly. Session-only and idempotent; does not edit the scene or report GPU health",
         schema: schema::<GridArgs>,
         parse: parse_set_grid_visibility,
+        idempotent: true,
+        read_only: false,
+    },
+    ToolSpec {
+        name: "set_shading_mode",
+        description: "Set the current viewport's shading mode explicitly to wireframe or smooth_shade_all. Session-only and idempotent; does not edit the scene, change picking or report GPU health",
+        schema: schema::<ShadingArgs>,
+        parse: parse_set_shading_mode,
         idempotent: true,
         read_only: false,
     },

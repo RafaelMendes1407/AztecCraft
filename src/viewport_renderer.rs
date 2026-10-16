@@ -1,3 +1,4 @@
+use crate::editor_operations::ShadingMode;
 use azteccraft::{
     native_scene::{FaceTarget, NativeId},
     scene::NodeId,
@@ -10,7 +11,7 @@ use eframe::{
     egui_wgpu::{self, CallbackResources, CallbackTrait},
     wgpu,
 };
-use glam::{Mat4, Vec3, Vec4};
+use glam::{Mat4, Vec2, Vec3, Vec4};
 use std::{fmt, ops::Range, sync::Arc};
 
 /// Selection tint, averaged with a face's base colour. On the grey base fill (83) the result is
@@ -223,6 +224,10 @@ impl ViewportRenderer {
         self.errors.first.lock().clone()
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "display state is a flat argument list"
+    )]
     pub fn callback(
         &self,
         scene: &ViewScene,
@@ -231,7 +236,8 @@ impl ViewportRenderer {
         physical_size: [u32; 2],
         selection: SelectionFeedback<'_>,
         grid_visible: bool,
-    ) -> Result<egui::epaint::PaintCallback, RenderError> {
+        shading: ShadingMode,
+    ) -> Result<(egui::epaint::PaintCallback, bool), RenderError> {
         if let Some(error) = self.terminal_error() {
             return Err(RenderError::Backend(error));
         }
@@ -248,6 +254,7 @@ impl ViewportRenderer {
             physical_size,
             selection,
             grid_visible,
+            shading,
             self.format,
             self.max_buffer_size,
         )?;
@@ -255,12 +262,16 @@ impl ViewportRenderer {
         {
             *self.submission.lock() = Some(submission.clone());
         }
-        Ok(egui_wgpu::Callback::new_paint_callback(
-            rect,
-            ViewportCallback {
-                submission,
-                errors: self.errors.clone(),
-            },
+        let degraded = submission.centers_degraded;
+        Ok((
+            egui_wgpu::Callback::new_paint_callback(
+                rect,
+                ViewportCallback {
+                    submission,
+                    errors: self.errors.clone(),
+                },
+            ),
+            degraded,
         ))
     }
 }
@@ -271,15 +282,22 @@ struct Submission {
     surfaces: Range<u32>,
     lines: Range<u32>,
     centers: Range<u32>,
+    /// Wireframe skipped face centres because the occlusion check exceeded its work budget.
+    centers_degraded: bool,
 }
 
 impl Submission {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "display state is a flat argument list"
+    )]
     fn new(
         scene: &ViewScene,
         camera: &Camera,
         physical_size: [u32; 2],
         selection: SelectionFeedback<'_>,
         grid_visible: bool,
+        shading: ShadingMode,
         format: wgpu::TextureFormat,
         max_buffer_size: u64,
     ) -> Result<Self, RenderError> {
@@ -293,7 +311,11 @@ impl Submission {
         let mut vertices = if grid_visible { 84_usize } else { 0 };
         for instance in scene.instances() {
             for face in instance.faces() {
-                let surface_count = face.triangles().count() * 3;
+                let surface_count = if shading == ShadingMode::Wireframe {
+                    0
+                } else {
+                    face.triangles().count() * 3
+                };
                 vertices = vertices
                     .checked_add(surface_count)
                     .and_then(|count| count.checked_add(face.corners().len() * 2))
@@ -329,6 +351,7 @@ impl Submission {
             surfaces: 0..0,
             lines: 0..0,
             centers: 0..0,
+            centers_degraded: false,
         };
         submission
             .bytes
@@ -339,7 +362,12 @@ impl Submission {
             u64::MAX,
         )?;
         let eye = camera.eye();
-        for instance in scene.instances().iter().rev() {
+        let surface_instances: &[ViewInstance] = if shading == ShadingMode::Wireframe {
+            &[]
+        } else {
+            scene.instances()
+        };
+        for instance in surface_instances.iter().rev() {
             for face in instance.faces().iter().rev() {
                 let base = if selection.selected(instance, face) {
                     selected_base(instance.base_rgb())
@@ -428,10 +456,34 @@ impl Submission {
         submission.surfaces = 0..surface_end;
         submission.lines = surface_end..submission.vertex_count();
         let center_start = submission.vertex_count();
+        if shading == ShadingMode::Wireframe {
+            // No surface depth exists, so centres need the CPU occlusion filter. Over budget the
+            // frame hides them (flagged to the user) instead of failing; edges and grid still draw.
+            let mut eligible = 0_usize;
+            let mut triangles = 0_usize;
+            for instance in scene.instances() {
+                for face in instance.faces() {
+                    triangles = triangles
+                        .checked_add(face.triangles().count())
+                        .ok_or(RenderError::ResourceLimit)?;
+                }
+                if selection.centers(instance) {
+                    eligible = eligible
+                        .checked_add(instance.faces().len())
+                        .ok_or(RenderError::ResourceLimit)?;
+                }
+            }
+            submission.centers_degraded =
+                azteccraft::viewport::face_center_work(eligible, triangles).is_err();
+        }
+        let frame = camera
+            .occlusion_frame(Vec2::new(physical_size[0] as f32, physical_size[1] as f32))
+            .map_err(|_| RenderError::NonFiniteClip)?;
+        let draw_centers = !submission.centers_degraded;
         for instance in scene
             .instances()
             .iter()
-            .filter(|instance| selection.centers(instance))
+            .filter(|instance| draw_centers && selection.centers(instance))
         {
             for face in instance.faces() {
                 let center = face
@@ -446,6 +498,20 @@ impl Submission {
                     || clip.z > clip.w
                     || clip.x.abs() > clip.w
                     || clip.y.abs() > clip.w
+                {
+                    continue;
+                }
+                if shading == ShadingMode::Wireframe
+                    && camera
+                        .unoccluded_depth(
+                            scene,
+                            &frame,
+                            center,
+                            clip.truncate() / clip.w,
+                            azteccraft::viewport::FACE_CENTER_DEPTH_TOLERANCE,
+                        )
+                        .map_err(|_| RenderError::NonFiniteClip)?
+                        .is_none()
                 {
                     continue;
                 }

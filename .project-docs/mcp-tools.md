@@ -2,7 +2,7 @@
 
 Generated from the tool registry in `src/mcp/registry.rs`; do not edit by hand. Regenerate with `UPDATE_DOCS=1 cargo test --features mcp registry::tests::tool_doc`. Argument schemas are served by `tools/list`; see [mcp.md](mcp.md) for behaviour and limits.
 
-30 tools.
+31 tools.
 
 | Tool | Access | Idempotent | Description |
 |---|---|---|---|
@@ -25,6 +25,7 @@ Generated from the tool registry in `src/mcp/registry.rs`; do not edit by hand. 
 | `redo` | mutating | no | Redo the last undone authoring operation |
 | `frame_selected` | mutating | no | Frame the selected object using the live camera |
 | `set_grid_visibility` | mutating | yes | Set the current viewport's grid visibility explicitly. Session-only and idempotent; does not edit the scene or report GPU health |
+| `set_shading_mode` | mutating | yes | Set the current viewport's shading mode explicitly to wireframe or smooth_shade_all. Session-only and idempotent; does not edit the scene, change picking or report GPU health |
 | `orbit_camera` | mutating | no | Orbit the live camera by [yaw, pitch] radians; pitch clamps near the poles |
 | `pan_camera` | mutating | no | Translate the live camera target by [right, up] camera-plane world units |
 | `dolly_camera` | mutating | no | Multiply live camera distance by a positive finite factor; below one moves closer |

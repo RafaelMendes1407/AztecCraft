@@ -22,6 +22,18 @@ impl Editor {
                 _ => None,
             })
         });
+        let shading_key = ctx.input(|i| {
+            i.events.iter().find_map(|event| match event {
+                egui::Event::Key {
+                    key: key @ (Key::Num4 | Key::Num5 | Key::Num6 | Key::Num7),
+                    pressed: true,
+                    repeat: false,
+                    modifiers,
+                    ..
+                } if modifiers.is_none() => Some(*key),
+                _ => None,
+            })
+        });
         let (undo, redo, frame, save, save_as) = ctx.input(|i| {
             (
                 i.modifiers.command && !i.modifiers.shift && i.key_pressed(Key::Z),
@@ -49,6 +61,17 @@ impl Editor {
                 visible: true,
             });
         }
+        match shading_key {
+            Some(Key::Num4) => {
+                self.native_operation(Operation::SetShadingMode(ShadingMode::Wireframe))
+            }
+            Some(Key::Num5) => {
+                self.native_operation(Operation::SetShadingMode(ShadingMode::SmoothShadeAll));
+            }
+            Some(Key::Num6) => self.unsupported_shading_status("Shaded + Textured (6)"),
+            Some(Key::Num7) => self.unsupported_shading_status("Use All Lights (7)"),
+            _ => {}
+        }
         if undo {
             self.history_step(false);
         }
@@ -65,6 +88,10 @@ impl Editor {
             self.save_as_dialog();
         }
         tool_intent
+    }
+    fn unsupported_shading_status(&mut self, name: &str) {
+        self.status = format!("{name} is not implemented in this build");
+        self.error = false;
     }
     pub(super) fn cancel_on_escape(&mut self, ctx: &egui::Context) {
         // egui clears text focus before this pass, so cancellation cannot rely on has_focus.

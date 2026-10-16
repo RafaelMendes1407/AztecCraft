@@ -193,7 +193,7 @@ mod tests {
     use super::*;
     use crate::editor_operations::{
         AttributeEditorTab, FileDecision, MAX_NAME_BYTES, MoveDistance, Operation, SelectionMode,
-        SidebarPanel,
+        ShadingMode, SidebarPanel,
     };
     use crate::mcp::tool_names;
     use rmcp::model::{ErrorCode, JsonObject};
@@ -345,6 +345,7 @@ mod tests {
                 "pan_camera" => json!({"scene_token":token,"world_units":[0,0]}),
                 "dolly_camera" => json!({"scene_token":token,"factor":1}),
                 "set_grid_visibility" => json!({"scene_token":token,"visible":true}),
+                "set_shading_mode" => json!({"scene_token":token,"mode":"wireframe"}),
                 "set_sidebar_panel_visibility" => {
                     json!({"scene_token":token,"panel":"channel_box","visible":true})
                 }
@@ -367,6 +368,7 @@ mod tests {
             let expected = matches!(
                 tool.name.as_ref(),
                 "set_grid_visibility"
+                    | "set_shading_mode"
                     | "set_sidebar_panel_visibility"
                     | "select_attribute_editor_tab"
                     | "set_active_tool"
@@ -575,6 +577,56 @@ mod tests {
             );
             assert!(
                 matches!(request.operation, Operation::SetGridVisible { visible: actual } if actual == visible)
+            );
+        }
+    }
+
+    #[test]
+    fn shading_schema_and_decoder_require_token_and_a_known_mode() {
+        let token = Uuid::new_v4().to_string();
+        let tool = catalog()
+            .into_iter()
+            .find(|tool| tool.name == "set_shading_mode")
+            .unwrap();
+        assert_eq!(tool.input_schema["additionalProperties"], false);
+        let required = tool.input_schema["required"].as_array().unwrap();
+        assert_eq!(required.len(), 2);
+        assert!(required.contains(&json!("scene_token")));
+        assert!(required.contains(&json!("mode")));
+        assert_eq!(tool.annotations.unwrap().idempotent_hint, Some(true));
+        for arguments in [
+            json!({"scene_token": token}),
+            json!({"mode": "wireframe"}),
+            json!({"scene_token": token, "mode": null}),
+            json!({"scene_token": token, "mode": "Wireframe"}),
+            json!({"scene_token": token, "mode": "shaded"}),
+            json!({"scene_token": token, "mode": "default_material"}),
+            json!({"scene_token": token, "mode": 5}),
+            json!({"scene_token": token, "mode": "wireframe", "extra": true}),
+            json!({"scene_token": "invalid", "mode": "wireframe"}),
+        ] {
+            assert!(
+                parse_request("set_shading_mode", arguments.as_object().unwrap().clone()).is_err()
+            );
+        }
+        for (name, expected) in [
+            ("wireframe", ShadingMode::Wireframe),
+            ("smooth_shade_all", ShadingMode::SmoothShadeAll),
+        ] {
+            let request = parse_request(
+                "set_shading_mode",
+                json!({"scene_token": token, "mode": name})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
+            .unwrap();
+            assert_eq!(
+                request.expected_scene_token,
+                Some(Uuid::parse_str(&token).unwrap())
+            );
+            assert!(
+                matches!(request.operation, Operation::SetShadingMode(actual) if actual == expected)
             );
         }
     }

@@ -127,6 +127,7 @@ fn face_mode_feedback_on_a_curves_only_scene_draws_lines_without_markers_or_high
             [SIZE; 2],
             selection,
             true,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             u64::MAX,
         )
@@ -155,6 +156,7 @@ fn curve_submission_preflight_counts_actual_segments_and_refuses_short_buffer() 
         [SIZE; 2],
         SelectionFeedback::Object(None),
         true,
+        ShadingMode::SmoothShadeAll,
         FORMAT,
         bytes as u64,
     )
@@ -169,6 +171,7 @@ fn curve_submission_preflight_counts_actual_segments_and_refuses_short_buffer() 
             [SIZE; 2],
             SelectionFeedback::Object(None),
             true,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             bytes as u64 - 1
         ),
@@ -313,6 +316,7 @@ fn twenty_gon_submission_counts_fan_triangles_and_every_outline_edge() {
         [SIZE; 2],
         SelectionFeedback::Object(None),
         false,
+        ShadingMode::SmoothShadeAll,
         FORMAT,
         bytes as u64,
     )
@@ -327,6 +331,7 @@ fn twenty_gon_submission_counts_fan_triangles_and_every_outline_edge() {
             [SIZE; 2],
             SelectionFeedback::Object(None),
             false,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             bytes as u64 - 1
         ),
@@ -345,6 +350,7 @@ fn headless_gpu_twenty_gon_fills_every_fan_triangle() {
         [SIZE; 2],
         SelectionFeedback::Object(None),
         false,
+        ShadingMode::SmoothShadeAll,
         FORMAT,
         u64::MAX,
     )
@@ -374,6 +380,7 @@ fn headless_gpu_curve_line_submission_obeys_actual_surface_depth() {
         [SIZE; 2],
         SelectionFeedback::Object(None),
         true,
+        ShadingMode::SmoothShadeAll,
         FORMAT,
         u64::MAX,
     )
@@ -399,6 +406,7 @@ fn headless_gpu_curve_line_submission_obeys_actual_surface_depth() {
             [SIZE; 2],
             SelectionFeedback::Object(None),
             true,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             u64::MAX,
         )
@@ -471,6 +479,7 @@ fn actual_native_submission_checks_exact_payload_limit_and_preserves_crossing_co
         [SIZE; 2],
         SelectionFeedback::Object(None),
         true,
+        ShadingMode::SmoothShadeAll,
         FORMAT,
         1024 * 1024,
     )
@@ -492,6 +501,7 @@ fn actual_native_submission_checks_exact_payload_limit_and_preserves_crossing_co
             [SIZE; 2],
             SelectionFeedback::Object(None),
             true,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             submission.bytes.len() as u64
         )
@@ -504,6 +514,7 @@ fn actual_native_submission_checks_exact_payload_limit_and_preserves_crossing_co
             [SIZE; 2],
             SelectionFeedback::Object(None),
             true,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             submission.bytes.len() as u64 - 1
         ),
@@ -536,6 +547,7 @@ fn face_submission_highlights_only_exact_identity_and_charges_physical_markers()
             [size; 2],
             selection,
             true,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             1024 * 1024,
         )
@@ -580,6 +592,7 @@ fn face_submission_highlights_only_exact_identity_and_charges_physical_markers()
                 [size; 2],
                 selection,
                 true,
+                ShadingMode::SmoothShadeAll,
                 FORMAT,
                 bytes
             )
@@ -592,6 +605,7 @@ fn face_submission_highlights_only_exact_identity_and_charges_physical_markers()
                 [size; 2],
                 selection,
                 true,
+                ShadingMode::SmoothShadeAll,
                 FORMAT,
                 bytes - 1
             ),
@@ -608,6 +622,7 @@ fn face_submission_highlights_only_exact_identity_and_charges_physical_markers()
             selected: Some(&target),
         },
         true,
+        ShadingMode::SmoothShadeAll,
         FORMAT,
         1024 * 1024,
     )
@@ -692,8 +707,10 @@ fn headless_gpu_face_centers_match_picker_for_planar_nonplanar_and_degenerate_fa
                                 selected: None,
                             },
                             true,
+                            ShadingMode::SmoothShadeAll,
                         )
-                        .unwrap(),
+                        .unwrap()
+                        .0,
                 );
             });
             let image = gpu.render(frame);
@@ -748,6 +765,7 @@ fn headless_gpu_face_feedback_matches_exact_face_and_instance_and_hides_occluded
                 selected: Some(&target),
             },
             true,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             1024 * 1024,
         )
@@ -795,6 +813,7 @@ fn headless_gpu_face_feedback_matches_exact_face_and_instance_and_hides_occluded
             selected: None,
         },
         true,
+        ShadingMode::SmoothShadeAll,
         FORMAT,
         1024 * 1024,
     )
@@ -826,6 +845,7 @@ fn headless_gpu_face_feedback_matches_exact_face_and_instance_and_hides_occluded
             selected: None,
         },
         true,
+        ShadingMode::SmoothShadeAll,
         FORMAT,
         1024 * 1024,
     )
@@ -893,6 +913,7 @@ fn grid_visibility_omits_only_original_grid_bytes_and_its_allocation_charge() {
             [SIZE; 2],
             selection,
             true,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             1024 * 1024,
         )
@@ -903,6 +924,7 @@ fn grid_visibility_omits_only_original_grid_bytes_and_its_allocation_charge() {
             [SIZE; 2],
             selection,
             false,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             1024 * 1024,
         )
@@ -913,6 +935,7 @@ fn grid_visibility_omits_only_original_grid_bytes_and_its_allocation_charge() {
             [SIZE; 2],
             selection,
             true,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             1024 * 1024,
         )
@@ -947,6 +970,7 @@ fn grid_visibility_omits_only_original_grid_bytes_and_its_allocation_charge() {
                 [SIZE; 2],
                 selection,
                 false,
+                ShadingMode::SmoothShadeAll,
                 FORMAT,
                 hidden.bytes.len() as u64
             )
@@ -959,6 +983,7 @@ fn grid_visibility_omits_only_original_grid_bytes_and_its_allocation_charge() {
                 [SIZE; 2],
                 selection,
                 true,
+                ShadingMode::SmoothShadeAll,
                 FORMAT,
                 hidden.bytes.len() as u64
             ),
@@ -972,6 +997,7 @@ fn grid_visibility_omits_only_original_grid_bytes_and_its_allocation_charge() {
         [SIZE; 2],
         SelectionFeedback::Object(None),
         false,
+        ShadingMode::SmoothShadeAll,
         FORMAT,
         0,
     )
@@ -1013,6 +1039,7 @@ fn headless_gpu_grid_callback_clears_cold_and_warm_empty_frames_and_restores_pix
                             scene.instances().first().map(|instance| instance.path()),
                         ),
                         visible,
+                        crate::editor_operations::ShadingMode::SmoothShadeAll,
                     )
                     .unwrap();
             });
@@ -1049,6 +1076,7 @@ fn finite_native_world_that_overflows_clip_reports_a_render_limit() {
             [SIZE; 2],
             SelectionFeedback::Object(None),
             true,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             1024 * 1024
         ),
@@ -1072,7 +1100,8 @@ fn startup_without_wgpu_and_latched_errors_never_emit_a_callback() {
             Rect::NOTHING,
             [SIZE; 2],
             SelectionFeedback::Object(None),
-            true
+            true,
+            ShadingMode::SmoothShadeAll
         ),
         Err(RenderError::Camera(_))
     ));
@@ -1089,7 +1118,8 @@ fn startup_without_wgpu_and_latched_errors_never_emit_a_callback() {
             Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(128.0, 128.0)),
             [SIZE; 2],
             SelectionFeedback::Object(None),
-            true
+            true,
+            ShadingMode::SmoothShadeAll
         ),
         Err(RenderError::Backend(_))
     ));
@@ -1157,6 +1187,7 @@ impl Offscreen {
             [SIZE; 2],
             SelectionFeedback::Object(selected),
             true,
+            crate::editor_operations::ShadingMode::SmoothShadeAll,
             self.format,
             self.device.limits().max_buffer_size,
         )
@@ -1412,6 +1443,7 @@ fn headless_gpu_actual_viewport_caller_preserves_crossing_side() {
                 &view,
                 SelectionFeedback::Object(Some(&path[..path.len() - 1])),
                 true,
+                crate::editor_operations::ShadingMode::SmoothShadeAll,
             )
             .unwrap();
     });
@@ -1447,8 +1479,10 @@ fn headless_gpu_actual_callback_scissor_and_following_egui_restore_at_one_and_tw
                         [96; 2],
                         SelectionFeedback::Object(Some(&path[..path.len() - 1])),
                         true,
+                        ShadingMode::SmoothShadeAll,
                     )
-                    .unwrap(),
+                    .unwrap()
+                    .0,
             );
             ui.painter().rect_filled(
                 Rect::from_min_max(
@@ -1494,7 +1528,8 @@ fn headless_gpu_actual_validation_callback_latches_and_blocks_submission() {
             Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::splat(128.0)),
             [SIZE; 2],
             SelectionFeedback::Object(None),
-            true
+            true,
+            ShadingMode::SmoothShadeAll
         ),
         Err(RenderError::Backend(_))
     ));
@@ -1747,6 +1782,7 @@ fn base_fill_is_83_and_a_face_looking_at_the_eye_keeps_it() {
         [SIZE; 2],
         SelectionFeedback::Object(None),
         true,
+        ShadingMode::SmoothShadeAll,
         FORMAT,
         u64::MAX,
     )
@@ -1775,6 +1811,7 @@ fn selection_tint_is_lit_by_the_same_factor() {
         [SIZE; 2],
         SelectionFeedback::Object(Some(&path[..path.len() - 1])),
         true,
+        ShadingMode::SmoothShadeAll,
         FORMAT,
         u64::MAX,
     )
@@ -1808,6 +1845,7 @@ fn front_colors(scene: &NativeScene, selected: bool) -> Vec<[f32; 4]> {
         [SIZE; 2],
         feedback,
         true,
+        crate::editor_operations::ShadingMode::SmoothShadeAll,
         FORMAT,
         u64::MAX,
     )
@@ -1976,6 +2014,7 @@ fn headless_gpu_offscreen_does_not_reproduce_issue_111() {
             [SIZE; 2],
             SelectionFeedback::Object(None),
             grid,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             u64::MAX,
         )
@@ -2055,4 +2094,216 @@ fn object_feedback_highlights_descendants_of_a_selected_root_only() {
     assert!(!selected(feedback, nested));
     assert!(selected(feedback, flat));
     assert!(!selected(SelectionFeedback::Object(None), nested));
+}
+
+fn cube_submission(shading: ShadingMode) -> Submission {
+    let view = ViewScene::from_native(&cube(), VIEW_BUDGET).unwrap();
+    Submission::new(
+        &view,
+        &camera(0.01),
+        [SIZE; 2],
+        SelectionFeedback::Object(None),
+        true,
+        shading,
+        FORMAT,
+        u64::MAX,
+    )
+    .unwrap()
+}
+
+#[test]
+fn wireframe_draws_no_surface_fill_but_keeps_grid_edges_and_the_smooth_line_pass() {
+    let smooth = cube_submission(ShadingMode::SmoothShadeAll);
+    let wire = cube_submission(ShadingMode::Wireframe);
+    // 6 quad faces, 2 triangles each, 3 vertices each.
+    assert_eq!(smooth.surfaces, 0..36);
+    assert_eq!(wire.surfaces, 0..0);
+    assert_eq!(wire.lines.start, 0);
+    assert_eq!(
+        wire.lines.end - wire.lines.start,
+        smooth.lines.end - smooth.lines.start
+    );
+    assert_eq!(wire.bytes.len() + 36 * VERTEX_BYTES, smooth.bytes.len());
+    assert_eq!(
+        wire.bytes[..],
+        smooth.bytes[36 * VERTEX_BYTES..],
+        "wireframe is the smooth submission without the surface fill"
+    );
+}
+
+#[test]
+fn cpu_picking_and_face_centre_occlusion_are_independent_of_shading_mode() {
+    let view = ViewScene::from_native(&cube(), VIEW_BUDGET).unwrap();
+    let camera = camera(0.01);
+    let instance = &view.instances()[0];
+    let owner = instance.transform();
+    let path = &instance.path()[..instance.path().len() - 1];
+    let eye = camera.eye();
+    let mut centres: Vec<_> = instance
+        .faces()
+        .iter()
+        .map(|face| {
+            (
+                face.source_index(),
+                face.center(instance.world_vertices()).unwrap(),
+            )
+        })
+        .collect();
+    centres.sort_by(|a, b| a.1.distance(eye).total_cmp(&b.1.distance(eye)));
+    let (near, far) = (centres[0], centres[centres.len() - 1]);
+    let pixels = [SIZE; 2];
+    let pointer = |world: Vec3| {
+        let ndc = camera.project(world, 1.0).unwrap().unwrap();
+        Vec2::new(
+            (ndc.x * 0.5 + 0.5) * SIZE as f32,
+            (0.5 - ndc.y * 0.5) * SIZE as f32,
+        )
+    };
+    // The nearest and farthest face centres project to the same pixel; the filter keeps the near one.
+    assert!((pointer(near.1) - pointer(far.1)).abs().max_element() < 0.5);
+    for shading in [ShadingMode::Wireframe, ShadingMode::SmoothShadeAll] {
+        assert_eq!(
+            cube_submission(shading).surfaces.is_empty(),
+            shading == ShadingMode::Wireframe
+        );
+        let hit = camera
+            .pick_view(
+                &view,
+                camera.project(near.1, 1.0).unwrap().unwrap().truncate(),
+                1.0,
+            )
+            .unwrap();
+        assert_eq!(hit.map(|face| face.face_index), Some(near.0));
+        let centre = camera
+            .pick_face_center(&view, Some((owner, path)), pointer(far.1), pixels, 1.0)
+            .unwrap();
+        assert_eq!(centre.map(|face| face.face_index), Some(near.0));
+    }
+}
+
+#[test]
+fn wireframe_emits_only_face_centres_the_cpu_occlusion_filter_accepts() {
+    let view = ViewScene::from_native(&cube(), VIEW_BUDGET).unwrap();
+    let camera = camera(0.01);
+    let instance = &view.instances()[0];
+    let active = (
+        instance.transform(),
+        &instance.path()[..instance.path().len() - 1],
+    );
+    let build = |shading| {
+        Submission::new(
+            &view,
+            &camera,
+            [SIZE; 2],
+            SelectionFeedback::Face {
+                active: Some(active),
+                selected: None,
+            },
+            false,
+            shading,
+            FORMAT,
+            u64::MAX,
+        )
+        .unwrap()
+    };
+    let visible = instance
+        .faces()
+        .iter()
+        .filter(|face| {
+            let centre = face.center(instance.world_vertices()).unwrap();
+            let ndc = camera.project(centre, 1.0).unwrap().unwrap();
+            !camera
+                .unoccluded_depth(
+                    &view,
+                    &camera.occlusion_frame(Vec2::splat(SIZE as f32)).unwrap(),
+                    centre,
+                    ndc,
+                    azteccraft::viewport::FACE_CENTER_DEPTH_TOLERANCE,
+                )
+                .unwrap()
+                .is_none()
+        })
+        .count();
+    assert!((1..6).contains(&visible));
+    let smooth = build(ShadingMode::SmoothShadeAll);
+    let wire = build(ShadingMode::Wireframe);
+    // Smooth Shade All leaves occlusion to the GPU depth test, so every in-frustum centre is emitted.
+    assert_eq!(smooth.centers.len(), 6 * 6);
+    assert_eq!(wire.centers.len(), visible * 6);
+}
+
+#[test]
+fn wireframe_degrades_face_centres_instead_of_failing_the_frame_over_budget() {
+    let mut native = cube();
+    let shape = native.shapes()[0].id();
+    for _ in 0..200 {
+        native.extrude_face(shape, 1, 0.01).unwrap();
+    }
+    let view = ViewScene::from_native(&native, VIEW_BUDGET).unwrap();
+    let instance = &view.instances()[0];
+    assert!(instance.faces().len() > 710);
+    let active = (
+        instance.transform(),
+        &instance.path()[..instance.path().len() - 1],
+    );
+    let build = |shading| {
+        Submission::new(
+            &view,
+            &camera(0.01),
+            [SIZE; 2],
+            SelectionFeedback::Face {
+                active: Some(active),
+                selected: None,
+            },
+            true,
+            shading,
+            FORMAT,
+            u64::MAX,
+        )
+        .unwrap()
+    };
+    let wire = build(ShadingMode::Wireframe);
+    assert!(wire.centers_degraded);
+    assert!(wire.centers.is_empty());
+    assert!(!wire.lines.is_empty());
+    assert!(!build(ShadingMode::SmoothShadeAll).centers_degraded);
+    let small = ViewScene::from_native(&cube(), VIEW_BUDGET).unwrap();
+    let small_instance = &small.instances()[0];
+    let small_submission = Submission::new(
+        &small,
+        &camera(0.01),
+        [SIZE; 2],
+        SelectionFeedback::Face {
+            active: Some((
+                small_instance.transform(),
+                &small_instance.path()[..small_instance.path().len() - 1],
+            )),
+            selected: None,
+        },
+        true,
+        ShadingMode::Wireframe,
+        FORMAT,
+        u64::MAX,
+    )
+    .unwrap();
+    assert!(!small_submission.centers_degraded);
+    let surfaced = |shading| {
+        renderer_handle()
+            .callback(
+                &view,
+                &camera(0.01),
+                Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::splat(128.0)),
+                [SIZE; 2],
+                SelectionFeedback::Face {
+                    active: Some(active),
+                    selected: None,
+                },
+                true,
+                shading,
+            )
+            .unwrap()
+            .1
+    };
+    assert!(surfaced(ShadingMode::Wireframe));
+    assert!(!surfaced(ShadingMode::SmoothShadeAll));
 }

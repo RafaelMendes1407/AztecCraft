@@ -38,6 +38,7 @@
     "depth_complete": false,
     "dirty": false,
     "document_origin": "maya_ascii",
+    "face_centres_hidden": false,
     "face_selection_policy": "visible_centers_only",
     "grid_visible": true,
     "has_draft": false,
@@ -115,6 +116,7 @@
     "selected_instance_path": [],
     "selected_node": null,
     "selection_mode": "object",
+    "shading": "smooth_shade_all",
     "shapes": [],
     "sidebar_panels": {
       "attribute_editor": false,
