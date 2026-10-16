@@ -1,6 +1,7 @@
 use super::*;
 use crate::native_scene::{
-    NativeTransform, RotateSpace, RotateUnsupported, ScaleUnsupported, binary, test_fixtures,
+    NativeTransform, RotateSpace, RotateUnsupported, ScaleSpace, ScaleUnsupported, binary,
+    test_fixtures,
 };
 use crate::scene::Primitive;
 
@@ -871,6 +872,7 @@ fn scale_previews_make_one_undo_and_identity_is_the_initial_parameter() {
         .begin_scale(
             &target(&history),
             ScaleHandle::Uniform,
+            ScaleSpace::Object,
             token,
             ManipulationProvenance::Native,
             BUDGET,
@@ -880,7 +882,8 @@ fn scale_previews_make_one_undo_and_identity_is_the_initial_parameter() {
     assert_eq!(
         active.kind,
         ManipulationKindState::Scale {
-            handle: ScaleHandle::Uniform
+            handle: ScaleHandle::Uniform,
+            space: ScaleSpace::Object
         }
     );
     assert_eq!((active.parameter, active.move_axis()), (1.0, None));
@@ -918,6 +921,7 @@ fn scale_refusal_in_drag_keeps_the_last_valid_preview_and_identity_is_unchanged(
         .begin_scale(
             &target(&history),
             ScaleHandle::X,
+            ScaleSpace::Object,
             token,
             ManipulationProvenance::Remote,
             BUDGET,
@@ -972,6 +976,7 @@ fn refused_scale_begin_consumes_no_id() {
     let result = history.begin_scale(
         &target(&history),
         ScaleHandle::Y,
+        ScaleSpace::Object,
         Uuid::new_v4(),
         ManipulationProvenance::Native,
         BUDGET,

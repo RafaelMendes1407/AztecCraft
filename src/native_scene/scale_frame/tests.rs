@@ -24,9 +24,9 @@ fn scaled(scale: [f64; 3]) -> (NativeScene, NodeId) {
     (scene, node)
 }
 
-fn frame(scene: &NativeScene, node: NodeId, handle: ScaleHandle) -> ObjectScaleFrame {
+fn frame(scene: &NativeScene, node: NodeId, handle: ScaleHandle) -> ScaleFrame {
     scene
-        .begin_object_scale(&target(scene, node), handle)
+        .begin_scale_frame(&target(scene, node), handle, ScaleSpace::Object)
         .unwrap()
         .0
 }
@@ -89,7 +89,7 @@ fn out_and_back_is_bit_exact_through_the_scene() {
     let before = scene.clone();
     for handle in HANDLES {
         let (frame, baseline) = scene
-            .begin_object_scale(&target(&scene, node), handle)
+            .begin_scale_frame(&target(&scene, node), handle, ScaleSpace::Object)
             .unwrap();
         let (_, changed) = scene
             .preview_channels(&baseline, frame.scale(handle, 2.7).unwrap())
@@ -126,7 +126,7 @@ fn scale_is_independent_of_the_parent_scale() {
         )
         .unwrap();
     let (frame, _) = scene
-        .begin_object_scale(&target(&scene, child), ScaleHandle::Y)
+        .begin_scale_frame(&target(&scene, child), ScaleHandle::Y, ScaleSpace::Object)
         .unwrap();
     assert_eq!(frame.scale(ScaleHandle::Y, 2.0).unwrap(), [2.0, 6.0, 4.0]);
 }
@@ -224,7 +224,7 @@ fn refusals_leave_the_scene_untouched() {
     let mut pivot = scene.clone();
     pivot.nodes[0].scale_pivot[2] = Scalar::new(0.25);
     assert!(matches!(
-        pivot.begin_object_scale(&selected, ScaleHandle::X),
+        pivot.begin_scale_frame(&selected, ScaleHandle::X, ScaleSpace::Object),
         Err(NativeError::UnsupportedScale(
             ScaleUnsupported::SelectedPivot
         ))
@@ -234,7 +234,7 @@ fn refusals_leave_the_scene_untouched() {
     rotate_pivot.nodes[0].rotate_pivot[2] = Scalar::new(0.25);
     assert!(
         rotate_pivot
-            .begin_object_scale(&selected, ScaleHandle::X)
+            .begin_scale_frame(&selected, ScaleHandle::X, ScaleSpace::Object)
             .is_ok()
     );
 
@@ -242,7 +242,7 @@ fn refusals_leave_the_scene_untouched() {
         let mut effects = scene.clone();
         effects.nodes[0].unsupported_transform.push(effect.into());
         assert!(matches!(
-            effects.begin_object_scale(&selected, ScaleHandle::X),
+            effects.begin_scale_frame(&selected, ScaleHandle::X, ScaleSpace::Object),
             Err(NativeError::UnsupportedEdit)
         ));
     }
@@ -256,13 +256,17 @@ fn refusals_leave_the_scene_untouched() {
         appearance: None,
     });
     assert!(matches!(
-        ascii.begin_object_scale(&selected, ScaleHandle::X),
+        ascii.begin_scale_frame(&selected, ScaleHandle::X, ScaleSpace::Object),
         Err(NativeError::ReadOnlyFormat)
     ));
 
     for path in [vec![], vec![selected.path[0], selected.path[0]]] {
         let bad = TransformTarget { node, path };
-        assert!(scene.begin_object_scale(&bad, ScaleHandle::X).is_err());
+        assert!(
+            scene
+                .begin_scale_frame(&bad, ScaleHandle::X, ScaleSpace::Object)
+                .is_err()
+        );
     }
     assert_eq!(scene, before);
 }
@@ -271,7 +275,7 @@ fn refusals_leave_the_scene_untouched() {
 fn leaf_rules_follow_the_handle() {
     let (scene, node) = scaled([2.0, 3.0, 4.0]);
     let base = frame(&scene, node, ScaleHandle::X);
-    let only_y = ObjectScaleFrame {
+    let only_y = ScaleFrame {
         absent_leaf: [true, false, true],
         ..base.clone()
     };
@@ -289,7 +293,7 @@ fn leaf_rules_follow_the_handle() {
             }) if c == component
         ));
     }
-    let no_z = ObjectScaleFrame {
+    let no_z = ScaleFrame {
         absent_leaf: [false, false, true],
         ..base
     };
@@ -316,7 +320,7 @@ fn binary_source_without_scale_leaves_is_refused_on_every_handle() {
         (ScaleHandle::Uniform, 0),
     ] {
         assert!(matches!(
-            scene.begin_object_scale(&selected, handle),
+            scene.begin_scale_frame(&selected, handle, ScaleSpace::Object),
             Err(NativeError::AbsentChannelLeaf {
                 channel: ChannelLeaf::Scale,
                 component: c
@@ -333,7 +337,7 @@ fn binary_source_with_scale_leaves_previews_and_restores_exactly() {
     let before = scene.clone();
     for handle in HANDLES {
         let (frame, baseline) = scene
-            .begin_object_scale(&target(&scene, node), handle)
+            .begin_scale_frame(&target(&scene, node), handle, ScaleSpace::Object)
             .unwrap();
         let (_, changed) = scene
             .preview_channels(&baseline, frame.scale(handle, 1.5).unwrap())
@@ -357,7 +361,7 @@ fn source_free_scene_with_default_leaves_is_not_refused() {
     assert!(scene.source.is_none());
     for handle in HANDLES {
         scene
-            .begin_object_scale(&target(&scene, node), handle)
+            .begin_scale_frame(&target(&scene, node), handle, ScaleSpace::Object)
             .unwrap();
     }
 }
