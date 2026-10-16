@@ -16,7 +16,8 @@ Follow [Collaborating on issues](AGENTS.md#collaborating-on-issues) for claims, 
 
 - Look for the `good first issue` and `help wanted` labels.
 - Comment on the issue to claim it, branch `type/<issue-number>-short-slug`, and open a draft PR early with `Closes #<n>`.
-- Push each reviewed, atomic commit to the draft PR. Take it out of draft when CI is green.
+- Push each reviewed, atomic commit to the draft PR. Take it out of draft when CI is green, then wait for two approvals and maintainer sign-off (see AGENTS.md); never merge your own PR.
+- Bug fix: skip "Adding a feature"; find the code via the code map, add a regression test that fails before the fix, run `make check`.
 
 ## Code map
 
@@ -40,14 +41,12 @@ Follow [Collaborating on issues](AGENTS.md#collaborating-on-issues) for claims, 
 
 A feature is a typed operation that the native UI and MCP both dispatch. Build it as a vertical slice. Unfinished controls must show as unsupported.
 
-This guide assumes the per-feature MCP registry from PR #88 (`src/mcp/registry.rs`, `src/mcp/features/`). Until #88 merges, step 6 differs.
-
 1. **Core change.** Put the logic in the library (for example `src/native_scene/` or `src/history/`) with unit tests. The core must not depend on UI widgets.
 2. **Operation variant.** Add a variant to `Operation` in `src/editor_operations.rs`, plus any reply or error it needs.
 3. **Guards and dispatch.** In `src/app/dispatch.rs`, classify the variant and add its arm in `apply_operation_guarded` (native and remote share it). Remote-only checks live in `remote_operation_guarded`. The guard behavior of each variant is recorded in [guard-ledger.md](.project-docs/guard-ledger.md). Keep that ledger true: update it when you change a guard, a side effect or an ordering.
 4. **Feature file.** Add `src/app/features/<feature>.rs` for the editor-side handling, and declare it in `src/app/features/mod.rs`.
 5. **Native UI.** Hook it into `menus.rs`, `panels.rs` or `shortcuts.rs`. Anything not implemented stays visibly disabled and says why.
-6. **MCP tool.** Add a `ToolSpec` (name, description, schema, parser, `idempotent`, `read_only`) to `TOOLS` in `src/mcp/features/<feature>.rs`. Declare the module in `src/mcp/features/mod.rs`. Add one entry for it to `FEATURES` in `src/mcp/registry.rs`. Regenerate the table with `UPDATE_DOCS=1 cargo test --features mcp registry::tests::tool_doc`. Do not edit `.project-docs/mcp-tools.md` by hand.
+6. **MCP tool.** Add a `ToolSpec` (name, description, schema, parser, `idempotent`, `read_only`) to `TOOLS` in `src/mcp/features/<feature>.rs`. Declare the module in `src/mcp/features/mod.rs`. Add one entry for it to `FEATURES` in `src/mcp/registry.rs`. Regenerate the table with `UPDATE_DOCS=1 cargo test --features mcp registry::tests::tool_doc`. MCP and app tests live in the bin target, so test filters need no `--lib`. Do not edit `.project-docs/mcp-tools.md` by hand.
 7. **Editor protocol tests.** Add tests in `src/mcp_tests/` that drive the real Editor protocol, including drafts, modal state, close handling and scene tokens.
 8. **Docs.** Update the coverage inventory in [mcp.md](.project-docs/mcp.md), [parity.md](.project-docs/parity.md) and [known-issues.md](known-issues.md). State what is supported, unsupported and unverified.
 
@@ -64,12 +63,7 @@ Then run the commands in [development.md](.project-docs/development.md). `make c
 
 ### Where conflicts happen
 
-Parallel features touch the same few places. Rebase often and re-read merged hunks.
-
-- The `Operation` enum in `src/editor_operations.rs`.
-- Dispatch arms in `src/app/dispatch.rs`.
-- The `FEATURES` list in `src/mcp/registry.rs` and the module lists in `features/mod.rs`. Keep one entry per line, in the existing order.
-- Generated files (`mcp-tools.md`, snapshots). Never hand-merge them. Take either side, then regenerate.
+Parallel features touch the same few places: the `Operation` enum, the dispatch arms and the `FEATURES` list. Append one entry per line in the existing order, and rebase rather than resolve by picking a side.
 
 ## Scope and evidence
 
