@@ -11,6 +11,7 @@ const MODES: [&str; 3] = [
     "Object selection",
     "Component selection",
 ];
+const FILES: [&str; 3] = ["New scene", "Open...", "Save"];
 const HIERARCHY: &str = "Hierarchy selection";
 const CHANNEL_BOX: &str = "Channel Box / Layer Editor";
 const TOGGLES: [&str; 5] = [
@@ -61,6 +62,7 @@ fn strip(output: &egui::FullOutput) -> Vec<Control> {
         .into_iter()
         .filter(|c| {
             c.role == accesskit::Role::ComboBox && c.label == "Menu set"
+                || FILES.contains(&c.label.as_str())
                 || MODES.contains(&c.label.as_str())
                 || TOGGLES.contains(&c.label.as_str())
         })
@@ -133,7 +135,7 @@ fn strip_fits_the_minimum_window_at_every_scale_and_enlarged_text() {
         frame_with(&mut editor, &context, SIZE, ppp, vec![]);
         let output = frame_with(&mut editor, &context, SIZE, ppp, vec![]);
         let found = strip(&output);
-        assert_eq!(found.len(), 9, "ppp {ppp} font {font}");
+        assert_eq!(found.len(), 12, "ppp {ppp} font {font}");
         let margin = egui::Frame::side_top_panel(&context.global_style()).total_margin();
         for control in &found {
             assert!(
@@ -163,6 +165,7 @@ fn strip_elements_are_in_documented_order() {
     let labels: Vec<String> = strip(&output).into_iter().map(|c| c.label).collect();
     let expected: Vec<&str> = ["Menu set"]
         .into_iter()
+        .chain(FILES)
         .chain(MODES)
         .chain(TOGGLES)
         .collect();
@@ -844,5 +847,253 @@ fn closing_without_a_dialog_shows_the_closing_hover_on_the_toggle() {
     assert_eq!(
         editor.sidebar_toggle_hover(toggle),
         "Channel Box / Layer Editor: unavailable while the window is closing"
+    );
+}
+
+mod ascii_fixture {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/support/maya_ascii.rs"
+    ));
+}
+
+#[derive(Clone, Copy, Debug)]
+enum FileState {
+    Clean,
+    Dirty,
+    ReadOnlyAscii,
+    Modal,
+}
+
+fn file_editor(state: FileState) -> (Editor, egui::Context) {
+    let context = egui::Context::default();
+    context.enable_accesskit();
+    context.all_styles_mut(|style| {
+        style.interaction.tooltip_delay = 0.0;
+        style.interaction.show_tooltips_only_when_still = false;
+    });
+    let mut editor = Editor {
+        renderer: Some(crate::viewport_renderer::tests::renderer_handle()),
+        ..Editor::default()
+    };
+    match state {
+        FileState::Clean => {}
+        FileState::Dirty => editor.create(azteccraft::scene::Primitive::Cube),
+        FileState::Modal => {
+            editor.create(azteccraft::scene::Primitive::Cube);
+            editor.new_document().unwrap();
+        }
+        FileState::ReadOnlyAscii => {
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("curve.ma");
+            std::fs::write(&path, ascii_fixture::specimen()).unwrap();
+            editor
+                .apply_operation(crate::editor_operations::Operation::OpenScene { path })
+                .unwrap();
+        }
+    }
+    (editor, context)
+}
+
+const ALL_STATES: [FileState; 4] = [
+    FileState::Clean,
+    FileState::Dirty,
+    FileState::ReadOnlyAscii,
+    FileState::Modal,
+];
+
+fn text_shapes(output: &egui::FullOutput) -> Vec<String> {
+    output
+        .shapes
+        .iter()
+        .filter_map(|shape| match &shape.shape {
+            egui::Shape::Text(text) => Some(text.galley.job.text.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Text that appears only because the pointer rests on `at`: the hovered frame's text shapes
+/// minus those of the same state with the pointer parked on the empty viewport.
+fn hover_texts(editor: &mut Editor, context: &egui::Context, at: Pos2) -> String {
+    let settle = |editor: &mut Editor, at: Pos2| {
+        frame_with(editor, context, SIZE, 1.0, vec![Event::PointerMoved(at)]);
+        frame_with(editor, context, SIZE, 1.0, vec![]);
+        text_shapes(&frame_with(editor, context, SIZE, 1.0, vec![]))
+    };
+    let mut baseline = settle(editor, Pos2::new(480.0, 600.0));
+    let mut new = Vec::new();
+    for text in settle(editor, at) {
+        match baseline.iter().position(|t| *t == text) {
+            Some(index) => {
+                baseline.swap_remove(index);
+            }
+            None => new.push(text),
+        }
+    }
+    new.join("|")
+}
+
+/// Menu item controls (label, rect, disabled) of the open File menu, told apart from the
+/// strip buttons that share their labels by their rectangles.
+fn open_file_menu(
+    editor: &mut Editor,
+    context: &egui::Context,
+    strip_rects: &[Rect],
+) -> Vec<Control> {
+    let output = strip_output(editor, context);
+    let file = controls(&output)
+        .into_iter()
+        .find(|c| c.label == "File")
+        .expect("File menu button");
+    click(editor, context, file.rect.center());
+    let output = frame_with(editor, context, SIZE, 1.0, vec![]);
+    controls(&output)
+        .into_iter()
+        .filter(|c| {
+            FILES.contains(&c.label.as_str())
+                && !strip_rects.contains(&c.rect)
+                && (c.rect.left() - file.rect.left()).abs() < 20.0
+        })
+        .collect()
+}
+
+fn strip_files(output: &egui::FullOutput) -> Vec<Control> {
+    let found = strip(output);
+    let row = found[0].rect.center().y;
+    found
+        .into_iter()
+        .filter(|c| FILES.contains(&c.label.as_str()) && (c.rect.center().y - row).abs() < 8.0)
+        .collect()
+}
+
+#[test]
+fn strip_file_buttons_match_the_file_menu_in_enable_state_and_hover_reason() {
+    for state in ALL_STATES {
+        let (mut editor, context) = file_editor(state);
+        let strip_output = strip_output(&mut editor, &context);
+        let buttons = strip_files(&strip_output);
+        assert_eq!(buttons.len(), 3, "{state:?}");
+        let rects: Vec<Rect> = buttons.iter().map(|b| b.rect).collect();
+        let reason = editor
+            .history
+            .scene()
+            .authoring_read_only_reason()
+            .map(|r| r.to_string());
+        let actions = editor.file_actions();
+        let mut strip_hovers = Vec::new();
+        for button in &buttons {
+            strip_hovers.push(hover_texts(&mut editor, &context, button.rect.center()));
+        }
+        let items = open_file_menu(&mut editor, &context, &rects);
+        if matches!(state, FileState::Modal) {
+            // The modal blocks the menu bar, so the strip must be as inert as the menu.
+            assert!(items.is_empty());
+            for (button, action) in buttons.iter().zip(&actions) {
+                assert_eq!(button.disabled, !action.enabled, "{state:?}");
+            }
+            continue;
+        }
+        assert_eq!(items.len(), 3, "{state:?} menu items");
+        for (index, label) in FILES.iter().enumerate() {
+            let button = buttons.iter().find(|b| b.label == *label).unwrap();
+            let item = items.iter().find(|i| i.label == *label).unwrap();
+            assert_eq!(button.disabled, item.disabled, "{state:?} {label} enable");
+            assert_eq!(
+                button.disabled, !actions[index].enabled,
+                "{state:?} {label}"
+            );
+            let menu_hover = hover_texts(&mut editor, &context, item.rect.center());
+            let strip_hover =
+                &strip_hovers[buttons.iter().position(|b| b.label == *label).unwrap()];
+            match (&reason, *label) {
+                (Some(reason), "Save") => {
+                    assert!(button.disabled, "{state:?}");
+                    assert_eq!(actions[index].reason.as_ref(), Some(reason), "{state:?}");
+                    assert_eq!(actions[index].hover(), reason.as_str(), "{state:?}");
+                    assert!(menu_hover.contains(reason.as_str()), "{state:?} menu");
+                    assert!(strip_hover.contains(reason.as_str()), "{state:?} strip");
+                }
+                _ => assert!(
+                    strip_hover.contains(actions[index].tooltip),
+                    "{state:?} {label}: {strip_hover}"
+                ),
+            }
+        }
+    }
+}
+
+#[test]
+fn strip_save_enablement_comes_from_file_actions() {
+    let (mut editor, context) = file_editor(FileState::Clean);
+    let output = strip_output(&mut editor, &context);
+    let save = strip_files(&output)
+        .into_iter()
+        .find(|b| b.label == "Save")
+        .unwrap();
+    assert_eq!(save.disabled, !editor.files.save_available());
+}
+
+type Outcome = (String, bool, Option<String>, bool, bool);
+
+fn outcome(editor: &Editor) -> Outcome {
+    (
+        editor.status.clone(),
+        editor.error,
+        editor
+            .files
+            .pending_inspection()
+            .map(|p| format!("{:?}", p.kind)),
+        editor.is_dirty(),
+        editor.files.is_modal(),
+    )
+}
+
+#[test]
+fn strip_and_menu_clicks_dispatch_the_same_handlers() {
+    // Clean, Dirty and ReadOnlyAscii compare real strip and menu clicks for New and Save.
+    // Modal only compares "no change": the modal blocks the File menu. Open is not clicked
+    // outside Modal because open_dialog calls rfd directly (src/file_ui.rs), with no seam.
+    for state in ALL_STATES {
+        for label in FILES {
+            if label == "Open..." && !matches!(state, FileState::Modal) {
+                // The unmodal Open handler would block on a native dialog.
+                continue;
+            }
+            let (mut by_strip, context) = file_editor(state);
+            let output = strip_output(&mut by_strip, &context);
+            let buttons = strip_files(&output);
+            let rects: Vec<Rect> = buttons.iter().map(|b| b.rect).collect();
+            let target = buttons.iter().find(|b| b.label == label).unwrap();
+            click(&mut by_strip, &context, target.rect.center());
+
+            let (mut by_menu, context) = file_editor(state);
+            if matches!(state, FileState::Modal) {
+                // The menu bar is blocked: the strip click must leave the modal state as it was.
+                assert_eq!(outcome(&by_strip), outcome(&by_menu), "{state:?} {label}");
+                continue;
+            }
+            let items = open_file_menu(&mut by_menu, &context, &rects);
+            let item = items.iter().find(|i| i.label == label).unwrap();
+            click(&mut by_menu, &context, item.rect.center());
+
+            assert_eq!(outcome(&by_strip), outcome(&by_menu), "{state:?} {label}");
+        }
+    }
+}
+
+#[test]
+fn dirty_new_from_the_strip_raises_the_unsaved_changes_modal() {
+    let (mut editor, context) = file_editor(FileState::Dirty);
+    let output = strip_output(&mut editor, &context);
+    let new = strip_files(&output)
+        .into_iter()
+        .find(|b| b.label == "New scene")
+        .unwrap();
+    click(&mut editor, &context, new.rect.center());
+    assert!(editor.files.is_modal());
+    assert_eq!(
+        format!("{:?}", editor.files.pending_inspection().unwrap().kind),
+        "New"
     );
 }

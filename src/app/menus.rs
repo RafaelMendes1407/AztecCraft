@@ -1,7 +1,63 @@
 use super::*;
 use azteccraft::ui_icons::UiIcon;
 
+/// One File menu entry that the Status Line also draws, so the two cannot diverge.
+pub(super) struct FileAction {
+    pub(super) label: &'static str,
+    pub(super) icon: UiIcon,
+    /// Strip hover text when there is no disabled reason.
+    pub(super) tooltip: &'static str,
+    pub(super) enabled: bool,
+    /// Shown on hover while disabled (the read-only reason).
+    pub(super) reason: Option<String>,
+    pub(super) run: fn(&mut Editor),
+}
+
+impl FileAction {
+    pub(super) fn hover(&self) -> &str {
+        match (self.enabled, self.reason.as_deref()) {
+            (false, Some(reason)) => reason,
+            _ => self.tooltip,
+        }
+    }
+}
+
 impl Editor {
+    /// New, Open and Save in menu order: enable state, disabled reason and dispatch.
+    pub(super) fn file_actions(&self) -> [FileAction; 3] {
+        let read_only_reason = self
+            .history
+            .scene()
+            .authoring_read_only_reason()
+            .map(|reason| reason.to_string());
+        [
+            FileAction {
+                label: "New scene",
+                icon: UiIcon::FileNew,
+                tooltip: "New scene",
+                enabled: true,
+                reason: None,
+                run: Editor::request_new,
+            },
+            FileAction {
+                label: "Open...",
+                icon: UiIcon::FileOpen,
+                tooltip: "Open a scene...",
+                enabled: true,
+                reason: None,
+                run: Editor::open_dialog,
+            },
+            FileAction {
+                label: "Save",
+                icon: UiIcon::FileSave,
+                tooltip: "Save the scene",
+                enabled: self.files.save_available(),
+                reason: read_only_reason,
+                run: |editor| editor.native_operation(Operation::SaveScene),
+            },
+        ]
+    }
+
     pub(super) fn menus(
         &mut self,
         ui: &mut egui::Ui,
@@ -16,22 +72,16 @@ impl Editor {
         let authoring = read_only_reason.is_none();
         egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("File", |ui| {
-                if ui.button("New scene").clicked() {
-                    ui.close();
-                    self.request_new();
-                }
-                if ui.button("Open...").clicked() {
-                    ui.close();
-                    self.open_dialog();
-                }
-                let mut save =
-                    ui.add_enabled(self.files.save_available(), egui::Button::new("Save"));
-                if let Some(reason) = read_only_reason.as_deref() {
-                    save = save.on_disabled_hover_text(reason);
-                }
-                if save.clicked() {
-                    ui.close();
-                    self.native_operation(Operation::SaveScene);
+                for action in self.file_actions() {
+                    let mut response =
+                        ui.add_enabled(action.enabled, egui::Button::new(action.label));
+                    if let Some(reason) = action.reason.as_deref() {
+                        response = response.on_disabled_hover_text(reason);
+                    }
+                    if response.clicked() {
+                        ui.close();
+                        (action.run)(self);
+                    }
                 }
                 let mut save_as = ui.add_enabled(
                     self.files.save_as_available(),

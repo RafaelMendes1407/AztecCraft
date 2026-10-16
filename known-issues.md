@@ -266,6 +266,30 @@ history is not left busy. The scene then keeps its preview values and the
 baseline is lost: the document is dirty rather than silently restored, and the
 Channel Box is resynchronized to the scene.
 
+## Status Line is a partial subset (#59)
+
+The strip shows:
+
+- a menu-set selector where only Modeling is active; Rigging, Animation, FX and Rendering are disabled;
+- New, Open and Save buttons, which share the File menu's handlers and enable state;
+- Hierarchy (disabled), Object and Component selection modes. Component means Face, the only
+  implemented component mode;
+- five sidebar toggles, of which only Channel Box / Layer Editor works. The others are disabled.
+
+Groups without AztecCraft behavior are not drawn rather than shown as inert controls: selection masks,
+snaps, symmetry, construction history, render buttons, Hypershade and the input box. The right-end
+cluster therefore follows the last drawn group.
+
+- The F2 to F6 menu-set hotkeys are deferred.
+- No Layer Editor exists, so the toggle shows or hides only the Channel Box.
+- The toggle is disabled during an active Move, including a Move with no native gesture, like other edits.
+- Save As has no strip button and stays in the File menu.
+- Open's native dialog calls `rfd` directly and cannot be click-tested, so equivalence between the strip
+  and menu Open is checked only for enable state and hover text.
+- Nothing was compared against a pinned Maya 2026 install.
+
+Tracked in the UI parity inventory (`.project-docs/ui-parity-inventory.md`, section 2).
+
 ## Poly Sphere is provisional (#43)
 
 Create > Polygon sphere and `create_primitive` with `sphere` build a radius-1,
