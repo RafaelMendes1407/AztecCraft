@@ -2,11 +2,11 @@ use crate::{
     native_scene::WorldAxis,
     viewport::{Camera, InvalidCameraInput, Ray},
 };
-use glam::{DMat4, DVec2, DVec3, Vec2};
+use glam::{DMat4, DVec2, DVec3, DVec4, Vec2};
 use std::fmt;
 
-const ARROW_LENGTH: f64 = 72.0;
-const HIT_RADIUS: f64 = 6.0;
+pub(crate) const ARROW_LENGTH: f64 = 72.0;
+pub(crate) const HIT_RADIUS: f64 = 6.0;
 const CENTER_EXCLUSION: f64 = 10.0;
 const PARALLEL_LIMIT: f64 = 1e-10;
 
@@ -23,6 +23,8 @@ pub enum HandleError {
     ParallelAxis,
     BehindRay,
     InvalidSolve,
+    Degenerate,
+    ZeroBeginParameter,
 }
 
 impl From<InvalidCameraInput> for HandleError {
@@ -45,6 +47,8 @@ impl fmt::Display for HandleError {
             Self::ParallelAxis => "Move axis is too close to parallel with the camera ray",
             Self::BehindRay => "Move closest point lies behind the camera ray origin",
             Self::InvalidSolve => "Move axis distance cannot be represented",
+            Self::Degenerate => "Rotate ring is edge-on to the camera",
+            Self::ZeroBeginParameter => "Scale handle was grabbed too close to the pivot",
         })
     }
 }
@@ -61,6 +65,7 @@ pub struct ViewportCapture {
     logical_size: Vec2,
     aspect: f32,
     view_projection: DMat4,
+    focal_pixels: f64,
 }
 
 impl ViewportCapture {
@@ -92,9 +97,10 @@ impl ViewportCapture {
             return Err(HandleError::InvalidCapture);
         }
         let aspect = physical_size[0] as f32 / physical_size[1] as f32;
-        let view_projection =
-            camera.projection_matrix(aspect)?.as_dmat4() * camera.view_matrix().as_dmat4();
-        if !view_projection.is_finite() {
+        let projection = camera.projection_matrix(aspect)?.as_dmat4();
+        let view_projection = projection * camera.view_matrix().as_dmat4();
+        let focal_pixels = projection.y_axis.y * f64::from(physical_size[1]) * 0.5;
+        if !view_projection.is_finite() || !focal_pixels.is_finite() || focal_pixels <= 0.0 {
             return Err(HandleError::InvalidCapture);
         }
         Ok(Self {
@@ -106,6 +112,7 @@ impl ViewportCapture {
             logical_size,
             aspect,
             view_projection,
+            focal_pixels,
         })
     }
 
@@ -138,7 +145,7 @@ impl ViewportCapture {
         Ok(pixel.as_dvec2())
     }
 
-    fn ray_at_pixel(&self, pixel: DVec2) -> Result<Ray, HandleError> {
+    pub(crate) fn ray_at_pixel(&self, pixel: DVec2) -> Result<Ray, HandleError> {
         let size = self.size();
         let ndc = Vec2::new(
             (2.0 * pixel.x / size.x - 1.0) as f32,
@@ -147,15 +154,82 @@ impl ViewportCapture {
         Ok(self.camera.captured_ray(ndc, self.aspect)?)
     }
 
-    fn size(&self) -> DVec2 {
+    pub(crate) fn size(&self) -> DVec2 {
         DVec2::new(
             f64::from(self.physical_size[0]),
             f64::from(self.physical_size[1]),
         )
     }
 
-    fn contains(&self, pixel: DVec2) -> bool {
+    pub(crate) fn contains(&self, pixel: DVec2) -> bool {
         pixel.is_finite() && pixel.cmpge(DVec2::ZERO).all() && pixel.cmple(self.size()).all()
+    }
+
+    pub(crate) fn eye(&self) -> DVec3 {
+        self.camera.eye().as_dvec3()
+    }
+
+    /// Viewport pixel of a point in front of the camera; it may lie outside the viewport.
+    pub(crate) fn project_point(&self, point: DVec3) -> Option<DVec2> {
+        let clip = self.view_projection * point.extend(1.0);
+        if !clip.is_finite() || clip.w <= 1e-9 {
+            return None;
+        }
+        let size = self.size();
+        let pixel = DVec2::new(
+            (clip.x / clip.w + 1.0) * size.x * 0.5,
+            (1.0 - clip.y / clip.w) * size.y * 0.5,
+        );
+        pixel.is_finite().then_some(pixel)
+    }
+
+    /// World length that spans `pixels` on screen at the depth `clip_w`.
+    pub(crate) fn world_length(&self, pixels: f64, clip_w: f64) -> f64 {
+        pixels * clip_w / self.focal_pixels
+    }
+
+    /// Clip-space position and viewport pixel of a handle origin, which must be visible.
+    pub(crate) fn project_origin(&self, origin_cm: DVec3) -> Result<(DVec4, DVec2), HandleError> {
+        if !origin_cm.is_finite() {
+            return Err(HandleError::InvalidProjection);
+        }
+        let clip = self.view_projection * origin_cm.extend(1.0);
+        if !clip.is_finite() {
+            return Err(HandleError::InvalidProjection);
+        }
+        if clip.w <= 0.0 || clip.z < 0.0 || clip.z > clip.w {
+            return Err(HandleError::OriginClipped);
+        }
+        let ndc = clip.truncate() / clip.w;
+        let size = self.size();
+        let pixel = DVec2::new((ndc.x + 1.0) * size.x * 0.5, (1.0 - ndc.y) * size.y * 0.5);
+        if !self.contains(pixel) {
+            return Err(HandleError::OriginClipped);
+        }
+        Ok((clip, pixel))
+    }
+
+    /// Unit screen direction of a world direction at a projected origin.
+    pub(crate) fn screen_direction(
+        &self,
+        clip: DVec4,
+        direction: DVec3,
+    ) -> Result<DVec2, HandleError> {
+        let size = self.size();
+        let projected = self.view_projection * direction.extend(0.0);
+        let denominator = clip.w * clip.w;
+        if !denominator.is_finite() || denominator == 0.0 {
+            return Err(HandleError::InvalidProjection);
+        }
+        let derivative = DVec2::new(
+            (projected.x * clip.w - clip.x * projected.w) / denominator * size.x * 0.5,
+            -(projected.y * clip.w - clip.y * projected.w) / denominator * size.y * 0.5,
+        );
+        let length = derivative.length();
+        if !derivative.is_finite() || !length.is_finite() || length == 0.0 {
+            return Err(HandleError::ProjectedAxisDegenerate);
+        }
+        Ok(derivative / length)
     }
 }
 
@@ -201,43 +275,12 @@ pub struct WorldHandles {
 
 impl WorldHandles {
     pub fn new(capture: &ViewportCapture, origin_cm: DVec3) -> Result<Self, HandleError> {
-        if !origin_cm.is_finite() {
-            return Err(HandleError::InvalidProjection);
-        }
-        let clip = capture.view_projection * origin_cm.extend(1.0);
-        if !clip.is_finite() {
-            return Err(HandleError::InvalidProjection);
-        }
-        if clip.w <= 0.0 || clip.z < 0.0 || clip.z > clip.w {
-            return Err(HandleError::OriginClipped);
-        }
-        let ndc = clip.truncate() / clip.w;
+        let (clip, origin) = capture.project_origin(origin_cm)?;
         let size = capture.size();
-        let origin = DVec2::new((ndc.x + 1.0) * size.x * 0.5, (1.0 - ndc.y) * size.y * 0.5);
-        if !capture.contains(origin) {
-            return Err(HandleError::OriginClipped);
-        }
         let axes = [WorldAxis::X, WorldAxis::Y, WorldAxis::Z].map(|axis| {
             let geometry = (|| {
                 axis_parameter(origin_cm, axis, capture.ray_at_pixel(origin)?)?;
-                let projected_axis = capture.view_projection * axis.direction().extend(0.0);
-                let denominator = clip.w * clip.w;
-                if !denominator.is_finite() || denominator == 0.0 {
-                    return Err(HandleError::InvalidProjection);
-                }
-                let derivative = DVec2::new(
-                    (projected_axis.x * clip.w - clip.x * projected_axis.w) / denominator
-                        * size.x
-                        * 0.5,
-                    -(projected_axis.y * clip.w - clip.y * projected_axis.w) / denominator
-                        * size.y
-                        * 0.5,
-                );
-                let length = derivative.length();
-                if !derivative.is_finite() || !length.is_finite() || length == 0.0 {
-                    return Err(HandleError::ProjectedAxisDegenerate);
-                }
-                let direction = derivative / length;
+                let direction = capture.screen_direction(clip, axis.direction())?;
                 let tip = origin + direction * ARROW_LENGTH;
                 let base = tip - direction * 12.0;
                 let perpendicular = DVec2::new(-direction.y, direction.x) * 4.0;
@@ -343,7 +386,7 @@ impl AxisDrag {
     }
 }
 
-fn segment_distance_squared(segment: ScreenSegment, point: DVec2) -> f64 {
+pub(crate) fn segment_distance_squared(segment: ScreenSegment, point: DVec2) -> f64 {
     let delta = segment.end - segment.start;
     let length_squared = delta.length_squared();
     if length_squared == 0.0 {
@@ -353,7 +396,7 @@ fn segment_distance_squared(segment: ScreenSegment, point: DVec2) -> f64 {
     point.distance_squared(segment.start + delta * parameter)
 }
 
-fn clip_segment(start: DVec2, end: DVec2, size: DVec2) -> Option<ScreenSegment> {
+pub(crate) fn clip_segment(start: DVec2, end: DVec2, size: DVec2) -> Option<ScreenSegment> {
     let delta = end - start;
     let mut begin: f64 = 0.0;
     let mut finish: f64 = 1.0;
@@ -386,6 +429,15 @@ fn clip_segment(start: DVec2, end: DVec2, size: DVec2) -> Option<ScreenSegment> 
 }
 
 fn axis_parameter(origin_cm: DVec3, axis: WorldAxis, ray: Ray) -> Result<f64, HandleError> {
+    axis_parameter_along(origin_cm, axis.direction(), ray)
+}
+
+/// Signed distance from `origin_cm` along the unit `axis` to the point closest to `ray`.
+pub(crate) fn axis_parameter_along(
+    origin_cm: DVec3,
+    axis: DVec3,
+    ray: Ray,
+) -> Result<f64, HandleError> {
     if !origin_cm.is_finite() || !ray.origin.is_finite() || !ray.direction.is_finite() {
         return Err(HandleError::InvalidSolve);
     }
@@ -395,7 +447,6 @@ fn axis_parameter(origin_cm: DVec3, axis: WorldAxis, ray: Ray) -> Result<f64, Ha
         return Err(HandleError::InvalidSolve);
     }
     let direction = direction / length;
-    let axis = axis.direction();
     let dot = axis.dot(direction);
     let denominator = 1.0 - dot * dot;
     if !denominator.is_finite() || denominator <= PARALLEL_LIMIT {

@@ -2,6 +2,7 @@
 
 pub mod document;
 pub mod history;
+pub mod manipulator_handles;
 pub(crate) mod maya_ascii;
 pub mod maya_binary;
 pub mod mesh;
