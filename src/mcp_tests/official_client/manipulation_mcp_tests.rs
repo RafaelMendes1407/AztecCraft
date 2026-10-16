@@ -1153,6 +1153,23 @@ async fn rotate_and_scale_sdk_use_angular_and_unitless_values_in_a_non_cm_radian
         inspected["active"]["baseline_channels"],
         json!([0.25, 0.0, 0.0])
     );
+    // 4.5 rad / (180/pi) * (180/pi) does not round-trip; the echo is the requested value itself.
+    for requested in [4.5_f64, 0.1, 1.0 / 3.0] {
+        call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "update_manipulation",
+            json!({"scene_token":token,"manipulation_id":id,"angle":requested}),
+        )
+        .await;
+        let inspected = inspect_manipulation(&mut editor, &context, &client).await;
+        assert_eq!(
+            inspected["active"]["value"].as_f64().unwrap().to_bits(),
+            requested.to_bits(),
+            "{requested}"
+        );
+    }
     // Degrees are not accepted as a second spelling: the same number in degrees is tiny.
     call(
         &mut editor,
@@ -1231,6 +1248,99 @@ async fn rotate_and_scale_sdk_use_angular_and_unitless_values_in_a_non_cm_radian
         expected[offset..offset + 8].copy_from_slice(&3.0f64.to_be_bytes());
         assert_eq!(written, expected);
     }
+    assert_eq!(
+        std::fs::read(&source).unwrap().as_slice(),
+        original.as_ref()
+    );
+    client.cancel().await.unwrap();
+    drop(editor);
+    server.await.unwrap();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn rotate_commit_in_a_radian_scene_saves_the_expected_radians() {
+    let original = unit_scene(b"in", b"rad", [0.25, 0.0, 0.0], [1.5, 1.0, 1.0]);
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("rotate-original.mb");
+    std::fs::write(&source, &original).unwrap();
+    let context = egui::Context::default();
+    let (mut editor, client, server) = start(&context).await;
+    let old_token = editor.scene_token.to_string();
+    call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "open_scene",
+        json!({"scene_token":old_token,"path":source}),
+    )
+    .await;
+    let token = editor.scene_token.to_string();
+    let target = editor.history.scene().transform_paths().unwrap().remove(0);
+    let node = target.node.to_decimal();
+    let path: Vec<_> = target.path.iter().map(|id| id.to_decimal()).collect();
+    call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "select_node",
+        json!({"scene_token":token,"node_id":node,"instance_path":path}),
+    )
+    .await;
+    let begin = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "begin_manipulation",
+        json!({"scene_token":token,"kind":"rotate","node_id":node,"instance_path":path,"axis":"x","space":"object"}),
+    )
+    .await
+    .structured_content
+    .unwrap();
+    let id = begin["manipulation_id"].as_str().unwrap().to_owned();
+    call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "update_manipulation",
+        json!({"scene_token":token,"manipulation_id":id,"angle":4.5}),
+    )
+    .await;
+    let inspected = inspect_manipulation(&mut editor, &context, &client).await;
+    assert_eq!(
+        inspected["active"]["value"].as_f64().unwrap().to_bits(),
+        4.5_f64.to_bits()
+    );
+    call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "finish_manipulation",
+        json!({"scene_token":token,"manipulation_id":id,"finish":"commit"}),
+    )
+    .await;
+    let destination = directory.path().join("rotate-saved.mb");
+    let saved = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "save_scene_as",
+        json!({"scene_token":token,"path":destination}),
+    )
+    .await;
+    assert_eq!(saved.structured_content.unwrap()["outcome"], "saved");
+    let written = std::fs::read(&destination).unwrap();
+    let offset = original
+        .windows(8)
+        .position(|word| word == 0.25f64.to_be_bytes())
+        .unwrap();
+    let mut expected = original.to_vec();
+    // The save converts through degrees, so the radian word may differ from 4.75 by an ulp; every
+    // other byte is untouched.
+    let saved_word = f64::from_be_bytes(written[offset..offset + 8].try_into().unwrap());
+    assert!((saved_word - 4.75).abs() < 1e-12, "{saved_word}");
+    expected[offset..offset + 8].copy_from_slice(&written[offset..offset + 8]);
+    assert_eq!(written, expected);
     assert_eq!(
         std::fs::read(&source).unwrap().as_slice(),
         original.as_ref()

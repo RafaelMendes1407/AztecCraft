@@ -240,6 +240,11 @@ impl Editor {
             .units()
             .linear_factor()
             .map_err(OperationError::Scene)?;
+        let declared = match distance {
+            MoveDistance::Centimeters(_) => None,
+            #[cfg(any(test, feature = "mcp"))]
+            MoveDistance::Declared(value) => Some(value),
+        };
         let distance_cm = match distance {
             MoveDistance::Centimeters(value) => value,
             #[cfg(any(test, feature = "mcp"))]
@@ -261,6 +266,7 @@ impl Editor {
             .history
             .update_move(self.scene_token, id, provenance, distance_cm);
         let outcome = self.record_update(updated)?;
+        self.manipulation.declared = declared.map(|value| (id, value));
         self.sync_fields();
         Ok(edit_reply(outcome))
     }
@@ -400,8 +406,13 @@ impl Editor {
             .map(|active| {
                 let (kind, space, axis, handle, parameter, value, unit) = match active.kind {
                     ManipulationKindState::Move { axis } => {
-                        let value = active.parameter
-                            / units.linear_factor().map_err(OperationError::Scene)?;
+                        let value = match self.manipulation.declared {
+                            Some((id, declared)) if id == active.id => declared,
+                            _ => {
+                                active.parameter
+                                    / units.linear_factor().map_err(OperationError::Scene)?
+                            }
+                        };
                         (
                             "move",
                             "world",
@@ -413,10 +424,15 @@ impl Editor {
                         )
                     }
                     ManipulationKindState::Rotate { axis, space } => {
-                        let value = active.parameter
-                            / units
-                                .angular_degrees_factor()
-                                .map_err(OperationError::Scene)?;
+                        let value = match self.manipulation.declared {
+                            Some((id, declared)) if id == active.id => declared,
+                            _ => {
+                                active.parameter
+                                    / units
+                                        .angular_degrees_factor()
+                                        .map_err(OperationError::Scene)?
+                            }
+                        };
                         (
                             "rotate",
                             match space {

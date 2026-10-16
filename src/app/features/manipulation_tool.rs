@@ -37,6 +37,10 @@ pub(in crate::app) struct ManipulationOptions {
     // Why the scene refused the last update of the active manipulation, for the inspection.
     #[cfg_attr(not(any(test, feature = "mcp")), allow(dead_code))]
     pub(in crate::app) refusal: Option<String>,
+    // The last remote value as given, in scene units: inspection echoes it bit-exactly instead of
+    // converting the internal parameter back, which can differ in the last bit.
+    #[cfg_attr(not(any(test, feature = "mcp")), allow(dead_code))]
+    pub(in crate::app) declared: Option<(ManipulationId, f64)>,
 }
 
 impl Default for ManipulationOptions {
@@ -49,6 +53,7 @@ impl Default for ManipulationOptions {
             hover: None,
             quiet: false,
             refusal: None,
+            declared: None,
         }
     }
 }
@@ -256,10 +261,18 @@ impl Editor {
         } else {
             number
         };
+        #[cfg(any(test, feature = "mcp"))]
+        let declared = match value {
+            ManipulationValue::Angle(angle) => Some(angle),
+            _ => None,
+        };
+        #[cfg(not(any(test, feature = "mcp")))]
+        let declared: Option<f64> = None;
         let updated = self
             .history
             .update_move(self.scene_token, id, provenance, number);
         let outcome = self.record_update(updated)?;
+        self.manipulation.declared = declared.map(|angle| (id, angle));
         self.sync_fields();
         Ok(match outcome {
             EditOutcome::Changed | EditOutcome::Created(_) | EditOutcome::SessionMaterial(_) => {
