@@ -236,6 +236,7 @@ fn oblique_rotation_is_refused_per_axis_without_mutation() {
             node,
             NativeTransform {
                 rotation: [0.0, 0.0, 30.0],
+                scale: [2.0, 3.0, 5.0],
                 ..NativeTransform::default()
             },
         )
@@ -256,29 +257,46 @@ fn oblique_rotation_is_refused_per_axis_without_mutation() {
         assert!(object.scale(handle, 2.0).is_ok());
     }
     assert!(begin_world(&scene, node, ScaleHandle::Z).is_ok());
-    assert!(begin_world(&scene, node, ScaleHandle::Uniform).is_ok());
+    // The center box multiplies every channel, whatever the rotation.
+    let (uniform, _) = begin_world(&scene, node, ScaleHandle::Uniform).unwrap();
+    assert_eq!(
+        bits(uniform.scale(ScaleHandle::Uniform, 1.5).unwrap()),
+        bits([3.0, 4.5, 7.5])
+    );
     assert_eq!(scene, before);
 }
 
 #[test]
-fn alignment_tolerance_is_one_nanoradian() {
-    for (tilt, aligned) in [(5e-10, true), (2e-9, false)] {
-        let (mut scene, node) = test_fixtures::cube();
-        scene
-            .set_transform(
-                node,
-                NativeTransform {
-                    rotation: [0.0, 0.0, f64::to_degrees(tilt)],
-                    ..NativeTransform::default()
-                },
-            )
-            .unwrap();
-        // Tilt about Z mixes world X into local Y by about `tilt`.
-        assert_eq!(
-            begin_world(&scene, node, ScaleHandle::X).is_ok(),
-            aligned,
-            "{tilt}"
-        );
+fn alignment_tolerance_is_one_nanoradian_whatever_the_parent_scale() {
+    // The parent's uniform scale must not change what counts as aligned.
+    for parent_scale in [1.0, 1e-3, 1e3] {
+        for (tilt, aligned) in [(5e-10, true), (2e-9, false)] {
+            let (mut scene, root, node, _) = test_fixtures::grouped_shape();
+            scene
+                .set_transform(
+                    root,
+                    NativeTransform {
+                        scale: [parent_scale; 3],
+                        ..NativeTransform::default()
+                    },
+                )
+                .unwrap();
+            scene
+                .set_transform(
+                    node,
+                    NativeTransform {
+                        rotation: [0.0, 0.0, f64::to_degrees(tilt)],
+                        ..NativeTransform::default()
+                    },
+                )
+                .unwrap();
+            // Tilt about Z mixes world X into local Y by about `tilt`.
+            assert_eq!(
+                begin_world(&scene, node, ScaleHandle::X).is_ok(),
+                aligned,
+                "{parent_scale} {tilt}"
+            );
+        }
     }
 }
 

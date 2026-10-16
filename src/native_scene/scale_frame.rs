@@ -185,6 +185,8 @@ impl NativeScene {
         let refused = NativeError::UnsupportedScale(ScaleUnsupported::ParentTransform);
         let parent = self.ancestor_world(target)?.ok_or(refused.clone())?;
         let linear = DMat3::from_mat4(parent);
+        // Policy: every handle, the center box included, needs a uniform parent. A uniform
+        // factor would commute with any parent, but one rule is simpler and matches the others.
         if !rotation_times_uniform_scale(linear) {
             return Err(refused);
         }
