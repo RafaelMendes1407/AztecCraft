@@ -238,7 +238,25 @@ impl Editor {
                     .map_err(OperationError::Scene)
             })
         };
-        let numeric_unavailable_reason = frame.as_ref().err().map(ToString::to_string);
+        let axis_refusals: Vec<String> = frame.as_ref().map_or_else(
+            |_| Vec::new(),
+            |frame| {
+                [WorldAxis::X, WorldAxis::Y, WorldAxis::Z]
+                    .into_iter()
+                    .filter_map(|axis| {
+                        frame.require_leaves(axis).err().map(|error| {
+                            format!("{} axis: {error}", axis_name(axis).to_uppercase())
+                        })
+                    })
+                    .collect()
+            },
+        );
+        let numeric_available = frame.is_ok() && axis_refusals.len() < 3;
+        let numeric_unavailable_reason = match &frame {
+            Err(error) => Some(error.to_string()),
+            Ok(_) if axis_refusals.is_empty() => None,
+            Ok(_) => Some(axis_refusals.join("; ")),
+        };
         let active = self
             .history
             .active_move()
@@ -326,7 +344,7 @@ impl Editor {
             active_tool: self.active_tool,
             orientation: "world",
             class: "object_translation",
-            numeric_available: frame.is_ok(),
+            numeric_available,
             numeric_unavailable_reason,
             active,
             viewport,
@@ -568,6 +586,13 @@ impl Editor {
                 .scene()
                 .world_move_frame(&target)
                 .map_err(OperationError::Scene)?;
+            let mut refusals: Vec<_> = [WorldAxis::X, WorldAxis::Y, WorldAxis::Z]
+                .into_iter()
+                .filter_map(|axis| frame.require_leaves(axis).err())
+                .collect();
+            if refusals.len() == 3 {
+                return Err(OperationError::Scene(refusals.swap_remove(0)));
+            }
             let capture = input
                 .move_capture(&self.camera)
                 .map_err(|error| OperationError::InvalidInput(error.to_string()))?;

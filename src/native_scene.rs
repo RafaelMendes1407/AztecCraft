@@ -13,7 +13,7 @@ pub use appearance::{
 pub use curve::{CurveForm, NativeCurveShape};
 pub use mesh::{DirectedEdge, NativeEdge, NativeFace, NativeMesh, Points};
 pub(crate) use move_translation::MoveTranslationBaseline;
-pub use move_translation::{WorldAxis, WorldMoveFrame, WorldMoveUnsupported};
+pub use move_translation::{ChannelLeaf, WorldAxis, WorldMoveFrame, WorldMoveUnsupported};
 use source::{ScalarOrigin, SourceFormat, SourceRetention, TransformField};
 
 use crate::scene::{NodeId, Primitive, Scene, SceneError, Transform};
@@ -1385,6 +1385,10 @@ pub enum NativeError {
     UnsupportedEdit,
     ReadOnlyFormat,
     UnsupportedMove(WorldMoveUnsupported),
+    AbsentChannelLeaf {
+        channel: ChannelLeaf,
+        component: usize,
+    },
     BusyManipulation,
     UnsupportedView(&'static str),
 }
@@ -1420,6 +1424,11 @@ impl fmt::Display for NativeError {
                 f.write_str("native ownership or edit effects are unsupported")
             }
             Self::ReadOnlyFormat => f.write_str("Maya ASCII scenes are read-only in this version"),
+            Self::AbsentChannelLeaf { channel, component } => write!(
+                f,
+                "{} is absent from the Maya binary source and cannot be edited; leaf insertion is unsupported",
+                channel.name(*component)
+            ),
             Self::UnsupportedMove(reason) => write!(f, "World-axis move unsupported: {reason}"),
             Self::BusyManipulation => f.write_str("finish or cancel the active Move manipulation"),
             Self::UnsupportedView(reason) => {

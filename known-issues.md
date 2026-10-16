@@ -215,6 +215,22 @@ The prior changed-parent full MCP-client run observed an unchanged transport
 notification-flood outer-timeout failure; its single isolated reproduction
 passed. The full run remains failed and the timing cause unproved.
 
+## Absent default transform leaves refuse Move on Maya binary scenes
+
+**Area:** Move tool, Maya binary save
+
+Maya `.mb` files omit default transform leaves (translate 0, rotate 0, scale 1),
+and the binary encoder has no reviewed path to insert a missing leaf
+(`src/native_scene/binary/encode.rs` refuses an absent origin). Move therefore
+refuses a Binary-source object whose translate leaf is absent with the typed
+`AbsentChannelLeaf` error (MCP code `absent_channel_leaf`; per axis, in the UI
+status and in the Move inspection reason) instead of accepting an edit that could
+never be saved. The refusal rate on real Maya files is unmeasured but is expected
+to be high, because default leaves are routinely omitted; the Move tool is
+effectively limited to objects that already carry a translate leaf. Source-free
+scenes (new, OBJ) are not refused but cannot be saved as Maya binary. Leaf
+insertion is a separate follow-up (#19).
+
 ## Move lifecycle gaps
 
 **Severity:** low

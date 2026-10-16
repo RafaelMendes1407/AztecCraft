@@ -30,6 +30,20 @@ impl WorldAxis {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChannelLeaf {
+    Translate,
+}
+
+impl ChannelLeaf {
+    pub fn name(self, component: usize) -> String {
+        let axis = ["X", "Y", "Z"].get(component).copied().unwrap_or("?");
+        match self {
+            Self::Translate => format!("translate{axis}"),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WorldMoveUnsupported {
     SelectedPivot,
     TranslationSource,
@@ -57,6 +71,7 @@ pub struct WorldMoveFrame {
     translation: [f64; 3],
     translation_cm: DVec3,
     linear_factor: f64,
+    absent_leaf: [bool; 3],
 }
 
 pub(crate) struct MoveTranslationBaseline {
@@ -75,6 +90,21 @@ impl fmt::Debug for WorldMoveFrame {
 impl WorldMoveFrame {
     pub fn origin_cm(&self) -> DVec3 {
         self.origin_cm
+    }
+
+    // Maya binary files omit default (zero) translate leaves and the encoder cannot insert them,
+    // so an edit of an absent leaf could never be saved.
+    pub fn require_leaves(&self, axis: WorldAxis) -> Result<(), NativeError> {
+        let local = self.inverse_parent * axis.direction();
+        for (component, delta) in local.to_array().into_iter().enumerate() {
+            if delta != 0.0 && self.absent_leaf[component] {
+                return Err(NativeError::AbsentChannelLeaf {
+                    channel: ChannelLeaf::Translate,
+                    component,
+                });
+            }
+        }
+        Ok(())
     }
 
     pub fn translation(&self, axis: WorldAxis, distance_cm: f64) -> Result<[f64; 3], NativeError> {
@@ -142,8 +172,10 @@ impl NativeScene {
     pub(crate) fn begin_move_translation(
         &self,
         target: &TransformTarget,
+        axis: WorldAxis,
     ) -> Result<(WorldMoveFrame, MoveTranslationBaseline), NativeError> {
         let frame = self.world_move_frame(target)?;
+        frame.require_leaves(axis)?;
         let node = self.node(target.node)?;
         Ok((
             frame,
@@ -273,6 +305,7 @@ impl NativeScene {
                 WorldMoveUnsupported::SelectedPivot,
             ));
         }
+        let mut absent_leaf = [false; 3];
         if let Some(source) = &self.source {
             if source.format != SourceFormat::Binary {
                 return Err(NativeError::UnsupportedMove(
@@ -284,10 +317,18 @@ impl NativeScene {
                 .iter()
                 .enumerate()
             {
-                let Some(origin @ ScalarOrigin::Binary { .. }) = &scalar.origin else {
-                    return Err(NativeError::UnsupportedMove(
-                        WorldMoveUnsupported::TranslationSource,
-                    ));
+                let origin = match &scalar.origin {
+                    Some(origin @ ScalarOrigin::Binary { .. }) => origin,
+                    None => {
+                        absent_leaf[component] = true;
+                        continue;
+                    }
+                    #[cfg(test)]
+                    Some(_) => {
+                        return Err(NativeError::UnsupportedMove(
+                            WorldMoveUnsupported::TranslationSource,
+                        ));
+                    }
                 };
                 source.original(
                     origin,
@@ -345,6 +386,7 @@ impl NativeScene {
             translation: selected.transform().translation,
             translation_cm: DVec3::from_array(transform.translation_cm),
             linear_factor: self.units.linear_factor()?,
+            absent_leaf,
         })
     }
 }
