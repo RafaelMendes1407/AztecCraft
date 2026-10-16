@@ -3,7 +3,9 @@ use crate::editor_operations::{
     ActiveTool, MoveDistance, Operation, OperationError, OperationReply, SelectionMode,
 };
 use azteccraft::{
-    history::{EditOutcome, MoveError, MoveFinish, MoveId, MoveProvenance},
+    history::{
+        EditOutcome, ManipulationError, ManipulationFinish, ManipulationId, ManipulationProvenance,
+    },
     move_handles::{AxisDrag, ViewportCapture, WorldHandles},
     native_scene::{NativeError, TransformTarget, WorldAxis},
 };
@@ -11,7 +13,7 @@ use glam::Vec2;
 use uuid::Uuid;
 
 pub(in crate::app) struct NativeMove {
-    id: MoveId,
+    id: ManipulationId,
     scene_token: Uuid,
     drag: AxisDrag,
 }
@@ -52,8 +54,8 @@ impl Editor {
     // Returns whether a Move was actually cancelled. Only then is the current pointer sequence
     // consumed; an idle cancel must not swallow the next frame's input.
     pub(in crate::app) fn cancel_move(&mut self) -> Result<bool, OperationError> {
-        let cancelled = self.history.active_move().is_some() || self.native_move.is_some();
-        let result = if self.history.active_move().is_some() {
+        let cancelled = self.history.active_manipulation().is_some() || self.native_move.is_some();
+        let result = if self.history.active_manipulation().is_some() {
             self.history
                 .cancel_active_move()
                 .map(|_| ())
@@ -82,9 +84,9 @@ impl Editor {
     pub(in crate::app) fn guard_move_dispatch(
         &mut self,
         operation: &Operation,
-        provenance: MoveProvenance,
+        provenance: ManipulationProvenance,
     ) -> Result<(), OperationError> {
-        if provenance == MoveProvenance::Native
+        if provenance == ManipulationProvenance::Native
             && matches!(
                 operation,
                 Operation::SetActiveTool(_)
@@ -104,7 +106,7 @@ impl Editor {
             }
             return Ok(());
         }
-        if self.history.active_move().is_none() {
+        if self.history.active_manipulation().is_none() {
             return Ok(());
         }
         if matches!(
@@ -133,7 +135,7 @@ impl Editor {
         &mut self,
         target: &TransformTarget,
         axis: WorldAxis,
-        provenance: MoveProvenance,
+        provenance: ManipulationProvenance,
     ) -> Result<OperationReply, OperationError> {
         if self.selection_mode == SelectionMode::Face {
             return Err(OperationError::InvalidInput(FACE_MODE_REFUSAL.into()));
@@ -153,7 +155,7 @@ impl Editor {
                 256 * 1024 * 1024,
             )
             .map_err(|error| match error {
-                MoveError::Native(error @ NativeError::ReadOnlyFormat) => {
+                ManipulationError::Native(error @ NativeError::ReadOnlyFormat) => {
                     OperationError::Scene(error)
                 }
                 error => OperationError::Move(error),
@@ -171,9 +173,9 @@ impl Editor {
     )]
     pub(in crate::app) fn update_editor_move(
         &mut self,
-        id: MoveId,
+        id: ManipulationId,
         distance: MoveDistance,
-        provenance: MoveProvenance,
+        provenance: ManipulationProvenance,
     ) -> Result<OperationReply, OperationError> {
         let factor = self
             .history
@@ -208,9 +210,9 @@ impl Editor {
 
     pub(in crate::app) fn finish_editor_move(
         &mut self,
-        id: MoveId,
-        finish: MoveFinish,
-        provenance: MoveProvenance,
+        id: ManipulationId,
+        finish: ManipulationFinish,
+        provenance: ManipulationProvenance,
     ) -> Result<OperationReply, OperationError> {
         let outcome = self
             .history
@@ -259,7 +261,7 @@ impl Editor {
         };
         let active = self
             .history
-            .active_move()
+            .active_manipulation()
             .map(|active| {
                 let factor = self
                     .history
@@ -284,8 +286,8 @@ impl Editor {
                         .collect(),
                     axis: axis_name(active.axis),
                     provenance: match active.provenance {
-                        MoveProvenance::Native => "native",
-                        MoveProvenance::Remote => "remote",
+                        ManipulationProvenance::Native => "native",
+                        ManipulationProvenance::Remote => "remote",
                     },
                     distance,
                 })
@@ -366,7 +368,7 @@ impl Editor {
     // A refused final sample leaves the previous preview intact, so release commits that preview.
     fn finish_native_sample(
         &mut self,
-        id: MoveId,
+        id: ManipulationId,
         released: bool,
         updated: Result<OperationReply, OperationError>,
     ) -> Result<(), OperationError> {
@@ -378,7 +380,7 @@ impl Editor {
         }
         self.apply_operation(Operation::FinishMove {
             id,
-            finish: MoveFinish::Commit,
+            finish: ManipulationFinish::Commit,
         })?;
         match updated {
             Ok(_) => {
@@ -419,15 +421,15 @@ impl Editor {
         if let Some(native) = &self.native_move {
             let matching = native.scene_token == self.scene_token
                 && frame_token == self.scene_token
-                && self.history.active_move().is_some_and(|active| {
-                    active.id == native.id && active.provenance == MoveProvenance::Native
+                && self.history.active_manipulation().is_some_and(|active| {
+                    active.id == native.id && active.provenance == ManipulationProvenance::Native
                 });
             if !matching {
                 self.native_move = None;
                 self.move_consumed_frame = true;
                 self.move_suppress_primary = pointer.down;
                 return Err(OperationError::Move(
-                    azteccraft::history::MoveError::StaleMove,
+                    azteccraft::history::ManipulationError::StaleMove,
                 ));
             }
             if !native.drag.same_capture(&capture)
@@ -472,7 +474,7 @@ impl Editor {
                     if pointer.released {
                         self.apply_operation(Operation::FinishMove {
                             id,
-                            finish: MoveFinish::Commit,
+                            finish: ManipulationFinish::Commit,
                         })?;
                         self.status = format!("{error}; last valid position committed");
                     } else {
@@ -488,7 +490,7 @@ impl Editor {
             }
             return Ok(true);
         }
-        if self.history.active_move().is_some() {
+        if self.history.active_manipulation().is_some() {
             if pointer.pressed {
                 self.cancel_move()?;
                 self.status = "Move cancelled by native viewport input".into();
@@ -546,9 +548,9 @@ impl Editor {
         self.apply_operation(Operation::BeginMove { target, axis })?;
         let id = self
             .history
-            .active_move()
+            .active_manipulation()
             .ok_or(OperationError::Move(
-                azteccraft::history::MoveError::StaleMove,
+                azteccraft::history::ManipulationError::StaleMove,
             ))?
             .id;
         self.native_move = Some(NativeMove {
@@ -559,7 +561,7 @@ impl Editor {
         if pointer.released {
             self.apply_operation(Operation::FinishMove {
                 id,
-                finish: MoveFinish::Commit,
+                finish: ManipulationFinish::Commit,
             })?;
         }
         self.status = format!("World {} Move", axis_name(axis).to_uppercase());
@@ -615,7 +617,7 @@ impl Editor {
                 return;
             }
         };
-        let active = self.history.active_move().map(|active| active.axis);
+        let active = self.history.active_manipulation().map(|active| active.axis);
         let hovered = if active.is_none() {
             input
                 .move_pointer()

@@ -98,7 +98,7 @@ impl Editor {
                 ui.add_enabled_ui(
                     !self.files.is_closing()
                         && !self.files.is_modal()
-                        && self.history.active_move().is_none(),
+                        && self.history.active_manipulation().is_none(),
                     |ui| self.channels(ui, &mut delete_intent),
                 );
             });

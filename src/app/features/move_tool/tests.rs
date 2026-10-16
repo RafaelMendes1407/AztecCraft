@@ -124,8 +124,8 @@ fn press_x(editor: &mut Editor, context: &egui::Context, rect: Rect, scale: f32)
     );
     assert!(editor.native_move.is_some(), "{}", editor.status);
     assert_eq!(
-        editor.history.active_move().unwrap().provenance,
-        MoveProvenance::Native
+        editor.history.active_manipulation().unwrap().provenance,
+        ManipulationProvenance::Native
     );
     position
 }
@@ -192,7 +192,7 @@ fn real_w_q_and_vector_buttons_activate_tools_and_leave_unsupported_tools_disabl
         ),
     );
     assert_eq!(editor.active_tool, ActiveTool::Move);
-    assert!(editor.history.active_move().is_none());
+    assert!(editor.history.active_manipulation().is_none());
 }
 
 #[test]
@@ -242,7 +242,7 @@ fn real_axis_press_absolute_motion_release_makes_one_undo_at_fractional_dpi() {
                 button(end, false),
             ),
         );
-        assert!(editor.history.active_move().is_none());
+        assert!(editor.history.active_manipulation().is_none());
         assert!(editor.native_move.is_none());
         assert_eq!(editor.camera, camera);
         assert_eq!(editor.selected_path, selected_path);
@@ -295,7 +295,7 @@ fn stationary_release_in_changed_window_origin_size_or_dpi_cancels_without_fallt
             &context,
             raw(size, origin, scale, button(position, false)),
         );
-        assert!(editor.history.active_move().is_none());
+        assert!(editor.history.active_manipulation().is_none());
         assert_eq!(editor.history.scene(), &before);
         assert_eq!(editor.camera, camera);
         assert_eq!(editor.selected, Some(node));
@@ -344,7 +344,7 @@ fn escape_modifiers_focus_and_pointer_loss_cancel_real_captured_gestures() {
         }
         frame(&mut editor, &context, input);
         assert!(
-            editor.history.active_move().is_none(),
+            editor.history.active_manipulation().is_none(),
             "{interruption}: {}",
             editor.status
         );
@@ -370,7 +370,7 @@ fn real_q_cancels_preview_before_tool_switch_and_remote_cannot_finish_native_mov
     let (mut editor, context, rect) = setup(1.0);
     let before = editor.history.scene().clone();
     let begin = press_x(&mut editor, &context, rect, 1.0);
-    let id = editor.history.active_move().unwrap().id;
+    let id = editor.history.active_manipulation().unwrap().id;
     let position = begin + egui::vec2(rect.height() / 10.0, 0.0);
     frame(
         &mut editor,
@@ -388,7 +388,7 @@ fn real_q_cancels_preview_before_tool_switch_and_remote_cannot_finish_native_mov
             expected_scene_token: Some(editor.scene_token),
             operation: Operation::FinishMove {
                 id,
-                finish: MoveFinish::Commit,
+                finish: ManipulationFinish::Commit,
             },
         },
         &context,
@@ -406,7 +406,7 @@ fn real_q_cancels_preview_before_tool_switch_and_remote_cannot_finish_native_mov
         ),
     );
     assert_eq!(editor.active_tool, ActiveTool::Select);
-    assert!(editor.history.active_move().is_none());
+    assert!(editor.history.active_manipulation().is_none());
     assert_eq!(editor.history.scene(), &before);
     frame(
         &mut editor,
@@ -462,7 +462,7 @@ fn real_xyz_drag_samples_reach_independent_world_positions_and_can_leave_the_vie
                 button(begin, true),
             ),
         );
-        assert_eq!(editor.history.active_move().unwrap().axis, axis);
+        assert_eq!(editor.history.active_manipulation().unwrap().axis, axis);
         frame(
             &mut editor,
             &context,
@@ -489,7 +489,7 @@ fn real_xyz_drag_samples_reach_independent_world_positions_and_can_leave_the_vie
             (actual - axis.direction() * 2.0).length() < 5e-5,
             "{axis:?}: {actual:?}"
         );
-        assert!(editor.history.active_move().is_none());
+        assert!(editor.history.active_manipulation().is_none());
     }
     let (mut editor, context, rect) = setup(1.0);
     let begin = press_x(&mut editor, &context, rect, 1.0);
@@ -516,7 +516,7 @@ fn real_xyz_drag_samples_reach_independent_world_positions_and_can_leave_the_vie
             button(outside, false),
         ),
     );
-    assert!(editor.history.active_move().is_none());
+    assert!(editor.history.active_manipulation().is_none());
     assert!((editor.history.scene().nodes()[0].transform().translation[0] - expected).abs() < 5e-5);
 }
 
@@ -560,7 +560,7 @@ fn projection_replacement_and_missing_viewport_cancel_before_release_commit() {
             &context,
             raw(size, Pos2::ZERO, 1.0, button(end, false)),
         );
-        assert!(editor.history.active_move().is_none());
+        assert!(editor.history.active_manipulation().is_none());
         assert_eq!(editor.history.scene(), &before);
         assert_eq!(editor.camera, camera);
     }
@@ -607,12 +607,12 @@ fn editor_move_guards_preserve_drafts_modal_close_tokens_and_failed_open_baselin
                     axis: WorldAxis::X,
                 },
                 2 => Operation::UpdateMove {
-                    id: MoveId::from_decimal("1").unwrap(),
+                    id: ManipulationId::from_decimal("1").unwrap(),
                     distance: MoveDistance::Declared(1.0),
                 },
                 _ => Operation::FinishMove {
-                    id: MoveId::from_decimal("1").unwrap(),
-                    finish: MoveFinish::Commit,
+                    id: ManipulationId::from_decimal("1").unwrap(),
+                    finish: ManipulationFinish::Commit,
                 },
             };
             let reply = editor.remote_operation(
@@ -631,7 +631,7 @@ fn editor_move_guards_preserve_drafts_modal_close_tokens_and_failed_open_baselin
                 Err(OperationError::BusyEditing | OperationError::StaleScene)
             ));
             assert_eq!(editor.history.scene(), &before);
-            assert!(editor.history.active_move().is_none());
+            assert!(editor.history.active_manipulation().is_none());
             assert_eq!(editor.active_tool, ActiveTool::Select);
         }
     }
@@ -646,7 +646,7 @@ fn editor_move_guards_preserve_drafts_modal_close_tokens_and_failed_open_baselin
     let target = editor.selected_move_target().unwrap();
     let reply = editor
         .apply_operation_guarded(
-            MoveProvenance::Remote,
+            ManipulationProvenance::Remote,
             Operation::BeginMove {
                 target,
                 axis: WorldAxis::X,
@@ -655,10 +655,10 @@ fn editor_move_guards_preserve_drafts_modal_close_tokens_and_failed_open_baselin
         )
         .unwrap();
     assert!(matches!(reply, OperationReply::MoveStarted { .. }));
-    let id = editor.history.active_move().unwrap().id;
+    let id = editor.history.active_manipulation().unwrap().id;
     editor
         .apply_operation_guarded(
-            MoveProvenance::Remote,
+            ManipulationProvenance::Remote,
             Operation::UpdateMove {
                 id,
                 distance: MoveDistance::Declared(2.0),
@@ -678,7 +678,7 @@ fn editor_move_guards_preserve_drafts_modal_close_tokens_and_failed_open_baselin
     assert_eq!(editor.scene_token, token);
     assert_eq!(editor.camera, camera);
     assert_eq!(editor.active_tool, ActiveTool::Move);
-    assert!(editor.history.active_move().is_none());
+    assert!(editor.history.active_manipulation().is_none());
     let pending = editor.apply_operation(Operation::NewScene).unwrap();
     let OperationReply::PendingConfirmation {
         pending_action_id, ..
@@ -694,7 +694,7 @@ fn editor_move_guards_preserve_drafts_modal_close_tokens_and_failed_open_baselin
         .unwrap();
     assert_ne!(editor.scene_token, token);
     assert_eq!(editor.active_tool, ActiveTool::Select);
-    assert!(editor.history.active_move().is_none());
+    assert!(editor.history.active_manipulation().is_none());
     assert!(editor.history.scene().nodes().is_empty());
 }
 
@@ -746,7 +746,10 @@ fn finite_parallel_or_backward_release_commits_exact_last_valid_preview_with_hon
                 button(begin, true),
             ),
         );
-        assert_eq!(editor.history.active_move().unwrap().axis, WorldAxis::X);
+        assert_eq!(
+            editor.history.active_manipulation().unwrap().axis,
+            WorldAxis::X
+        );
         frame(
             &mut editor,
             &context,
@@ -774,7 +777,11 @@ fn finite_parallel_or_backward_release_commits_exact_last_valid_preview_with_hon
                 button(rejected, false),
             ),
         );
-        assert!(editor.history.active_move().is_none(), "{}", editor.status);
+        assert!(
+            editor.history.active_manipulation().is_none(),
+            "{}",
+            editor.status
+        );
         assert_eq!(editor.history.scene(), &last_valid);
         assert!(
             editor.status.contains("last valid position committed"),
@@ -952,7 +959,7 @@ fn native_source_bound_cancel_restores_prior_authored_signed_zero_bytes_and_redo
             button(end, false),
         ),
     );
-    assert!(editor.history.active_move().is_none());
+    assert!(editor.history.active_manipulation().is_none());
     assert_eq!(editor.history.scene(), &before);
     assert_eq!(editor.scene_token, token);
     assert_eq!(editor.is_dirty(), dirty);
@@ -1032,7 +1039,7 @@ fn coalesced_modified_release_or_modifier_transition_cancels_before_final_modifi
             &context,
             raw(egui::vec2(1440.0, 900.0), Pos2::ZERO, 1.0, events),
         );
-        assert!(editor.history.active_move().is_none());
+        assert!(editor.history.active_manipulation().is_none());
         assert_eq!(editor.history.scene(), &before);
     }
 }
@@ -1074,7 +1081,7 @@ fn coalesced_modified_tool_key_is_not_unmodified_by_later_modifier_up() {
             ),
         );
         assert_eq!(editor.active_tool, before);
-        assert!(editor.history.active_move().is_none());
+        assert!(editor.history.active_manipulation().is_none());
     }
 }
 
@@ -1105,7 +1112,7 @@ fn idle_escape_or_tool_activation_consumes_same_frame_axis_press_and_terminal_re
             raw(egui::vec2(1440.0, 900.0), Pos2::ZERO, 1.0, events),
         );
         assert_eq!(editor.active_tool, ActiveTool::Move);
-        assert!(editor.history.active_move().is_none());
+        assert!(editor.history.active_manipulation().is_none());
         assert!(editor.native_move.is_none());
         frame(
             &mut editor,
@@ -1117,7 +1124,7 @@ fn idle_escape_or_tool_activation_consumes_same_frame_axis_press_and_terminal_re
                 button(point, false),
             ),
         );
-        assert!(editor.history.active_move().is_none());
+        assert!(editor.history.active_manipulation().is_none());
         assert_eq!(editor.history.scene(), &before);
         assert_eq!(editor.camera, camera);
     }
@@ -1179,7 +1186,7 @@ fn release_with_a_refused_final_sample_commits_the_last_valid_preview() {
             Err(OperationError::InvalidInput("final sample refused".into())),
         )
         .unwrap();
-    assert!(editor.history.active_move().is_none());
+    assert!(editor.history.active_manipulation().is_none());
     assert!(editor.native_move.is_none());
     assert_eq!(editor.history.scene(), &preview, "{}", editor.status);
     assert!(
@@ -1227,7 +1234,7 @@ fn face_mode_refuses_move_handles_native_and_numeric_and_keeps_face_click_workin
     let before = editor.history.scene().clone();
     let axis = rect.center() + egui::vec2(40.0, 0.0);
     tap(&mut editor, &context, axis, vec![]);
-    assert!(editor.history.active_move().is_none() && editor.native_move.is_none());
+    assert!(editor.history.active_manipulation().is_none() && editor.native_move.is_none());
     assert_eq!(editor.history.scene(), &before);
     assert_eq!(editor.status, FACE_MODE_REFUSAL);
     let target = editor.selected_move_target().unwrap();
@@ -1238,7 +1245,7 @@ fn face_mode_refuses_move_handles_native_and_numeric_and_keeps_face_click_workin
         }),
         Err(OperationError::InvalidInput(message)) if message == FACE_MODE_REFUSAL
     ));
-    assert!(editor.history.active_move().is_none());
+    assert!(editor.history.active_manipulation().is_none());
     let inspected = editor.inspect_move().unwrap();
     assert!(!inspected.numeric_available);
     assert_eq!(
@@ -1293,7 +1300,7 @@ fn native_face_mode_switch_cancels_an_active_native_move_and_remote_move_blocks_
             editor.native_operation(Operation::SetSelectionMode(SelectionMode::Face));
         }
         assert_eq!(editor.selection_mode, SelectionMode::Face);
-        assert!(editor.history.active_move().is_none() && editor.native_move.is_none());
+        assert!(editor.history.active_manipulation().is_none() && editor.native_move.is_none());
         assert_eq!(editor.history.scene(), &before);
         assert!(!editor.history.can_undo() || editor.history.scene() == &before);
     }
@@ -1301,7 +1308,7 @@ fn native_face_mode_switch_cancels_an_active_native_move_and_remote_move_blocks_
     let target = editor.selected_move_target().unwrap();
     editor
         .apply_operation_guarded(
-            MoveProvenance::Remote,
+            ManipulationProvenance::Remote,
             Operation::BeginMove {
                 target,
                 axis: WorldAxis::X,
@@ -1315,7 +1322,7 @@ fn native_face_mode_switch_cancels_an_active_native_move_and_remote_move_blocks_
         Operation::SetGridVisible { visible: false },
     ] {
         assert!(matches!(
-            editor.apply_operation_guarded(MoveProvenance::Remote, operation, &|| true),
+            editor.apply_operation_guarded(ManipulationProvenance::Remote, operation, &|| true),
             Err(OperationError::BusyManipulation)
         ));
     }
@@ -1380,7 +1387,7 @@ fn read_only_ascii_curve_scene_refuses_move_natively_and_numerically_with_the_co
         }),
         Err(OperationError::Scene(NativeError::ReadOnlyFormat))
     ));
-    assert!(editor.history.active_move().is_none() && editor.native_move.is_none());
+    assert!(editor.history.active_manipulation().is_none() && editor.native_move.is_none());
     assert_eq!(editor.history.scene(), &before);
     let context = egui::Context::default();
     let output = frame(
@@ -1400,7 +1407,7 @@ fn read_only_ascii_curve_scene_refuses_move_natively_and_numerically_with_the_co
         rect.center() + egui::vec2(40.0, 0.0),
         vec![],
     );
-    assert!(editor.history.active_move().is_none() && editor.native_move.is_none());
+    assert!(editor.history.active_manipulation().is_none() && editor.native_move.is_none());
     assert_eq!(editor.history.scene(), &before);
 }
 
@@ -1442,7 +1449,7 @@ fn hover_and_active_painter_states_use_the_same_actual_axis_hit() {
         ),
     );
     assert_eq!(shaft_color(&hover), egui::Color32::WHITE);
-    assert!(editor.history.active_move().is_none());
+    assert!(editor.history.active_manipulation().is_none());
     let active = frame(
         &mut editor,
         &context,
@@ -1454,7 +1461,10 @@ fn hover_and_active_painter_states_use_the_same_actual_axis_hit() {
         ),
     );
     assert_eq!(shaft_color(&active), egui::Color32::from_rgb(255, 225, 80));
-    assert_eq!(editor.history.active_move().unwrap().axis, WorldAxis::X);
+    assert_eq!(
+        editor.history.active_manipulation().unwrap().axis,
+        WorldAxis::X
+    );
 }
 
 #[test]
@@ -1485,7 +1495,7 @@ fn actual_hidden_logic_cancels_native_pointer_capture() {
     let _ = context.run_logic(&input, |ctx| {
         eframe::App::logic(&mut editor, ctx, &mut native_frame)
     });
-    assert!(editor.history.active_move().is_none());
+    assert!(editor.history.active_manipulation().is_none());
     assert!(editor.native_move.is_none());
     assert_eq!(editor.history.scene(), &before);
     assert!(editor.inspect_move().unwrap().viewport.is_none());
@@ -1572,7 +1582,7 @@ fn same_frame_name_or_channel_focus_blocks_qw_before_move_dispatch() {
             assert_eq!(editor.name_intent, baseline.name_intent);
             assert_eq!(editor.channel_intents, baseline.channel_intents);
             assert_eq!(editor.has_draft(), baseline.has_draft());
-            assert!(editor.history.active_move().is_none());
+            assert!(editor.history.active_manipulation().is_none());
         }
     }
 }

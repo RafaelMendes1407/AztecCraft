@@ -378,7 +378,7 @@ async fn move_sdk_declared_inches_cancel_and_saved_translation_preserve_other_so
             editor.active_tool,
             crate::editor_operations::ActiveTool::Select
         );
-        assert!(editor.history.active_move().is_none());
+        assert!(editor.history.active_manipulation().is_none());
         assert_eq!(
             editor.history.scene().nodes()[0].transform().translation[0],
             12.0
@@ -445,7 +445,7 @@ async fn move_sdk_never_commits_real_native_text_drafts_or_takes_their_focus() {
             context.memory(|memory| memory.focused()),
             Some(name_edit_id())
         );
-        assert!(editor.history.active_move().is_none());
+        assert!(editor.history.active_manipulation().is_none());
     }
     client.cancel().await.unwrap();
     drop(editor);
@@ -495,7 +495,7 @@ async fn move_sdk_refuses_begin_in_face_mode_and_reports_it_in_inspection() {
         refused.structured_content.unwrap()["error"]["code"],
         "invalid_input"
     );
-    assert!(editor.history.active_move().is_none());
+    assert!(editor.history.active_manipulation().is_none());
     assert_eq!(editor.history.scene(), &before);
     let inspected = call(
         &mut editor,
@@ -570,7 +570,7 @@ async fn move_sdk_refuses_begin_on_a_read_only_ascii_curve_scene_with_a_typed_er
     let error = &refused.structured_content.unwrap()["error"];
     assert_eq!(error["code"], "scene_error");
     assert!(error["message"].as_str().unwrap().contains("read-only"));
-    assert!(editor.history.active_move().is_none());
+    assert!(editor.history.active_manipulation().is_none());
     assert_eq!(editor.history.scene(), &before);
     let inspected = call(
         &mut editor,
@@ -649,7 +649,7 @@ async fn move_sdk_refuses_a_binary_scene_lacking_the_translate_leaf_with_a_typed
     let error = &refused.structured_content.unwrap()["error"];
     assert_eq!(error["code"], "absent_channel_leaf");
     assert!(error["message"].as_str().unwrap().contains("translateX"));
-    assert!(editor.history.active_move().is_none());
+    assert!(editor.history.active_manipulation().is_none());
     assert_eq!(editor.history.scene(), &before);
     let inspected = call(
         &mut editor,

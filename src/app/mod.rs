@@ -9,7 +9,7 @@ use crate::editor_operations::{
 #[cfg(any(test, feature = "mcp"))]
 use azteccraft::native_scene::{LinearUnit, NativeTransform};
 use azteccraft::{
-    history::{Command, EditOutcome, History, MoveProvenance},
+    history::{Command, EditOutcome, History, ManipulationProvenance},
     native_scene::{AngularUnit, FaceTarget, NativeId},
     scene::{NodeId, Primitive},
     view_scene::ViewScene,
@@ -177,8 +177,8 @@ impl eframe::App for Editor {
             self.move_viewport = None;
             if self
                 .history
-                .active_move()
-                .is_some_and(|active| active.provenance == MoveProvenance::Native)
+                .active_manipulation()
+                .is_some_and(|active| active.provenance == ManipulationProvenance::Native)
                 && let Err(error) = self.cancel_move()
             {
                 self.status = error.to_string();

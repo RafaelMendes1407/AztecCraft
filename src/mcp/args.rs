@@ -1,5 +1,5 @@
 use crate::editor_operations::{Operation, RemoteRequest};
-use azteccraft::{history::MoveId, native_scene::NativeId, scene::NodeId};
+use azteccraft::{history::ManipulationId, native_scene::NativeId, scene::NodeId};
 use rmcp::{
     model::{ErrorData, JsonObject},
     schemars::{self, JsonSchema},
@@ -47,14 +47,14 @@ pub(in crate::mcp) fn native_id(value: &str) -> Result<NativeId, ErrorData> {
     })
 }
 
-pub(in crate::mcp) fn move_id(value: &str) -> Result<MoveId, ErrorData> {
+pub(in crate::mcp) fn move_id(value: &str) -> Result<ManipulationId, ErrorData> {
     if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
         return Err(ErrorData::invalid_params(
             "move_id must be an unsigned decimal string",
             None,
         ));
     }
-    MoveId::from_decimal(value)
+    ManipulationId::from_decimal(value)
         .map_err(|_| ErrorData::invalid_params("move_id must fit an unsigned 64-bit integer", None))
 }
 

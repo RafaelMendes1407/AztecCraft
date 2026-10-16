@@ -84,7 +84,7 @@ async fn sdk_inspection_matches_committed_snapshots() {
     };
     editor
         .apply_operation(Operation::UpdateMove {
-            id: azteccraft::history::MoveId::from_decimal(&move_id).unwrap(),
+            id: azteccraft::history::ManipulationId::from_decimal(&move_id).unwrap(),
             distance: crate::editor_operations::MoveDistance::Centimeters(2.5),
         })
         .unwrap();

@@ -1,7 +1,7 @@
 #[cfg(any(test, feature = "mcp"))]
 use azteccraft::native_scene::NativeTransform;
 use azteccraft::{
-    history::{MoveError, MoveFinish, MoveId},
+    history::{ManipulationError, ManipulationFinish, ManipulationId},
     native_scene::{FaceTarget, NativeError, NativeId, TransformTarget, WorldAxis},
     scene::{NodeId, Primitive},
     viewport::InvalidCameraInput,
@@ -93,12 +93,12 @@ pub enum Operation {
         axis: WorldAxis,
     },
     UpdateMove {
-        id: MoveId,
+        id: ManipulationId,
         distance: MoveDistance,
     },
     FinishMove {
-        id: MoveId,
-        finish: MoveFinish,
+        id: ManipulationId,
+        finish: ManipulationFinish,
     },
     #[cfg(any(test, feature = "mcp"))]
     SetMaterialDiffuse {
@@ -411,7 +411,7 @@ pub struct CameraInspection {
 pub enum OperationError {
     BusyEditing,
     BusyManipulation,
-    Move(MoveError),
+    Move(ManipulationError),
     #[cfg(any(test, feature = "mcp"))]
     StaleScene,
     #[cfg(any(test, feature = "mcp"))]

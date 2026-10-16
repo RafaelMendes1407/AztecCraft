@@ -126,7 +126,7 @@ impl Editor {
         destination: SaveDestination<'_>,
         may_install: &dyn Fn() -> bool,
     ) -> Result<OperationReply, OperationError> {
-        if self.history.active_move().is_some() {
+        if self.history.active_manipulation().is_some() {
             return Err(OperationError::BusyManipulation);
         }
         if !self.commit_pending() {
@@ -200,7 +200,7 @@ impl Editor {
         &mut self,
         action: FileAction,
     ) -> Result<OperationReply, OperationError> {
-        if self.history.active_move().is_some() {
+        if self.history.active_manipulation().is_some() {
             return Err(OperationError::BusyManipulation);
         }
         if self.files.is_modal() {
@@ -258,7 +258,7 @@ impl Editor {
         }
     }
     pub(super) fn save_as_dialog(&mut self) {
-        if self.history.active_move().is_some() {
+        if self.history.active_manipulation().is_some() {
             self.status = OperationError::BusyManipulation.to_string();
             self.error = true;
             return;
@@ -369,7 +369,7 @@ impl Editor {
         decision: FileDecision,
         may_install: &dyn Fn() -> bool,
     ) -> Result<OperationReply, OperationError> {
-        if self.history.active_move().is_some() {
+        if self.history.active_manipulation().is_some() {
             return Err(OperationError::BusyManipulation);
         }
         if self.files.pending.as_ref().is_none_or(|p| p.id != id) {
@@ -715,7 +715,7 @@ mod tests {
         assert!(matches!(
             editor
                 .apply_operation_guarded(
-                    azteccraft::history::MoveProvenance::Native,
+                    azteccraft::history::ManipulationProvenance::Native,
                     Operation::SaveSceneAs {
                         path: destination.clone()
                     },
@@ -791,7 +791,7 @@ mod tests {
         assert!(matches!(
             editor
                 .apply_operation_guarded(
-                    azteccraft::history::MoveProvenance::Native,
+                    azteccraft::history::ManipulationProvenance::Native,
                     Operation::SaveScene,
                     &guard
                 )
@@ -992,7 +992,7 @@ mod tests {
             let guard = || relocate_completed_stage_once(&parent, &moved, &expected, &relocated);
             let reply = editor
                 .apply_operation_guarded(
-                    azteccraft::history::MoveProvenance::Native,
+                    azteccraft::history::ManipulationProvenance::Native,
                     Operation::SaveScene,
                     &guard,
                 )
@@ -1227,7 +1227,7 @@ mod tests {
         let guard = || std::fs::read(&source).ok().as_deref() != Some(expected.as_slice());
         let reply = editor
             .apply_operation_guarded(
-                azteccraft::history::MoveProvenance::Native,
+                azteccraft::history::ManipulationProvenance::Native,
                 Operation::ResolveFileAction {
                     pending_id: pending,
                     decision: FileDecision::Save,
@@ -1327,7 +1327,7 @@ mod tests {
             assert!(matches!(
                 editor
                     .apply_operation_guarded(
-                        azteccraft::history::MoveProvenance::Native,
+                        azteccraft::history::ManipulationProvenance::Native,
                         Operation::SaveScene,
                         &guard
                     )
