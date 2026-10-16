@@ -1,6 +1,6 @@
 # Maya 2026 UI parity inventory
 
-Research date: 2026-10-16. Main SHA: ef86b64. All `file:line` evidence is at that SHA. Main has since moved to 7a6d46c; view cited lines with `git show ef86b64:src/app.rs` (or the other cited file).
+Research date: 2026-10-16. Main SHA: ef86b64. All `file:line` evidence is at that SHA. Main has since moved to 7a6d46c; view cited lines with `git show ef86b64:src/app.rs` (or the other cited file). Rows citing `src/app/features/status_line.rs` and `src/app/menus.rs` are at d70edd2 (branch feat/59-status-file-buttons; merged later via the Status Line PRs).
 
 Umbrella issue: #71. Slice labels S1 to S15 map to the GitHub issues and PR listed in the Prioritized backlog.
 
@@ -33,29 +33,29 @@ Menu bar draws File, Edit, Create, Select, Modify, Mesh, UV, Windows, Render and
 | Display menu | [menus] | Missing | absent from the menu label list at src/app.rs:1197 | none | P2 | S6 Menu content (#66) |
 | Display menu items (Heads-up display, UI Elements and others) | source not yet researched | Missing | absent; no Display menu is drawn | none | P2 | S6 Menu content (#66) |
 | Windows menu | [menus] | Visible-unsupported | src/app.rs:1197-1199 "Windows" (disabled placeholder entry; source-verified) | none | P2 | S6 Menu content (#66) |
-| Modeling menu set (default, UNCONFIRMED as default) | [menus] UNCONFIRMED | Missing | src/app.rs:1209 is a static label, not a selector; see the Status Line 'Menu set drop-down' row | none | P2 | S1 Status Line strip (#59) |
+| Modeling menu set (default, UNCONFIRMED as default) | [menus] UNCONFIRMED | Partial | `src/app/features/status_line.rs:168 "ComboBox::from_id_salt(\"menu_set\")"` selector with Modeling active; see the Status Line 'Menu set drop-down' row | none | P2 | S1 Status Line strip (#59) |
 | Rigging menu set | [menus] | Missing | no set switching in src/app.rs | none | P3 | S6 Menu content (#66) |
 | Animation menu set | [menus] | Missing | no set switching in src/app.rs | none | P3 | S6 Menu content (#66) |
 | FX menu set (page also says Dynamics) | [menus] | Missing | no set switching in src/app.rs | none | P3 | S6 Menu content (#66) |
 | Rendering menu set | [menus] | Missing | src/app.rs:1197 has a disabled Render placeholder menu, not a set | none | P3 | S6 Menu content (#66) |
 | Per-set menu lists (Mesh, UV and similar) | [menus] UNCONFIRMED | Visible-unsupported | src/app.rs:1197 "Mesh" (Mesh, UV, Render placeholders; contents UNCONFIRMED in the report; source-verified) | none | P2 | S6 Menu content (#66) |
-| Menu set switching by F2 to F6 | [menus]; [hotkeys-2025] FALLBACK 2025 lists F2, F3, F4, F6 only | Missing | no handler in Editor::shortcuts src/app.rs:953 | none | P3 | S1 Status Line strip (#59) |
+| Menu set switching by F2 to F6 | [menus]; [hotkeys-2025] FALLBACK 2025 lists F2, F3, F4, F6 only | Missing | no handler in Editor::shortcuts src/app.rs:953; deferred | none | P3 | S5 Hotkeys (#32) |
 | Custom sets through Menu Set Editor | [menuset-editor] | Missing | absent | none | P3 | S6 Menu content (#66) |
 | Menu bar toggle Ctrl+M | [hotkeys-2025] FALLBACK 2025 | Missing | absent | none | P3 | S5 Hotkeys (#32) |
 | Application Home icon | [overview] | Missing | absent | none | P3 | S6 Menu content (#66) |
 
 ## 2. Status Line
 
-The AztecCraft window has no Status Line strip. The shelf row at src/app.rs:1209 and the bottom message at :1606 are the nearest neighbours.
+The AztecCraft window draws a partial Status Line strip, from `Editor::status_line` (`src/app/features/status_line.rs:97 "pub(in crate::app) fn status_line"`). Groups without AztecCraft behavior are not drawn. See known-issues.md, "Status Line is a partial subset".
 
 | Maya 2026 element | Source | AztecCraft status | Evidence | MCP | Priority | Proposed slice |
 | --- | --- | --- | --- | --- | --- | --- |
-| Menu set drop-down | [statusline] | Missing | src/app.rs:1209 static label only | none | P2 | S1 Status Line strip (#59) |
-| File buttons: new, open, save | [statusline] | Missing | File menu only, src/app.rs:1102 | `new_scene`, `open_scene`, `save_scene` | P2 | S1 Status Line strip (#59) |
+| Menu set drop-down | [statusline] | Partial | `src/app/features/status_line.rs:167 "fn menu_set_selector"`; only Modeling is active, the other four sets are disabled; native-only, no state | none | P2 | S1 Status Line strip (#59) |
+| File buttons: new, open, save | [statusline] | Supported | `src/app/features/status_line.rs:106 "self.file_actions()"`, shared with the File menu at `src/app/menus.rs:27 "fn file_actions"`; Save As stays in the File menu | `new_scene`, `open_scene`, `save_scene` | P2 | S1 Status Line strip (#59) |
 | Selection mode menu (presets) | [statusline] | Missing | absent | none | P1 | S1 Status Line strip (#59) |
-| Hierarchy mode button | [statusline] | Missing | absent; no hierarchy-level pick mode | none | P1 | S1 Status Line strip (#59) |
-| Object mode button | [statusline] | Missing | no button; mode is set by Select menu src/app.rs:1182 and F8 :1577 | `set_selection_mode` | P1 | S1 Status Line strip (#59) |
-| Component mode button | [statusline] | Missing | no button; Face mode is set by Select menu src/app.rs:1188 and F11 :1577 | `set_selection_mode` | P1 | S1 Status Line strip (#59) |
+| Hierarchy mode button | [statusline] | Visible-unsupported | `src/app/features/status_line.rs:32 "Hierarchy selection: not implemented yet"`; disabled, no hierarchy-level pick mode | none | P1 | S1 Status Line strip (#59) |
+| Object mode button | [statusline] | Supported | `src/app/features/status_line.rs:38 "Object selection (F8 toggles)"` | `set_selection_mode` | P1 | S1 Status Line strip (#59) |
+| Component mode button | [statusline] | Partial | `src/app/features/status_line.rs:44 "Component selection (Face only"`; Component means Face, the only implemented component mode | `set_selection_mode` | P1 | S1 Status Line strip (#59) |
 | Selection mask buttons (per object or component type) | [statusline] | Missing | absent; only Face via menu | none | P1 | S3 Component modes (#29) |
 | Lock/unlock current selection | [statusline] | Missing | absent | none | P3 | S1 Status Line strip (#59) |
 | Highlight Selection mode | [statusline] | Missing | absent | none | P3 | S1 Status Line strip (#59) |
@@ -67,11 +67,11 @@ The AztecCraft window has no Status Line strip. The shelf row at src/app.rs:1209
 | Hypershade button | [statusline] | Missing | absent | none | P3 | S6 Menu content (#66) |
 | Input box (Absolute, Relative, Rename, Select by name) | [statusline] | Missing | absent; the Channel Box has per-field edits instead | `edit_node`, `rename_node` | P2 | S1 Status Line strip (#59) |
 | Workspace selector | [overview] | Missing | absent from the window; checked the menu and shelf rows at src/app.rs:1209 | none | P2 | S14 Docking and workspaces (#67) |
-| Sidebar toggle: Modeling Toolkit | [statusline] | Missing | absent | none | P2 | S1 Status Line strip (#59) |
-| Sidebar toggle: HumanIK | [statusline] | Missing | absent | none | P3 | S1 Status Line strip (#59) |
-| Sidebar toggle: Attribute Editor | [statusline] | Missing | absent | none | P1 | S1 Status Line strip (#59) |
-| Sidebar toggle: Tool Settings | [statusline] | Missing | absent | none | P2 | S1 Status Line strip (#59) |
-| Sidebar toggle: Channel Box / Layer Editor | [statusline] | Missing | panel is always shown, src/app.rs:1636; no toggle | none | P1 | S1 Status Line strip (#59) |
+| Sidebar toggle: Modeling Toolkit | [statusline] | Visible-unsupported | `src/app/features/status_line.rs:54 "Modeling Toolkit: not implemented yet"` | none | P2 | S1 Status Line strip (#59) |
+| Sidebar toggle: HumanIK | [statusline] | Visible-unsupported | `src/app/features/status_line.rs:60 "HumanIK: not implemented yet"` | none | P3 | S1 Status Line strip (#59) |
+| Sidebar toggle: Attribute Editor | [statusline] | Visible-unsupported | `src/app/features/status_line.rs:66 "Attribute Editor: not implemented yet"` | none | P1 | S1 Status Line strip (#59) |
+| Sidebar toggle: Tool Settings | [statusline] | Visible-unsupported | `src/app/features/status_line.rs:72 "Tool Settings: not implemented yet"` | none | P2 | S1 Status Line strip (#59) |
+| Sidebar toggle: Channel Box / Layer Editor | [statusline] | Partial | `src/app/features/status_line.rs:78 "Show or hide the Channel Box / Layer Editor"`; no Layer Editor exists, so it shows or hides the Channel Box only; disabled during an active Move | `set_sidebar_panel_visibility` | P1 | S1 Status Line strip (#59) |
 
 ## 3. Shelf
 
@@ -79,7 +79,7 @@ One fixed shelf row exists under the menu bar. Tab order and the Poly Modeling t
 
 | Maya 2026 element | Source | AztecCraft status | Evidence | MCP | Priority | Proposed slice |
 | --- | --- | --- | --- | --- | --- | --- |
-| Shelf strip under the Status Line | [shelf] | Supported | src/app.rs:1209-1257 "Modeling" (one fixed row labelled Modeling) | none | P1 | S7 Shelf (#65) |
+| Shelf strip under the Status Line | [shelf] | Supported | `src/app/menus.rs:194 "ui.horizontal"` (one fixed row, no label; the static Modeling label was removed when the Status Line selector landed) | none | P1 | S7 Shelf (#65) |
 | Shelf tabs and tab drop-down | [shelf] | Missing | absent; single hard-coded row | none | P2 | S7 Shelf (#65) |
 | Poly Modeling tab: primitive creation icons (cube) | [shelf] UNCONFIRMED contents | Supported | src/app.rs:1211 "Cube"; current main also disables these for read-only curve scenes (after ef86b64) | `create_primitive` | P1 | S7 Shelf (#65) |
 | Poly Modeling tab: primitive creation icons (plane) | [shelf] UNCONFIRMED contents | Supported | src/app.rs:1215 "Plane"; current main also disables these for read-only curve scenes (after ef86b64) | `create_primitive` | P1 | S7 Shelf (#65) |
@@ -285,7 +285,7 @@ Slice map: S1 #59, S2 PR #77 (Move) and #34, #35, #36, S3 #29, S4 #60, S5 #32, S
 
 ### P1
 
-1. **S1 Status Line strip** (#59): menu-set selector (Modeling only active), selection mode Hierarchy/Object/Component, sidebar toggles, MCP state exposure. Covers the Status Line selection modes, the Attribute Editor and Channel Box toggles, and the F8 binding.
+1. **S1 Status Line strip** (#59): remaining work is Hierarchy mode, the selection-mode presets menu, selection masks, snaps, symmetry, construction history, and the input box. The panels behind the Modeling Toolkit, HumanIK, Attribute Editor (#60) and Tool Settings toggles, and the Layer Editor, are separate work.
 2. **S2 Transform tools** (PR #77 (Move), #34, #35, #36): enable Move, Rotate and Scale (W, E, R) with Q for Select, then the Snap buttons. Depends on PR #77 (Move).
 3. **S3 Component modes** (#29): Vertex and Edge modes with F9 and F10, selection mask buttons, and the Select > Components entries. Face (F11) exists today.
 4. **S4 Attribute Editor and Channel Box** (#60): Attribute Editor panel with node tabs and attribute list, Ctrl+A, and the Visibility channel in the Channel Box.
@@ -296,7 +296,7 @@ Slice map: S1 #59, S2 PR #77 (Move) and #34, #35, #36, S3 #29, S4 #60, S5 #32, S
 
 ### P2
 
-1. S1 Status Line strip (#59): file buttons, input box, Symmetry, Tool Settings and Modeling Toolkit toggles.
+1. S1 Status Line strip (#59): Hierarchy mode, presets menu, masks, snaps, symmetry, construction history, input box; the Modeling Toolkit, HumanIK, Attribute Editor, Tool Settings and Layer Editor panels.
 2. S2 Transform tools (PR #77 (Move), #34, #35, #36): Last Used (Y), Show Manipulators (T), Lasso, Symmetry.
 3. S3 Component modes (#29): Alt+F9, F12 UV, soft selection (B).
 4. S4 Attribute Editor and Channel Box (#60): SHAPES and INPUTS sections, construction history entries.
@@ -319,7 +319,7 @@ Slice map: S1 #59, S2 PR #77 (Move) and #34, #35, #36, S3 #29, S4 #60, S5 #32, S
 1. S1 Status Line strip (#59): Lock selection, Highlight Selection mode.
 2. S2 Transform tools (PR #77 (Move), #34, #35, #36): Paint Selection, Make Live.
 3. S5 Hotkeys (#32): hotbox, Shift+F and Shift+A variants, panel toggles.
-4. S6 Menu content (#66): Rigging, Animation, FX and Rendering sets, F2 to F6, Menu Set Editor, Render and Hypershade buttons, Application Home.
+4. S6 Menu content (#66): Rigging, Animation, FX and Rendering sets, Menu Set Editor, Render and Hypershade buttons, Application Home.
 5. S7 Shelf (#65): other default tabs, Shelf Editor, Content Browser icon, Materials.
 6. S8 Panels and quick layouts (#48 / #69): Renderer and Stereo menus, Lighting, effects and Color Management groups, remaining Camera Settings, Outliner button and Windows > UI Elements.
 7. S9 Layer Editor (#61): Animation Layers.
