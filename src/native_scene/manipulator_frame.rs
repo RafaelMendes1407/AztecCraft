@@ -1,0 +1,63 @@
+use super::rotate_frame::rotation_matrix;
+use super::*;
+use glam::DMat3;
+
+/// Where the Rotate and Scale handles sit and where the node's own axes point in the world.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ManipulatorFrame {
+    pub origin_cm: DVec3,
+    /// The node's X, Y and Z as seen from the world: the parents' linear map times the node's
+    /// rotation. Not normalized, and mirrored or skewed when a parent has negative or uneven
+    /// scale; the handles refuse such frames.
+    pub object_axes: [DVec3; 3],
+}
+
+impl NativeScene {
+    /// The handle frame of `target`. It does not check whether an edit is allowed; use
+    /// `rotation_refusal` and `scale_refusal` for that.
+    pub fn manipulator_frame(
+        &self,
+        target: &TransformTarget,
+    ) -> Result<ManipulatorFrame, NativeError> {
+        if target.path.len() > MAX_TRANSFORM_DEPTH {
+            return Err(NativeError::ResourceLimit);
+        }
+        self.resolve_transform_path(target.node, &target.path)?;
+        let transform = self.internal_transform(target.node)?;
+        let refused = NativeError::UnsupportedMove(WorldMoveUnsupported::ParentTransform);
+        let parent_world = self.ancestor_world(target)?.ok_or(refused.clone())?;
+        let origin_cm = parent_world.transform_point3(DVec3::from_array(transform.translation_cm));
+        let axes = DMat3::from_mat4(parent_world) * rotation_matrix(transform.rotation_radians);
+        let object_axes = [axes.x_axis, axes.y_axis, axes.z_axis];
+        if !origin_cm.is_finite() || object_axes.iter().any(|axis| !axis.is_finite()) {
+            return Err(refused);
+        }
+        Ok(ManipulatorFrame {
+            origin_cm,
+            object_axes,
+        })
+    }
+
+    /// Why a rotation about `axis` in `space` would be refused at begin, if it would.
+    pub fn rotation_refusal(
+        &self,
+        target: &TransformTarget,
+        axis: RotateAxis,
+        space: RotateSpace,
+    ) -> Option<NativeError> {
+        self.begin_rotation(target, axis, space).err()
+    }
+
+    /// Why a scale of `handle` in `space` would be refused at begin, if it would.
+    pub fn scale_refusal(
+        &self,
+        target: &TransformTarget,
+        handle: ScaleHandle,
+        space: ScaleSpace,
+    ) -> Option<NativeError> {
+        self.begin_scale_frame(target, handle, space).err()
+    }
+}
+
+#[cfg(test)]
+mod tests;

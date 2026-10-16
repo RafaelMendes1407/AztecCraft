@@ -3,6 +3,7 @@ mod appearance;
 pub mod ascii;
 pub mod binary;
 mod curve;
+mod manipulator_frame;
 mod mesh;
 mod move_translation;
 mod rotate_frame;
@@ -15,6 +16,7 @@ pub use appearance::{
     MaterialShader,
 };
 pub use curve::{CurveForm, NativeCurveShape};
+pub use manipulator_frame::ManipulatorFrame;
 pub use mesh::{DirectedEdge, NativeEdge, NativeFace, NativeMesh, Points};
 pub(crate) use move_translation::ChannelBaseline;
 pub use move_translation::{ChannelLeaf, WorldAxis, WorldMoveFrame, WorldMoveUnsupported};
