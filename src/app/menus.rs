@@ -103,6 +103,13 @@ impl Editor {
                     self.create(Primitive::Plane);
                     ui.close();
                 }
+                if ui
+                    .add_enabled(authoring, egui::Button::new("Polygon sphere"))
+                    .clicked()
+                {
+                    self.create(Primitive::Sphere);
+                    ui.close();
+                }
                 unsupported(ui, "Other primitives");
             });
             ui.menu_button("Select", |ui| {
