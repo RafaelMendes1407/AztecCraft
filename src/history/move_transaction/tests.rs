@@ -257,7 +257,7 @@ fn nested_stale_and_wrong_owner_requests_leave_the_matching_gesture_untouched() 
                 ManipulationProvenance::Native,
                 finish
             ),
-            Err(ManipulationError::StaleMove)
+            Err(ManipulationError::StaleManipulation)
         );
         assert_eq!(
             history.finish_move(token, id, ManipulationProvenance::Remote, finish),
@@ -275,7 +275,7 @@ fn nested_stale_and_wrong_owner_requests_leave_the_matching_gesture_untouched() 
             ManipulationProvenance::Native,
             9.0
         ),
-        Err(ManipulationError::StaleMove)
+        Err(ManipulationError::StaleManipulation)
     );
     assert_eq!(
         history.update_move(token, id, ManipulationProvenance::Remote, 9.0),
@@ -287,7 +287,7 @@ fn nested_stale_and_wrong_owner_requests_leave_the_matching_gesture_untouched() 
     history.cancel_active_move().unwrap();
     assert_eq!(
         history.update_move(token, id, ManipulationProvenance::Native, 9.0),
-        Err(ManipulationError::StaleMove)
+        Err(ManipulationError::StaleManipulation)
     );
 }
 
@@ -449,7 +449,7 @@ fn source_mismatch_refuses_preview_and_finish_without_restoring_into_another_sou
     assert_eq!(history.cancel_active_move(), Ok(EditOutcome::Unchanged));
     assert_eq!(
         history.update_move(token, id, ManipulationProvenance::Native, 2.0),
-        Err(ManipulationError::StaleMove)
+        Err(ManipulationError::StaleManipulation)
     );
 }
 

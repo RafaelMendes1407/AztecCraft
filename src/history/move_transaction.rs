@@ -1,6 +1,7 @@
 use super::{Command, EditOutcome, History};
 use crate::native_scene::{
-    MoveTranslationBaseline, NativeError, NativeId, TransformTarget, WorldAxis, WorldMoveFrame,
+    MoveTranslationBaseline, NativeError, NativeId, NativeScene, TransformTarget, WorldAxis,
+    WorldMoveFrame,
 };
 use crate::view_scene::{ViewError, ViewScene};
 use std::{fmt, mem::size_of};
@@ -37,7 +38,7 @@ pub enum ManipulationError {
     View(ViewError),
     Busy,
     StaleScene,
-    StaleMove,
+    StaleManipulation,
     WrongOwner,
     IdsExhausted,
 }
@@ -61,7 +62,7 @@ impl fmt::Display for ManipulationError {
             Self::View(error) => error.fmt(f),
             Self::Busy => f.write_str("finish or cancel the active Move manipulation"),
             Self::StaleScene => f.write_str("Move scene token is stale"),
-            Self::StaleMove => f.write_str("Move identifier is absent or stale"),
+            Self::StaleManipulation => f.write_str("Move identifier is absent or stale"),
             Self::WrongOwner => f.write_str("Move manipulation belongs to another input source"),
             Self::IdsExhausted => f.write_str("Move identifiers are exhausted"),
         }
@@ -78,16 +79,68 @@ pub struct MoveState<'a> {
     pub distance_cm: f64,
 }
 
+/// The kind of manipulation and its kind-specific state; the guards in `History` are shared.
+enum ManipulationKind {
+    Move {
+        axis: WorldAxis,
+        frame: WorldMoveFrame,
+        baseline: MoveTranslationBaseline,
+    },
+}
+
+/// Exact scene state captured by a preview so a failed one can be undone.
+enum ManipulationSnapshot {
+    Move(MoveTranslationBaseline),
+}
+
+impl ManipulationKind {
+    fn preview(
+        &self,
+        scene: &mut NativeScene,
+        parameter: f64,
+    ) -> Result<(ManipulationSnapshot, bool), NativeError> {
+        match self {
+            Self::Move {
+                axis,
+                frame,
+                baseline,
+            } => {
+                let translation = frame.translation(*axis, parameter)?;
+                let (previous, changed) = scene.preview_move_translation(baseline, translation)?;
+                Ok((ManipulationSnapshot::Move(previous), changed))
+            }
+        }
+    }
+
+    fn restore(&self, scene: &mut NativeScene) -> Result<(), NativeError> {
+        match self {
+            Self::Move { baseline, .. } => scene.restore_move_translation(baseline),
+        }
+    }
+
+    fn changes(&self, scene: &NativeScene) -> Result<[Option<f64>; 9], NativeError> {
+        match self {
+            Self::Move { baseline, .. } => scene.move_translation_changes(baseline),
+        }
+    }
+}
+
+impl ManipulationSnapshot {
+    fn restore(&self, scene: &mut NativeScene) -> Result<(), NativeError> {
+        match self {
+            Self::Move(previous) => scene.restore_move_translation(previous),
+        }
+    }
+}
+
 pub(super) struct MoveTransaction {
     id: ManipulationId,
     scene_token: Uuid,
     target: TransformTarget,
-    axis: WorldAxis,
     provenance: ManipulationProvenance,
-    frame: WorldMoveFrame,
-    baseline: MoveTranslationBaseline,
+    kind: ManipulationKind,
     view_budget: usize,
-    distance_cm: f64,
+    parameter: f64,
 }
 
 impl MoveTransaction {
@@ -101,7 +154,7 @@ impl MoveTransaction {
             return Err(ManipulationError::StaleScene);
         }
         if id != self.id {
-            return Err(ManipulationError::StaleMove);
+            return Err(ManipulationError::StaleManipulation);
         }
         if provenance != self.provenance {
             return Err(ManipulationError::WrongOwner);
@@ -112,12 +165,15 @@ impl MoveTransaction {
 
 impl History {
     pub fn active_manipulation(&self) -> Option<MoveState<'_>> {
-        self.active_manipulation.as_ref().map(|active| MoveState {
-            id: active.id,
-            target: &active.target,
-            axis: active.axis,
-            provenance: active.provenance,
-            distance_cm: active.distance_cm,
+        self.active_manipulation.as_ref().map(|active| {
+            let ManipulationKind::Move { axis, .. } = &active.kind;
+            MoveState {
+                id: active.id,
+                target: &active.target,
+                axis: *axis,
+                provenance: active.provenance,
+                distance_cm: active.parameter,
+            }
         })
     }
 
@@ -157,12 +213,14 @@ impl History {
                 node: target.node,
                 path,
             },
-            axis,
             provenance,
-            frame,
-            baseline,
+            kind: ManipulationKind::Move {
+                axis,
+                frame,
+                baseline,
+            },
             view_budget,
-            distance_cm: 0.0,
+            parameter: 0.0,
         });
         self.next_manipulation_id = next_id;
         Ok(ManipulationId(next_id))
@@ -178,17 +236,14 @@ impl History {
         let active = self
             .active_manipulation
             .as_mut()
-            .ok_or(ManipulationError::StaleMove)?;
+            .ok_or(ManipulationError::StaleManipulation)?;
         active.matches(scene_token, id, provenance)?;
-        let translation = active.frame.translation(active.axis, distance_cm)?;
-        let (previous, changed) = self
-            .scene
-            .preview_move_translation(&active.baseline, translation)?;
+        let (previous, changed) = active.kind.preview(&mut self.scene, distance_cm)?;
         if let Err(error) = ViewScene::from_native(&self.scene, active.view_budget) {
-            self.scene.restore_move_translation(&previous)?;
+            previous.restore(&mut self.scene)?;
             return Err(error.into());
         }
-        active.distance_cm = distance_cm;
+        active.parameter = distance_cm;
         Ok(if changed {
             EditOutcome::Changed
         } else {
@@ -205,16 +260,16 @@ impl History {
     ) -> Result<EditOutcome, ManipulationError> {
         self.active_manipulation
             .as_ref()
-            .ok_or(ManipulationError::StaleMove)?
+            .ok_or(ManipulationError::StaleManipulation)?
             .matches(scene_token, id, provenance)?;
         // Clear before any fallible scene work so a failure cannot leave an unfinishable move.
         let active = self
             .active_manipulation
             .take()
-            .ok_or(ManipulationError::StaleMove)?;
-        let channels = self.scene.move_translation_changes(&active.baseline)?;
+            .ok_or(ManipulationError::StaleManipulation)?;
+        let channels = active.kind.changes(&self.scene)?;
         let node = active.target.node;
-        self.scene.restore_move_translation(&active.baseline)?;
+        active.kind.restore(&mut self.scene)?;
         if finish == ManipulationFinish::Cancel || channels.iter().all(Option::is_none) {
             return Ok(if channels.iter().all(Option::is_none) {
                 EditOutcome::Unchanged
@@ -235,8 +290,8 @@ impl History {
         let Some(active) = self.active_manipulation.take() else {
             return Ok(EditOutcome::Unchanged);
         };
-        let channels = self.scene.move_translation_changes(&active.baseline)?;
-        self.scene.restore_move_translation(&active.baseline)?;
+        let channels = active.kind.changes(&self.scene)?;
+        active.kind.restore(&mut self.scene)?;
         Ok(if channels.iter().all(Option::is_none) {
             EditOutcome::Unchanged
         } else {
