@@ -524,6 +524,7 @@ fn seeds(t: &Targets) -> Vec<Operation> {
         Operation::Redo,
         Operation::FrameSelected,
         Operation::SetGridVisible { visible: false },
+        Operation::SetShadingMode(crate::editor_operations::ShadingMode::Wireframe),
         Operation::SetSidebarPanelVisible {
             panel: crate::editor_operations::SidebarPanel::ChannelBox,
             visible: false,
@@ -805,6 +806,10 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
             "set_grid_visible(false)",
             Operation::SetGridVisible { visible: false },
         )],
+        Operation::SetShadingMode(_) => vec![sample(
+            "set_shading_mode(wireframe)",
+            Operation::SetShadingMode(crate::editor_operations::ShadingMode::Wireframe),
+        )],
         Operation::SetSidebarPanelVisible { .. } => vec![
             sample(
                 "set_sidebar_panel_visible(channel_box,false)",
@@ -901,6 +906,7 @@ fn observe(editor: &Editor, roots: &[&std::path::Path]) -> Observed {
         ),
         ("active_tool", format!("{:?}", editor.active_tool)),
         ("grid", editor.grid_visible.to_string()),
+        ("shading", format!("{:?}", editor.shading)),
         (
             "sidebar_panels",
             format!(

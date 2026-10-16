@@ -250,6 +250,7 @@ impl ViewportInput {
         scene: &ViewScene,
         selection: SelectionFeedback<'_>,
         grid_visible: bool,
+        shading: crate::editor_operations::ShadingMode,
     ) -> Result<(), RenderError> {
         let painter = &self.painter;
         let rect = self.rect;
@@ -264,6 +265,7 @@ impl ViewportInput {
                     self.physical_size,
                     selection,
                     grid_visible,
+                    shading,
                 )
             });
         let diagnostic = callback.as_ref().err().map(ToString::to_string);

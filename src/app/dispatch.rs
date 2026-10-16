@@ -15,6 +15,7 @@ impl Editor {
             | Operation::FrameSelected
             | Operation::SetActiveTool(_)
             | Operation::SetGridVisible { .. }
+            | Operation::SetShadingMode(_)
             | Operation::SetSidebarPanelVisible { .. }
             | Operation::SelectAttributeEditorTab { .. } => None,
             Operation::Orbit { .. } | Operation::Pan { .. } | Operation::Dolly { .. } => None,
@@ -141,6 +142,7 @@ impl Editor {
         if matches!(
             operation,
             Operation::SetGridVisible { .. }
+                | Operation::SetShadingMode(_)
                 | Operation::SetSidebarPanelVisible { .. }
                 | Operation::SelectAttributeEditorTab { .. }
         ) && self.files.is_modal()
@@ -252,6 +254,15 @@ impl Editor {
             Operation::SetGridVisible { visible } => {
                 let changed = self.grid_visible != visible;
                 self.grid_visible = visible;
+                return Ok(if changed {
+                    OperationReply::Changed
+                } else {
+                    OperationReply::Unchanged
+                });
+            }
+            Operation::SetShadingMode(mode) => {
+                let changed = self.shading != mode;
+                self.shading = mode;
                 return Ok(if changed {
                     OperationReply::Changed
                 } else {

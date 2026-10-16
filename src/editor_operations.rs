@@ -80,6 +80,15 @@ pub enum SelectionMode {
     Face,
     Hierarchy,
 }
+/// Session-only viewport shading, like grid visibility; never saved or dirtying.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum ShadingMode {
+    Wireframe,
+    #[default]
+    SmoothShadeAll,
+}
 #[cfg(any(test, feature = "mcp"))]
 use uuid::Uuid;
 
@@ -179,6 +188,11 @@ pub enum Operation {
     SetGridVisible {
         visible: bool,
     },
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "the native UI constructs it in the next commit")
+    )]
+    SetShadingMode(ShadingMode),
     SetSidebarPanelVisible {
         panel: SidebarPanel,
         visible: bool,
@@ -265,6 +279,7 @@ pub struct SceneInspection {
     pub viewport_backend: &'static str,
     pub viewport_error: Option<crate::viewport_renderer::ViewportError>,
     pub grid_visible: bool,
+    pub shading: ShadingMode,
     pub sidebar_panels: SidebarPanelsInspection,
     pub attribute_editor_tab: Option<AttributeEditorTabInspection>,
     pub depth_complete: bool,

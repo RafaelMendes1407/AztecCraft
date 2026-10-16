@@ -127,6 +127,7 @@
     ],
     "selected_node": "1",
     "selection_mode": "object",
+    "shading": "smooth_shade_all",
     "shapes": [
       {
         "edges": 12,

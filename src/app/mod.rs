@@ -1,6 +1,6 @@
 use crate::editor_operations::{
     ActiveTool, AttributeEditorTab, Operation, OperationError, OperationReply, SelectionMode,
-    SidebarPanel,
+    ShadingMode, SidebarPanel,
 };
 #[cfg(any(test, feature = "mcp"))]
 use crate::editor_operations::{
@@ -65,6 +65,7 @@ pub struct Editor {
     remembered_face: Option<FaceTarget>,
     camera: Camera,
     grid_visible: bool,
+    shading: ShadingMode,
     sidebar_dock: Option<SidebarPanel>,
     sidebar_panel_request: Option<(SidebarPanel, bool)>,
     attribute_editor_tab: Option<AttributeEditorTab>,
@@ -102,6 +103,7 @@ impl Default for Editor {
             remembered_face: None,
             camera: Camera::default(),
             grid_visible: true,
+            shading: ShadingMode::default(),
             sidebar_dock: Some(SidebarPanel::ChannelBox),
             sidebar_panel_request: None,
             attribute_editor_tab: None,

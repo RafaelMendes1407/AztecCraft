@@ -354,6 +354,7 @@ impl Editor {
                     },
                 },
                 self.grid_visible,
+                self.shading,
             );
             self.viewport_error = painted.as_ref().err().map(|error| error.category());
             self.paint_move(&input);

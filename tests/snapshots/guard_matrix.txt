@@ -6,12 +6,12 @@
 ## idle / native
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene edited" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=false pending_action=- dirty=true can_undo=true
-    can_redo=true
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene edited" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
+    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
+    dirty=true can_undo=true can_redo=true
   set_active_tool(move) => Ok(changed) | active_tool: Select -> Move; pointer_consumed_frame: false -> true; pointer_suppress_primary: false -> true
   set_active_tool(select) => Ok(unchanged) | no state change
   begin_move => Ok(move_started) | active_move: none -> native
@@ -49,6 +49,7 @@
   redo => Ok(changed) | scene changed; selected: pCube1 -> renamed; name_field: "pCube1" -> "renamed"; can_redo: true -> false
   frame_selected => Ok(changed) | camera changed
   set_grid_visible(false) => Ok(changed) | grid: true -> false
+  set_shading_mode(wireframe) => Ok(changed) | shading: SmoothShadeAll -> Wireframe
   set_sidebar_panel_visible(channel_box,false) => Ok(changed) | sidebar_panels: channel_box=true -> channel_box=false
   set_sidebar_panel_visible(attribute_editor,true) => Ok(changed) | sidebar_panels: channel_box=true -> channel_box=false; attribute_editor: panel=false tab=None -> panel=true tab=None
   select_attribute_editor_tab(shape) => Ok(changed) | attribute_editor: panel=true tab=None -> panel=true tab=Some(Shape(NativeId(2)))
@@ -60,12 +61,12 @@
 ## idle / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene edited" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=false pending_action=- dirty=true can_undo=true
-    can_redo=true
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene edited" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
+    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
+    dirty=true can_undo=true can_redo=true
   set_active_tool(move) => Ok(changed) | active_tool: Select -> Move
   set_active_tool(select) => Ok(unchanged) | no state change
   begin_move => Ok(move_started) | active_move: none -> remote
@@ -103,6 +104,7 @@
   redo => Ok(changed) | scene changed; selected: pCube1 -> renamed; name_field: "pCube1" -> "renamed"; can_redo: true -> false
   frame_selected => Ok(changed) | camera changed
   set_grid_visible(false) => Ok(changed) | grid: true -> false
+  set_shading_mode(wireframe) => Ok(changed) | shading: SmoothShadeAll -> Wireframe
   set_sidebar_panel_visible(channel_box,false) => Ok(changed) | sidebar_panels: channel_box=true -> channel_box=false
   set_sidebar_panel_visible(attribute_editor,true) => Ok(changed) | sidebar_panels: channel_box=true -> channel_box=false; attribute_editor: panel=false tab=None -> panel=true tab=None
   select_attribute_editor_tab(shape) => Ok(changed) | attribute_editor: panel=true tab=None -> panel=true tab=Some(Shape(NativeId(2)))
@@ -114,12 +116,12 @@
 ## closing / native
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene edited" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=true pending_action=- dirty=true can_undo=true
-    can_redo=true
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene edited" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
+    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=true pending_action=-
+    dirty=true can_undo=true can_redo=true
   set_active_tool(move) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | pointer_consumed_frame: false -> true; pointer_suppress_primary: false -> true
   set_active_tool(select) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   begin_move => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -156,6 +158,7 @@
   redo => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   frame_selected => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_grid_visible(false) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
+  set_shading_mode(wireframe) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_sidebar_panel_visible(channel_box,false) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_sidebar_panel_visible(attribute_editor,true) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   select_attribute_editor_tab(shape) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -167,12 +170,12 @@
 ## closing / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene edited" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=true pending_action=- dirty=true can_undo=true
-    can_redo=true
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene edited" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
+    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=true pending_action=-
+    dirty=true can_undo=true can_redo=true
   set_active_tool(move) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_active_tool(select) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   begin_move => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -209,6 +212,7 @@
   redo => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   frame_selected => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_grid_visible(false) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
+  set_shading_mode(wireframe) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_sidebar_panel_visible(channel_box,false) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_sidebar_panel_visible(attribute_editor,true) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   select_attribute_editor_tab(shape) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -220,12 +224,12 @@
 ## modal / native
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene edited" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=true closing=false pending_action=New dirty=true can_undo=true
-    can_redo=true
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene edited" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
+    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=true closing=false
+    pending_action=New dirty=true can_undo=true can_redo=true
   set_active_tool(move) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | pointer_consumed_frame: false -> true; pointer_suppress_primary: false -> true
   set_active_tool(select) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   begin_move => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -262,6 +266,7 @@
   redo => Ok(changed) | scene changed; selected: pCube1 -> renamed; name_field: "pCube1" -> "renamed"; can_redo: true -> false
   frame_selected => Ok(changed) | camera changed
   set_grid_visible(false) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
+  set_shading_mode(wireframe) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_sidebar_panel_visible(channel_box,false) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_sidebar_panel_visible(attribute_editor,true) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   select_attribute_editor_tab(shape) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -273,12 +278,12 @@
 ## modal / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene edited" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=true closing=false pending_action=New dirty=true can_undo=true
-    can_redo=true
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene edited" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
+    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=true closing=false
+    pending_action=New dirty=true can_undo=true can_redo=true
   set_active_tool(move) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_active_tool(select) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   begin_move => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -315,6 +320,7 @@
   redo => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   frame_selected => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_grid_visible(false) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
+  set_shading_mode(wireframe) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_sidebar_panel_visible(channel_box,false) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_sidebar_panel_visible(attribute_editor,true) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   select_attribute_editor_tab(shape) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -326,12 +332,12 @@
 ## local_move / native
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Move grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene edited" status_is_error=false active_move=native native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=false pending_action=- dirty=true can_undo=true
-    can_redo=true
+    active_tool=Move grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene edited" status_is_error=false active_move=native
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
+    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
+    dirty=true can_undo=true can_redo=true
   set_active_tool(move) => Ok(unchanged) | active_move: native -> none; pointer_consumed_frame: false -> true; pointer_suppress_primary: false -> true
   set_active_tool(select) => Ok(changed) | active_tool: Move -> Select; active_move: native -> none; pointer_consumed_frame: false -> true; pointer_suppress_primary: false -> true
   begin_move => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
@@ -368,6 +374,7 @@
   redo => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   frame_selected => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   set_grid_visible(false) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
+  set_shading_mode(wireframe) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   set_sidebar_panel_visible(channel_box,false) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   set_sidebar_panel_visible(attribute_editor,true) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   select_attribute_editor_tab(shape) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
@@ -379,12 +386,12 @@
 ## local_move / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Move grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene edited" status_is_error=false active_move=native native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=false pending_action=- dirty=true can_undo=true
-    can_redo=true
+    active_tool=Move grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene edited" status_is_error=false active_move=native
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
+    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
+    dirty=true can_undo=true can_redo=true
   set_active_tool(move) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   set_active_tool(select) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   begin_move => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
@@ -421,6 +428,7 @@
   redo => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   frame_selected => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   set_grid_visible(false) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
+  set_shading_mode(wireframe) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   set_sidebar_panel_visible(channel_box,false) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   set_sidebar_panel_visible(attribute_editor,true) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   select_attribute_editor_tab(shape) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
@@ -432,12 +440,12 @@
 ## remote_move / native
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Move grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene edited" status_is_error=false active_move=remote native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=false pending_action=- dirty=true can_undo=true
-    can_redo=true
+    active_tool=Move grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene edited" status_is_error=false active_move=remote
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
+    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
+    dirty=true can_undo=true can_redo=true
   set_active_tool(move) => Ok(unchanged) | active_move: remote -> none; pointer_consumed_frame: false -> true; pointer_suppress_primary: false -> true
   set_active_tool(select) => Ok(changed) | active_tool: Move -> Select; active_move: remote -> none; pointer_consumed_frame: false -> true; pointer_suppress_primary: false -> true
   begin_move => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
@@ -474,6 +482,7 @@
   redo => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   frame_selected => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   set_grid_visible(false) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
+  set_shading_mode(wireframe) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   set_sidebar_panel_visible(channel_box,false) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   set_sidebar_panel_visible(attribute_editor,true) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   select_attribute_editor_tab(shape) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
@@ -485,12 +494,12 @@
 ## remote_move / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Move grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene edited" status_is_error=false active_move=remote native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=false pending_action=- dirty=true can_undo=true
-    can_redo=true
+    active_tool=Move grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene edited" status_is_error=false active_move=remote
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
+    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
+    dirty=true can_undo=true can_redo=true
   set_active_tool(move) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   set_active_tool(select) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   begin_move => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
@@ -527,6 +536,7 @@
   redo => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   frame_selected => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   set_grid_visible(false) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
+  set_shading_mode(wireframe) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   set_sidebar_panel_visible(channel_box,false) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   set_sidebar_panel_visible(attribute_editor,true) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   select_attribute_editor_tab(shape) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
@@ -538,12 +548,12 @@
 ## name_draft / native
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene edited" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=true has_channel_draft=true
-    name_intent=false material_draft=- name_field="draft name" channel_fields=0,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=false pending_action=- dirty=true can_undo=true
-    can_redo=true
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene edited" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=true
+    has_channel_draft=true name_intent=false material_draft=- name_field="draft name"
+    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
+    dirty=true can_undo=true can_redo=true
   set_active_tool(move) => Err(InvalidInput: new names require the supported ASCII identifier subset) | status: "Scene edited" -> "new names require the supported ASCII identifier subset"; status_is_error: false -> true; pointer_consumed_frame: false -> true; pointer_suppress_primary: false -> true
   set_active_tool(select) => Err(InvalidInput: new names require the supported ASCII identifier subset) | status: "Scene edited" -> "new names require the supported ASCII identifier subset"; status_is_error: false -> true
   begin_move => Err(InvalidInput: new names require the supported ASCII identifier subset) | status: "Scene edited" -> "new names require the supported ASCII identifier subset"; status_is_error: false -> true
@@ -580,6 +590,7 @@
   redo => Err(InvalidInput: new names require the supported ASCII identifier subset) | status: "Scene edited" -> "new names require the supported ASCII identifier subset"; status_is_error: false -> true
   frame_selected => Err(InvalidInput: new names require the supported ASCII identifier subset) | status: "Scene edited" -> "new names require the supported ASCII identifier subset"; status_is_error: false -> true
   set_grid_visible(false) => Err(InvalidInput: new names require the supported ASCII identifier subset) | status: "Scene edited" -> "new names require the supported ASCII identifier subset"; status_is_error: false -> true
+  set_shading_mode(wireframe) => Err(InvalidInput: new names require the supported ASCII identifier subset) | status: "Scene edited" -> "new names require the supported ASCII identifier subset"; status_is_error: false -> true
   set_sidebar_panel_visible(channel_box,false) => Err(InvalidInput: new names require the supported ASCII identifier subset) | status: "Scene edited" -> "new names require the supported ASCII identifier subset"; status_is_error: false -> true
   set_sidebar_panel_visible(attribute_editor,true) => Err(InvalidInput: new names require the supported ASCII identifier subset) | status: "Scene edited" -> "new names require the supported ASCII identifier subset"; status_is_error: false -> true
   select_attribute_editor_tab(shape) => Err(InvalidInput: new names require the supported ASCII identifier subset) | status: "Scene edited" -> "new names require the supported ASCII identifier subset"; status_is_error: false -> true
@@ -591,12 +602,12 @@
 ## name_draft / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene edited" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=true has_channel_draft=true
-    name_intent=false material_draft=- name_field="draft name" channel_fields=0,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=false pending_action=- dirty=true can_undo=true
-    can_redo=true
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene edited" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=true
+    has_channel_draft=true name_intent=false material_draft=- name_field="draft name"
+    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
+    dirty=true can_undo=true can_redo=true
   set_active_tool(move) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_active_tool(select) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   begin_move => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -633,6 +644,7 @@
   redo => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   frame_selected => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_grid_visible(false) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
+  set_shading_mode(wireframe) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_sidebar_panel_visible(channel_box,false) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_sidebar_panel_visible(attribute_editor,true) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   select_attribute_editor_tab(shape) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -644,7 +656,8 @@
 ## material_draft / native
   baseline:
     nodes=2 selected=object selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None
     status="Ready | Create a cube, plane, sphere, cylinder or cone to start" status_is_error=false
     active_move=none native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false
     has_draft=true has_channel_draft=false name_intent=false material_draft=text=0.5 intent=false
@@ -686,6 +699,7 @@
   redo => Ok(unchanged) | scene changed; status: "Ready | Create a cube, plane, sphere, cylinder or cone to start" -> "Material data edited"; has_draft: true -> false; can_undo: false -> true
   frame_selected => Ok(changed) | scene changed; camera changed; status: "Ready | Create a cube, plane, sphere, cylinder or cone to start" -> "Material data edited"; has_draft: true -> false; can_undo: false -> true
   set_grid_visible(false) => Ok(changed) | scene changed; grid: true -> false; status: "Ready | Create a cube, plane, sphere, cylinder or cone to start" -> "Material data edited"; has_draft: true -> false; can_undo: false -> true
+  set_shading_mode(wireframe) => Ok(changed) | scene changed; shading: SmoothShadeAll -> Wireframe; status: "Ready | Create a cube, plane, sphere, cylinder or cone to start" -> "Material data edited"; has_draft: true -> false; can_undo: false -> true
   set_sidebar_panel_visible(channel_box,false) => Ok(changed) | scene changed; sidebar_panels: channel_box=true -> channel_box=false; status: "Ready | Create a cube, plane, sphere, cylinder or cone to start" -> "Material data edited"; has_draft: true -> false; can_undo: false -> true
   set_sidebar_panel_visible(attribute_editor,true) => Ok(changed) | scene changed; sidebar_panels: channel_box=true -> channel_box=false; attribute_editor: panel=false tab=None -> panel=true tab=None; status: "Ready | Create a cube, plane, sphere, cylinder or cone to start" -> "Material data edited"; has_draft: true -> false; can_undo: false -> true
   select_attribute_editor_tab(shape) => Ok(changed) | scene changed; attribute_editor: panel=true tab=None -> panel=true tab=Some(Shape(NativeId(2))); status: "Ready | Create a cube, plane, sphere, cylinder or cone to start" -> "Material data edited"; has_draft: true -> false; can_undo: false -> true
@@ -697,7 +711,8 @@
 ## material_draft / remote
   baseline:
     nodes=2 selected=object selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None
     status="Ready | Create a cube, plane, sphere, cylinder or cone to start" status_is_error=false
     active_move=none native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false
     has_draft=true has_channel_draft=false name_intent=false material_draft=text=0.5 intent=false
@@ -739,6 +754,7 @@
   redo => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   frame_selected => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_grid_visible(false) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
+  set_shading_mode(wireframe) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_sidebar_panel_visible(channel_box,false) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_sidebar_panel_visible(attribute_editor,true) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   select_attribute_editor_tab(shape) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -750,12 +766,12 @@
 ## channel_draft / native
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene edited" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=true has_channel_draft=true
-    name_intent=false material_draft=- name_field="pCube1" channel_fields=5,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=false pending_action=- dirty=true can_undo=true
-    can_redo=true
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene edited" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=true
+    has_channel_draft=true name_intent=false material_draft=- name_field="pCube1"
+    channel_fields=5,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
+    dirty=true can_undo=true can_redo=true
   set_active_tool(move) => Ok(changed) | scene changed; active_tool: Select -> Move; pointer_consumed_frame: false -> true; pointer_suppress_primary: false -> true; has_draft: true -> false; has_channel_draft: true -> false; can_redo: true -> false
   set_active_tool(select) => Ok(unchanged) | scene changed; has_draft: true -> false; has_channel_draft: true -> false; can_redo: true -> false
   begin_move => Ok(move_started) | scene changed; active_move: none -> native; has_draft: true -> false; has_channel_draft: true -> false; can_redo: true -> false
@@ -792,6 +808,7 @@
   redo => Ok(unchanged) | scene changed; has_draft: true -> false; has_channel_draft: true -> false; can_redo: true -> false
   frame_selected => Ok(changed) | scene changed; camera changed; has_draft: true -> false; has_channel_draft: true -> false; can_redo: true -> false
   set_grid_visible(false) => Ok(changed) | scene changed; grid: true -> false; has_draft: true -> false; has_channel_draft: true -> false; can_redo: true -> false
+  set_shading_mode(wireframe) => Ok(changed) | scene changed; shading: SmoothShadeAll -> Wireframe; has_draft: true -> false; has_channel_draft: true -> false; can_redo: true -> false
   set_sidebar_panel_visible(channel_box,false) => Ok(changed) | scene changed; sidebar_panels: channel_box=true -> channel_box=false; has_draft: true -> false; has_channel_draft: true -> false; can_redo: true -> false
   set_sidebar_panel_visible(attribute_editor,true) => Ok(changed) | scene changed; sidebar_panels: channel_box=true -> channel_box=false; attribute_editor: panel=false tab=None -> panel=true tab=None; has_draft: true -> false; has_channel_draft: true -> false; can_redo: true -> false
   select_attribute_editor_tab(shape) => Ok(changed) | scene changed; attribute_editor: panel=true tab=None -> panel=true tab=Some(Shape(NativeId(2))); has_draft: true -> false; has_channel_draft: true -> false; can_redo: true -> false
@@ -803,12 +820,12 @@
 ## channel_draft / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene edited" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=true has_channel_draft=true
-    name_intent=false material_draft=- name_field="pCube1" channel_fields=5,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=false pending_action=- dirty=true can_undo=true
-    can_redo=true
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene edited" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=true
+    has_channel_draft=true name_intent=false material_draft=- name_field="pCube1"
+    channel_fields=5,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
+    dirty=true can_undo=true can_redo=true
   set_active_tool(move) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_active_tool(select) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   begin_move => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -845,6 +862,7 @@
   redo => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   frame_selected => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_grid_visible(false) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
+  set_shading_mode(wireframe) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_sidebar_panel_visible(channel_box,false) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_sidebar_panel_visible(attribute_editor,true) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   select_attribute_editor_tab(shape) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -856,12 +874,12 @@
 ## text_focus / native
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene edited" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=false pending_action=- dirty=true can_undo=true
-    can_redo=true
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene edited" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
+    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
+    dirty=true can_undo=true can_redo=true
   set_active_tool(move) => Ok(changed) | active_tool: Select -> Move; pointer_consumed_frame: false -> true; pointer_suppress_primary: false -> true
   set_active_tool(select) => Ok(unchanged) | no state change
   begin_move => Ok(move_started) | active_move: none -> native
@@ -898,6 +916,7 @@
   redo => Ok(changed) | scene changed; selected: pCube1 -> renamed; name_field: "pCube1" -> "renamed"; can_redo: true -> false
   frame_selected => Ok(changed) | camera changed
   set_grid_visible(false) => Ok(changed) | grid: true -> false
+  set_shading_mode(wireframe) => Ok(changed) | shading: SmoothShadeAll -> Wireframe
   set_sidebar_panel_visible(channel_box,false) => Ok(changed) | sidebar_panels: channel_box=true -> channel_box=false
   set_sidebar_panel_visible(attribute_editor,true) => Ok(changed) | sidebar_panels: channel_box=true -> channel_box=false; attribute_editor: panel=false tab=None -> panel=true tab=None
   select_attribute_editor_tab(shape) => Ok(changed) | attribute_editor: panel=true tab=None -> panel=true tab=Some(Shape(NativeId(2)))
@@ -909,12 +928,12 @@
 ## text_focus / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene edited" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=false pending_action=- dirty=true can_undo=true
-    can_redo=true
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene edited" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
+    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
+    dirty=true can_undo=true can_redo=true
   set_active_tool(move) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_active_tool(select) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   begin_move => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -951,6 +970,7 @@
   redo => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   frame_selected => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_grid_visible(false) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
+  set_shading_mode(wireframe) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_sidebar_panel_visible(channel_box,false) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_sidebar_panel_visible(attribute_editor,true) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   select_attribute_editor_tab(shape) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -962,12 +982,12 @@
 ## native_input_pending / native
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene edited" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=false pending_action=- dirty=true can_undo=true
-    can_redo=true
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene edited" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
+    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
+    dirty=true can_undo=true can_redo=true
   set_active_tool(move) => Ok(changed) | active_tool: Select -> Move; pointer_consumed_frame: false -> true; pointer_suppress_primary: false -> true
   set_active_tool(select) => Ok(unchanged) | no state change
   begin_move => Ok(move_started) | active_move: none -> native
@@ -1004,6 +1024,7 @@
   redo => Ok(changed) | scene changed; selected: pCube1 -> renamed; name_field: "pCube1" -> "renamed"; can_redo: true -> false
   frame_selected => Ok(changed) | camera changed
   set_grid_visible(false) => Ok(changed) | grid: true -> false
+  set_shading_mode(wireframe) => Ok(changed) | shading: SmoothShadeAll -> Wireframe
   set_sidebar_panel_visible(channel_box,false) => Ok(changed) | sidebar_panels: channel_box=true -> channel_box=false
   set_sidebar_panel_visible(attribute_editor,true) => Ok(changed) | sidebar_panels: channel_box=true -> channel_box=false; attribute_editor: panel=false tab=None -> panel=true tab=None
   select_attribute_editor_tab(shape) => Ok(changed) | attribute_editor: panel=true tab=None -> panel=true tab=Some(Shape(NativeId(2)))
@@ -1015,12 +1036,12 @@
 ## native_input_pending / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene edited" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=false pending_action=- dirty=true can_undo=true
-    can_redo=true
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene edited" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
+    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
+    dirty=true can_undo=true can_redo=true
   set_active_tool(move) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_active_tool(select) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   begin_move => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -1057,6 +1078,7 @@
   redo => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   frame_selected => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_grid_visible(false) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
+  set_shading_mode(wireframe) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_sidebar_panel_visible(channel_box,false) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_sidebar_panel_visible(attribute_editor,true) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   select_attribute_editor_tab(shape) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -1068,12 +1090,12 @@
 ## stale_token / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene edited" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=false pending_action=- dirty=true can_undo=true
-    can_redo=true
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene edited" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
+    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
+    dirty=true can_undo=true can_redo=true
   set_active_tool(move) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_active_tool(select) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   begin_move => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
@@ -1110,6 +1132,7 @@
   redo => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   frame_selected => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_grid_visible(false) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
+  set_shading_mode(wireframe) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_sidebar_panel_visible(channel_box,false) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_sidebar_panel_visible(attribute_editor,true) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   select_attribute_editor_tab(shape) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
@@ -1121,12 +1144,12 @@
 ## stale_token+local_move / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Move grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene edited" status_is_error=false active_move=native native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=false pending_action=- dirty=true can_undo=true
-    can_redo=true
+    active_tool=Move grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene edited" status_is_error=false active_move=native
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
+    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
+    dirty=true can_undo=true can_redo=true
   set_active_tool(move) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_active_tool(select) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   begin_move => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
@@ -1163,6 +1186,7 @@
   redo => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   frame_selected => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_grid_visible(false) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
+  set_shading_mode(wireframe) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_sidebar_panel_visible(channel_box,false) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_sidebar_panel_visible(attribute_editor,true) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   select_attribute_editor_tab(shape) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
@@ -1174,12 +1198,12 @@
 ## stale_token+remote_move / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Move grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene edited" status_is_error=false active_move=remote native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=false pending_action=- dirty=true can_undo=true
-    can_redo=true
+    active_tool=Move grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene edited" status_is_error=false active_move=remote
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
+    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
+    dirty=true can_undo=true can_redo=true
   set_active_tool(move) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_active_tool(select) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   begin_move => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
@@ -1216,6 +1240,7 @@
   redo => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   frame_selected => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_grid_visible(false) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
+  set_shading_mode(wireframe) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_sidebar_panel_visible(channel_box,false) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_sidebar_panel_visible(attribute_editor,true) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   select_attribute_editor_tab(shape) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
@@ -1227,12 +1252,12 @@
 ## stale_token+closing / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene edited" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=true pending_action=- dirty=true can_undo=true
-    can_redo=true
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene edited" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
+    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=true pending_action=-
+    dirty=true can_undo=true can_redo=true
   set_active_tool(move) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_active_tool(select) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   begin_move => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
@@ -1269,6 +1294,7 @@
   redo => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   frame_selected => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_grid_visible(false) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
+  set_shading_mode(wireframe) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_sidebar_panel_visible(channel_box,false) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_sidebar_panel_visible(attribute_editor,true) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   select_attribute_editor_tab(shape) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
@@ -1280,12 +1306,12 @@
 ## stale_token+modal / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene edited" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=true closing=false pending_action=New dirty=true can_undo=true
-    can_redo=true
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene edited" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
+    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=true closing=false
+    pending_action=New dirty=true can_undo=true can_redo=true
   set_active_tool(move) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_active_tool(select) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   begin_move => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
@@ -1322,6 +1348,7 @@
   redo => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   frame_selected => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_grid_visible(false) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
+  set_shading_mode(wireframe) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_sidebar_panel_visible(channel_box,false) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_sidebar_panel_visible(attribute_editor,true) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   select_attribute_editor_tab(shape) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
@@ -1333,12 +1360,12 @@
 ## stale_token+name_draft / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene edited" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=true has_channel_draft=true
-    name_intent=false material_draft=- name_field="draft name" channel_fields=0,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=false pending_action=- dirty=true can_undo=true
-    can_redo=true
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene edited" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=true
+    has_channel_draft=true name_intent=false material_draft=- name_field="draft name"
+    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
+    dirty=true can_undo=true can_redo=true
   set_active_tool(move) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_active_tool(select) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   begin_move => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
@@ -1375,6 +1402,7 @@
   redo => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   frame_selected => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_grid_visible(false) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
+  set_shading_mode(wireframe) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_sidebar_panel_visible(channel_box,false) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_sidebar_panel_visible(attribute_editor,true) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   select_attribute_editor_tab(shape) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
@@ -1386,12 +1414,12 @@
 ## stale_token+native_input_pending / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene edited" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=false pending_action=- dirty=true can_undo=true
-    can_redo=true
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene edited" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
+    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
+    dirty=true can_undo=true can_redo=true
   set_active_tool(move) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_active_tool(select) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   begin_move => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
@@ -1428,6 +1456,7 @@
   redo => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   frame_selected => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_grid_visible(false) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
+  set_shading_mode(wireframe) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_sidebar_panel_visible(channel_box,false) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   set_sidebar_panel_visible(attribute_editor,true) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   select_attribute_editor_tab(shape) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
@@ -1439,12 +1468,12 @@
 ## read_only_ascii / native
   baseline:
     nodes=1 selected=curve selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene ready" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="curve" channel_fields=12,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=false pending_action=- dirty=false can_undo=false
-    can_redo=false
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene ready" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="curve"
+    channel_fields=12,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false
+    pending_action=- dirty=false can_undo=false can_redo=false
   set_active_tool(move) => Ok(changed) | active_tool: Select -> Move; pointer_consumed_frame: false -> true; pointer_suppress_primary: false -> true
   set_active_tool(select) => Ok(unchanged) | no state change
   begin_move => Err(Scene: Maya ASCII scenes are read-only in this version) | no state change
@@ -1481,6 +1510,7 @@
   redo => Ok(unchanged) | no state change
   frame_selected => Ok(unchanged) | no state change
   set_grid_visible(false) => Ok(changed) | grid: true -> false
+  set_shading_mode(wireframe) => Ok(changed) | shading: SmoothShadeAll -> Wireframe
   set_sidebar_panel_visible(channel_box,false) => Ok(changed) | sidebar_panels: channel_box=true -> channel_box=false
   set_sidebar_panel_visible(attribute_editor,true) => Ok(changed) | sidebar_panels: channel_box=true -> channel_box=false; attribute_editor: panel=false tab=None -> panel=true tab=None
   select_attribute_editor_tab(shape) => Err(InvalidInput: Attribute Editor tab does not resolve for the selected node) | no state change
@@ -1492,12 +1522,12 @@
 ## read_only_ascii / remote
   baseline:
     nodes=1 selected=curve selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene ready" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="curve" channel_fields=12,0,0,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=false pending_action=- dirty=false can_undo=false
-    can_redo=false
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene ready" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="curve"
+    channel_fields=12,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false
+    pending_action=- dirty=false can_undo=false can_redo=false
   set_active_tool(move) => Ok(changed) | active_tool: Select -> Move
   set_active_tool(select) => Ok(unchanged) | no state change
   begin_move => Err(Scene: Maya ASCII scenes are read-only in this version) | no state change
@@ -1534,6 +1564,7 @@
   redo => Ok(unchanged) | no state change
   frame_selected => Ok(unchanged) | no state change
   set_grid_visible(false) => Ok(changed) | grid: true -> false
+  set_shading_mode(wireframe) => Ok(changed) | shading: SmoothShadeAll -> Wireframe
   set_sidebar_panel_visible(channel_box,false) => Ok(changed) | sidebar_panels: channel_box=true -> channel_box=false
   set_sidebar_panel_visible(attribute_editor,true) => Ok(changed) | sidebar_panels: channel_box=true -> channel_box=false; attribute_editor: panel=false tab=None -> panel=true tab=None
   select_attribute_editor_tab(shape) => Err(InvalidInput: Attribute Editor tab does not resolve for the selected node) | no state change
@@ -1545,10 +1576,10 @@
 ## binary_dirty / native
   baseline:
     nodes=1 selected=object selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene ready" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="object"
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene ready" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="object"
     channel_fields=16777218.125,-2,3,0,0,14.32394487827058,1,1,1 channel_intents=000000000 modal=false
     closing=false pending_action=- dirty=true can_undo=true can_redo=false
   set_active_tool(move) => Ok(changed) | active_tool: Select -> Move; pointer_consumed_frame: false -> true; pointer_suppress_primary: false -> true
@@ -1587,6 +1618,7 @@
   redo => Ok(unchanged) | no state change
   frame_selected => Ok(changed) | camera changed
   set_grid_visible(false) => Ok(changed) | grid: true -> false
+  set_shading_mode(wireframe) => Ok(changed) | shading: SmoothShadeAll -> Wireframe
   set_sidebar_panel_visible(channel_box,false) => Ok(changed) | sidebar_panels: channel_box=true -> channel_box=false
   set_sidebar_panel_visible(attribute_editor,true) => Ok(changed) | sidebar_panels: channel_box=true -> channel_box=false; attribute_editor: panel=false tab=None -> panel=true tab=None
   select_attribute_editor_tab(shape) => Ok(changed) | attribute_editor: panel=true tab=None -> panel=true tab=Some(Shape(NativeId(2)))
@@ -1598,10 +1630,10 @@
 ## binary_dirty / remote
   baseline:
     nodes=1 selected=object selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene ready" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="object"
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene ready" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="object"
     channel_fields=16777218.125,-2,3,0,0,14.32394487827058,1,1,1 channel_intents=000000000 modal=false
     closing=false pending_action=- dirty=true can_undo=true can_redo=false
   set_active_tool(move) => Ok(changed) | active_tool: Select -> Move
@@ -1640,6 +1672,7 @@
   redo => Ok(unchanged) | no state change
   frame_selected => Ok(changed) | camera changed
   set_grid_visible(false) => Ok(changed) | grid: true -> false
+  set_shading_mode(wireframe) => Ok(changed) | shading: SmoothShadeAll -> Wireframe
   set_sidebar_panel_visible(channel_box,false) => Ok(changed) | sidebar_panels: channel_box=true -> channel_box=false
   set_sidebar_panel_visible(attribute_editor,true) => Ok(changed) | sidebar_panels: channel_box=true -> channel_box=false; attribute_editor: panel=false tab=None -> panel=true tab=None
   select_attribute_editor_tab(shape) => Ok(changed) | attribute_editor: panel=true tab=None -> panel=true tab=Some(Shape(NativeId(2)))
@@ -1651,10 +1684,10 @@
 ## no_install / native
   baseline:
     nodes=1 selected=object selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene ready" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="object"
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene ready" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="object"
     channel_fields=16777218.125,-2,3,0,0,14.32394487827058,1,1,1 channel_intents=000000000 modal=false
     closing=false pending_action=- dirty=true can_undo=true can_redo=false
   set_active_tool(move) => Ok(changed) | active_tool: Select -> Move; pointer_consumed_frame: false -> true; pointer_suppress_primary: false -> true
@@ -1693,6 +1726,7 @@
   redo => Ok(unchanged) | no state change
   frame_selected => Ok(changed) | camera changed
   set_grid_visible(false) => Ok(changed) | grid: true -> false
+  set_shading_mode(wireframe) => Ok(changed) | shading: SmoothShadeAll -> Wireframe
   set_sidebar_panel_visible(channel_box,false) => Ok(changed) | sidebar_panels: channel_box=true -> channel_box=false
   set_sidebar_panel_visible(attribute_editor,true) => Ok(changed) | sidebar_panels: channel_box=true -> channel_box=false; attribute_editor: panel=false tab=None -> panel=true tab=None
   select_attribute_editor_tab(shape) => Ok(changed) | attribute_editor: panel=true tab=None -> panel=true tab=Some(Shape(NativeId(2)))
@@ -1704,10 +1738,10 @@
 ## no_install / remote
   baseline:
     nodes=1 selected=object selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene ready" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="object"
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene ready" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="object"
     channel_fields=16777218.125,-2,3,0,0,14.32394487827058,1,1,1 channel_intents=000000000 modal=false
     closing=false pending_action=- dirty=true can_undo=true can_redo=false
   set_active_tool(move) => Ok(changed) | active_tool: Select -> Move
@@ -1746,6 +1780,7 @@
   redo => Ok(unchanged) | no state change
   frame_selected => Ok(changed) | camera changed
   set_grid_visible(false) => Ok(changed) | grid: true -> false
+  set_shading_mode(wireframe) => Ok(changed) | shading: SmoothShadeAll -> Wireframe
   set_sidebar_panel_visible(channel_box,false) => Ok(changed) | sidebar_panels: channel_box=true -> channel_box=false
   set_sidebar_panel_visible(attribute_editor,true) => Ok(changed) | sidebar_panels: channel_box=true -> channel_box=false; attribute_editor: panel=false tab=None -> panel=true tab=None
   select_attribute_editor_tab(shape) => Ok(changed) | attribute_editor: panel=true tab=None -> panel=true tab=Some(Shape(NativeId(2)))
@@ -1757,10 +1792,10 @@
 ## no_install_modal / native
   baseline:
     nodes=1 selected=object selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene ready" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="object"
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene ready" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="object"
     channel_fields=16777218.125,-2,3,0,0,14.32394487827058,1,1,1 channel_intents=000000000 modal=true
     closing=false pending_action=New dirty=true can_undo=true can_redo=false
   set_active_tool(move) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | pointer_consumed_frame: false -> true; pointer_suppress_primary: false -> true
@@ -1799,6 +1834,7 @@
   redo => Ok(unchanged) | no state change
   frame_selected => Ok(changed) | camera changed
   set_grid_visible(false) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
+  set_shading_mode(wireframe) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_sidebar_panel_visible(channel_box,false) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_sidebar_panel_visible(attribute_editor,true) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   select_attribute_editor_tab(shape) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -1810,10 +1846,10 @@
 ## no_install_modal / remote
   baseline:
     nodes=1 selected=object selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true sidebar_panels=channel_box=true attribute_editor=panel=false tab=None
-    status="Scene ready" status_is_error=false active_move=none native_move_drag=false
-    pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false has_channel_draft=false
-    name_intent=false material_draft=- name_field="object"
+    active_tool=Select grid=true shading=SmoothShadeAll sidebar_panels=channel_box=true
+    attribute_editor=panel=false tab=None status="Scene ready" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
+    has_channel_draft=false name_intent=false material_draft=- name_field="object"
     channel_fields=16777218.125,-2,3,0,0,14.32394487827058,1,1,1 channel_intents=000000000 modal=true
     closing=false pending_action=New dirty=true can_undo=true can_redo=false
   set_active_tool(move) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -1852,6 +1888,7 @@
   redo => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   frame_selected => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_grid_visible(false) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
+  set_shading_mode(wireframe) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_sidebar_panel_visible(channel_box,false) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   set_sidebar_panel_visible(attribute_editor,true) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   select_attribute_editor_tab(shape) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -1860,4 +1897,4 @@
   pan => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   dolly => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
 
-cells: 1507
+cells: 1542

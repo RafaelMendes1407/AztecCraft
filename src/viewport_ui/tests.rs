@@ -320,6 +320,7 @@ fn painted_submission(
                 view,
                 SelectionFeedback::Object(prefix),
                 true,
+                crate::editor_operations::ShadingMode::SmoothShadeAll,
             )
             .unwrap();
     });
@@ -578,7 +579,8 @@ fn missing_startup_state_fails_and_uninitialized_ui_never_paints_fake_geometry()
                 &camera(),
                 &view,
                 SelectionFeedback::Object(None),
-                true
+                true,
+                crate::editor_operations::ShadingMode::SmoothShadeAll
             ),
             Err(RenderError::Uninitialized)
         ));
@@ -704,6 +706,7 @@ fn fractional_offset_viewport_uses_one_physical_projection_for_clicks_and_paint(
                         &view,
                         SelectionFeedback::Object(None),
                         true,
+                        crate::editor_operations::ShadingMode::SmoothShadeAll,
                     )
                     .unwrap();
                 let recorded = recorded_submission(&producer);
@@ -772,6 +775,7 @@ fn fractional_capture_click_handle_and_submission_share_the_same_physical_aspect
                         &view,
                         SelectionFeedback::Object(None),
                         true,
+                        crate::editor_operations::ShadingMode::SmoothShadeAll,
                     )
                     .unwrap();
                 last = Some(captured);

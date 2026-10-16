@@ -1412,6 +1412,65 @@ fn grid_setter_is_idempotent_and_preserves_scene_history_and_editor_baseline() {
 }
 
 #[test]
+fn shading_setter_is_idempotent_session_only_and_neither_dirties_nor_changes_the_token() {
+    use crate::editor_operations::ShadingMode;
+    let mut editor = Editor::default();
+    assert_eq!(editor.shading, ShadingMode::SmoothShadeAll);
+    assert!(!editor.is_dirty());
+    let token = editor.scene_token;
+    let scene = editor.history.scene().clone();
+    let before = serde_json::to_value(editor.inspect(false).unwrap()).unwrap();
+    assert_eq!(before["shading"], "smooth_shade_all");
+    let status = (editor.status.clone(), editor.error);
+    for (mode, changed) in [
+        (ShadingMode::SmoothShadeAll, false),
+        (ShadingMode::Wireframe, true),
+        (ShadingMode::Wireframe, false),
+        (ShadingMode::SmoothShadeAll, true),
+    ] {
+        let reply = remote(&mut editor, Operation::SetShadingMode(mode)).unwrap();
+        assert_eq!(matches!(reply, OperationReply::Changed), changed);
+        assert_eq!(matches!(reply, OperationReply::Unchanged), !changed);
+        assert_eq!(editor.shading, mode);
+        let mut actual = serde_json::to_value(editor.inspect(false).unwrap()).unwrap();
+        assert_eq!(actual["shading"], serde_json::to_value(mode).unwrap());
+        actual["shading"] = before["shading"].clone();
+        assert_eq!(actual, before);
+        assert!(!editor.is_dirty());
+        assert_eq!(editor.scene_token, token);
+        assert_eq!(editor.history.scene(), &scene);
+        assert_eq!((editor.status.clone(), editor.error), status);
+    }
+}
+
+#[test]
+fn shading_refuses_modal_and_closing_and_survives_new_scene() {
+    use crate::editor_operations::ShadingMode;
+    for closing in [false, true] {
+        let mut editor = Editor::default();
+        if closing {
+            editor.close_document().unwrap();
+        } else {
+            editor.create(Primitive::Cube);
+            editor.new_document().unwrap();
+        }
+        assert!(matches!(
+            editor.apply_operation(Operation::SetShadingMode(ShadingMode::Wireframe)),
+            Err(OperationError::BusyEditing)
+        ));
+        assert_eq!(editor.shading, ShadingMode::SmoothShadeAll);
+    }
+    let mut editor = Editor::default();
+    remote(
+        &mut editor,
+        Operation::SetShadingMode(ShadingMode::Wireframe),
+    )
+    .unwrap();
+    remote(&mut editor, Operation::NewScene).unwrap();
+    assert_eq!(editor.shading, ShadingMode::Wireframe);
+}
+
+#[test]
 fn grid_native_draft_policy_and_remote_draft_refusal_share_the_typed_setter() {
     let mut editor = Editor::default();
     editor.create(Primitive::Cube);

@@ -127,6 +127,7 @@ fn face_mode_feedback_on_a_curves_only_scene_draws_lines_without_markers_or_high
             [SIZE; 2],
             selection,
             true,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             u64::MAX,
         )
@@ -155,6 +156,7 @@ fn curve_submission_preflight_counts_actual_segments_and_refuses_short_buffer() 
         [SIZE; 2],
         SelectionFeedback::Object(None),
         true,
+        ShadingMode::SmoothShadeAll,
         FORMAT,
         bytes as u64,
     )
@@ -169,6 +171,7 @@ fn curve_submission_preflight_counts_actual_segments_and_refuses_short_buffer() 
             [SIZE; 2],
             SelectionFeedback::Object(None),
             true,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             bytes as u64 - 1
         ),
@@ -313,6 +316,7 @@ fn twenty_gon_submission_counts_fan_triangles_and_every_outline_edge() {
         [SIZE; 2],
         SelectionFeedback::Object(None),
         false,
+        ShadingMode::SmoothShadeAll,
         FORMAT,
         bytes as u64,
     )
@@ -327,6 +331,7 @@ fn twenty_gon_submission_counts_fan_triangles_and_every_outline_edge() {
             [SIZE; 2],
             SelectionFeedback::Object(None),
             false,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             bytes as u64 - 1
         ),
@@ -345,6 +350,7 @@ fn headless_gpu_twenty_gon_fills_every_fan_triangle() {
         [SIZE; 2],
         SelectionFeedback::Object(None),
         false,
+        ShadingMode::SmoothShadeAll,
         FORMAT,
         u64::MAX,
     )
@@ -374,6 +380,7 @@ fn headless_gpu_curve_line_submission_obeys_actual_surface_depth() {
         [SIZE; 2],
         SelectionFeedback::Object(None),
         true,
+        ShadingMode::SmoothShadeAll,
         FORMAT,
         u64::MAX,
     )
@@ -399,6 +406,7 @@ fn headless_gpu_curve_line_submission_obeys_actual_surface_depth() {
             [SIZE; 2],
             SelectionFeedback::Object(None),
             true,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             u64::MAX,
         )
@@ -471,6 +479,7 @@ fn actual_native_submission_checks_exact_payload_limit_and_preserves_crossing_co
         [SIZE; 2],
         SelectionFeedback::Object(None),
         true,
+        ShadingMode::SmoothShadeAll,
         FORMAT,
         1024 * 1024,
     )
@@ -492,6 +501,7 @@ fn actual_native_submission_checks_exact_payload_limit_and_preserves_crossing_co
             [SIZE; 2],
             SelectionFeedback::Object(None),
             true,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             submission.bytes.len() as u64
         )
@@ -504,6 +514,7 @@ fn actual_native_submission_checks_exact_payload_limit_and_preserves_crossing_co
             [SIZE; 2],
             SelectionFeedback::Object(None),
             true,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             submission.bytes.len() as u64 - 1
         ),
@@ -536,6 +547,7 @@ fn face_submission_highlights_only_exact_identity_and_charges_physical_markers()
             [size; 2],
             selection,
             true,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             1024 * 1024,
         )
@@ -580,6 +592,7 @@ fn face_submission_highlights_only_exact_identity_and_charges_physical_markers()
                 [size; 2],
                 selection,
                 true,
+                ShadingMode::SmoothShadeAll,
                 FORMAT,
                 bytes
             )
@@ -592,6 +605,7 @@ fn face_submission_highlights_only_exact_identity_and_charges_physical_markers()
                 [size; 2],
                 selection,
                 true,
+                ShadingMode::SmoothShadeAll,
                 FORMAT,
                 bytes - 1
             ),
@@ -608,6 +622,7 @@ fn face_submission_highlights_only_exact_identity_and_charges_physical_markers()
             selected: Some(&target),
         },
         true,
+        ShadingMode::SmoothShadeAll,
         FORMAT,
         1024 * 1024,
     )
@@ -692,6 +707,7 @@ fn headless_gpu_face_centers_match_picker_for_planar_nonplanar_and_degenerate_fa
                                 selected: None,
                             },
                             true,
+                            ShadingMode::SmoothShadeAll,
                         )
                         .unwrap(),
                 );
@@ -748,6 +764,7 @@ fn headless_gpu_face_feedback_matches_exact_face_and_instance_and_hides_occluded
                 selected: Some(&target),
             },
             true,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             1024 * 1024,
         )
@@ -795,6 +812,7 @@ fn headless_gpu_face_feedback_matches_exact_face_and_instance_and_hides_occluded
             selected: None,
         },
         true,
+        ShadingMode::SmoothShadeAll,
         FORMAT,
         1024 * 1024,
     )
@@ -826,6 +844,7 @@ fn headless_gpu_face_feedback_matches_exact_face_and_instance_and_hides_occluded
             selected: None,
         },
         true,
+        ShadingMode::SmoothShadeAll,
         FORMAT,
         1024 * 1024,
     )
@@ -893,6 +912,7 @@ fn grid_visibility_omits_only_original_grid_bytes_and_its_allocation_charge() {
             [SIZE; 2],
             selection,
             true,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             1024 * 1024,
         )
@@ -903,6 +923,7 @@ fn grid_visibility_omits_only_original_grid_bytes_and_its_allocation_charge() {
             [SIZE; 2],
             selection,
             false,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             1024 * 1024,
         )
@@ -913,6 +934,7 @@ fn grid_visibility_omits_only_original_grid_bytes_and_its_allocation_charge() {
             [SIZE; 2],
             selection,
             true,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             1024 * 1024,
         )
@@ -947,6 +969,7 @@ fn grid_visibility_omits_only_original_grid_bytes_and_its_allocation_charge() {
                 [SIZE; 2],
                 selection,
                 false,
+                ShadingMode::SmoothShadeAll,
                 FORMAT,
                 hidden.bytes.len() as u64
             )
@@ -959,6 +982,7 @@ fn grid_visibility_omits_only_original_grid_bytes_and_its_allocation_charge() {
                 [SIZE; 2],
                 selection,
                 true,
+                ShadingMode::SmoothShadeAll,
                 FORMAT,
                 hidden.bytes.len() as u64
             ),
@@ -972,6 +996,7 @@ fn grid_visibility_omits_only_original_grid_bytes_and_its_allocation_charge() {
         [SIZE; 2],
         SelectionFeedback::Object(None),
         false,
+        ShadingMode::SmoothShadeAll,
         FORMAT,
         0,
     )
@@ -1013,6 +1038,7 @@ fn headless_gpu_grid_callback_clears_cold_and_warm_empty_frames_and_restores_pix
                             scene.instances().first().map(|instance| instance.path()),
                         ),
                         visible,
+                        crate::editor_operations::ShadingMode::SmoothShadeAll,
                     )
                     .unwrap();
             });
@@ -1049,6 +1075,7 @@ fn finite_native_world_that_overflows_clip_reports_a_render_limit() {
             [SIZE; 2],
             SelectionFeedback::Object(None),
             true,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             1024 * 1024
         ),
@@ -1072,7 +1099,8 @@ fn startup_without_wgpu_and_latched_errors_never_emit_a_callback() {
             Rect::NOTHING,
             [SIZE; 2],
             SelectionFeedback::Object(None),
-            true
+            true,
+            ShadingMode::SmoothShadeAll
         ),
         Err(RenderError::Camera(_))
     ));
@@ -1089,7 +1117,8 @@ fn startup_without_wgpu_and_latched_errors_never_emit_a_callback() {
             Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(128.0, 128.0)),
             [SIZE; 2],
             SelectionFeedback::Object(None),
-            true
+            true,
+            ShadingMode::SmoothShadeAll
         ),
         Err(RenderError::Backend(_))
     ));
@@ -1157,6 +1186,7 @@ impl Offscreen {
             [SIZE; 2],
             SelectionFeedback::Object(selected),
             true,
+            crate::editor_operations::ShadingMode::SmoothShadeAll,
             self.format,
             self.device.limits().max_buffer_size,
         )
@@ -1412,6 +1442,7 @@ fn headless_gpu_actual_viewport_caller_preserves_crossing_side() {
                 &view,
                 SelectionFeedback::Object(Some(&path[..path.len() - 1])),
                 true,
+                crate::editor_operations::ShadingMode::SmoothShadeAll,
             )
             .unwrap();
     });
@@ -1447,6 +1478,7 @@ fn headless_gpu_actual_callback_scissor_and_following_egui_restore_at_one_and_tw
                         [96; 2],
                         SelectionFeedback::Object(Some(&path[..path.len() - 1])),
                         true,
+                        ShadingMode::SmoothShadeAll,
                     )
                     .unwrap(),
             );
@@ -1494,7 +1526,8 @@ fn headless_gpu_actual_validation_callback_latches_and_blocks_submission() {
             Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::splat(128.0)),
             [SIZE; 2],
             SelectionFeedback::Object(None),
-            true
+            true,
+            ShadingMode::SmoothShadeAll
         ),
         Err(RenderError::Backend(_))
     ));
@@ -1747,6 +1780,7 @@ fn base_fill_is_83_and_a_face_looking_at_the_eye_keeps_it() {
         [SIZE; 2],
         SelectionFeedback::Object(None),
         true,
+        ShadingMode::SmoothShadeAll,
         FORMAT,
         u64::MAX,
     )
@@ -1775,6 +1809,7 @@ fn selection_tint_is_lit_by_the_same_factor() {
         [SIZE; 2],
         SelectionFeedback::Object(Some(&path[..path.len() - 1])),
         true,
+        ShadingMode::SmoothShadeAll,
         FORMAT,
         u64::MAX,
     )
@@ -1808,6 +1843,7 @@ fn front_colors(scene: &NativeScene, selected: bool) -> Vec<[f32; 4]> {
         [SIZE; 2],
         feedback,
         true,
+        crate::editor_operations::ShadingMode::SmoothShadeAll,
         FORMAT,
         u64::MAX,
     )
@@ -1976,6 +2012,7 @@ fn headless_gpu_offscreen_does_not_reproduce_issue_111() {
             [SIZE; 2],
             SelectionFeedback::Object(None),
             grid,
+            ShadingMode::SmoothShadeAll,
             FORMAT,
             u64::MAX,
         )

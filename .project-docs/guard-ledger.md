@@ -29,7 +29,7 @@ provenance Native and no token or draft checks. In order:
    `UpdateMove`/`FinishMove`.
 2. Closing is `BusyEditing` (`src/app/dispatch.rs:137`), so a native `NewScene` while closing cancels the
    Move and then fails.
-3. `SetGridVisible`, `SetSidebarPanelVisible` and `SelectAttributeEditorTab` while modal are `BusyEditing` (`src/app/dispatch.rs:140`).
+3. `SetGridVisible`, `SetShadingMode`, `SetSidebarPanelVisible` and `SelectAttributeEditorTab` while modal are `BusyEditing` (`src/app/dispatch.rs:140`).
 4. File operations are decided in one match (`src/app/dispatch.rs:149`), before any draft commit. For
    `OpenScene` and `SaveSceneAs`, path validity (`src/app/dispatch.rs:151`) runs first. `OpenScene` then
    reaches `open_candidate` with no modal check (`src/app/dispatch.rs:160`); `SaveSceneAs` is refused while
@@ -79,6 +79,9 @@ The matrix records these asymmetries; treat a change as a behavior change that n
   first) and then fails with `BusyEditing`.
 - Native `delete` with a changed material draft commits the draft first, then fails; the status
   becomes "Material data edited" and the scene has changed even though the result is an `Err`.
+- `SetShadingMode` follows Grid: session-only, idempotent (`Unchanged` when the mode already matches),
+  never dirty, never a scene-token change; guards are those of `SetGridVisible`. Handler is in
+  `src/app/dispatch.rs`; matrix cell is `set_shading_mode(wireframe)`.
 - `SetSidebarPanelVisible` follows Grid: remote refuses a stale token, a Move (`BusyManipulation`), a
   differing draft, text focus, modal and closing (`BusyEditing`); native refuses closing and modal
   before any draft commit (`src/app/dispatch.rs:137`, `src/app/dispatch.rs:140`), is

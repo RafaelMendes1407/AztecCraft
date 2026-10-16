@@ -1,3 +1,4 @@
+use crate::editor_operations::ShadingMode;
 use azteccraft::{
     native_scene::{FaceTarget, NativeId},
     scene::NodeId,
@@ -223,6 +224,10 @@ impl ViewportRenderer {
         self.errors.first.lock().clone()
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "display state is a flat argument list"
+    )]
     pub fn callback(
         &self,
         scene: &ViewScene,
@@ -231,6 +236,7 @@ impl ViewportRenderer {
         physical_size: [u32; 2],
         selection: SelectionFeedback<'_>,
         grid_visible: bool,
+        shading: ShadingMode,
     ) -> Result<egui::epaint::PaintCallback, RenderError> {
         if let Some(error) = self.terminal_error() {
             return Err(RenderError::Backend(error));
@@ -248,6 +254,7 @@ impl ViewportRenderer {
             physical_size,
             selection,
             grid_visible,
+            shading,
             self.format,
             self.max_buffer_size,
         )?;
@@ -274,12 +281,17 @@ struct Submission {
 }
 
 impl Submission {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "display state is a flat argument list"
+    )]
     fn new(
         scene: &ViewScene,
         camera: &Camera,
         physical_size: [u32; 2],
         selection: SelectionFeedback<'_>,
         grid_visible: bool,
+        shading: ShadingMode,
         format: wgpu::TextureFormat,
         max_buffer_size: u64,
     ) -> Result<Self, RenderError> {
@@ -293,7 +305,11 @@ impl Submission {
         let mut vertices = if grid_visible { 84_usize } else { 0 };
         for instance in scene.instances() {
             for face in instance.faces() {
-                let surface_count = face.triangles().count() * 3;
+                let surface_count = if shading == ShadingMode::Wireframe {
+                    0
+                } else {
+                    face.triangles().count() * 3
+                };
                 vertices = vertices
                     .checked_add(surface_count)
                     .and_then(|count| count.checked_add(face.corners().len() * 2))
@@ -339,7 +355,12 @@ impl Submission {
             u64::MAX,
         )?;
         let eye = camera.eye();
-        for instance in scene.instances().iter().rev() {
+        let surface_instances: &[ViewInstance] = if shading == ShadingMode::Wireframe {
+            &[]
+        } else {
+            scene.instances()
+        };
+        for instance in surface_instances.iter().rev() {
             for face in instance.faces().iter().rev() {
                 let base = if selection.selected(instance, face) {
                     selected_base(instance.base_rgb())
