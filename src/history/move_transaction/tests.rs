@@ -1,5 +1,7 @@
 use super::*;
-use crate::native_scene::{NativeTransform, RotateUnsupported, binary, test_fixtures};
+use crate::native_scene::{
+    NativeTransform, RotateUnsupported, ScaleUnsupported, binary, test_fixtures,
+};
 use crate::scene::Primitive;
 
 mod wire {
@@ -845,4 +847,137 @@ fn refused_rotate_begin_consumes_no_id_and_leaves_no_transaction() {
     assert!(history.active_manipulation().is_none());
     assert_eq!(history.next_manipulation_id, 0);
     assert_eq!(history.scene, before);
+}
+
+fn scale_of(history: &History) -> [f64; 3] {
+    history
+        .scene
+        .node(target(history).node)
+        .unwrap()
+        .transform()
+        .scale
+}
+
+#[test]
+fn scale_previews_make_one_undo_and_identity_is_the_initial_parameter() {
+    let mut history = cube_history();
+    let original = history.scene.clone();
+    let token = Uuid::new_v4();
+    let id = history
+        .begin_scale(
+            &target(&history),
+            ScaleHandle::Uniform,
+            token,
+            ManipulationProvenance::Native,
+            BUDGET,
+        )
+        .unwrap();
+    let active = history.active_manipulation().unwrap();
+    assert_eq!(
+        active.kind,
+        ManipulationKindState::Scale {
+            handle: ScaleHandle::Uniform
+        }
+    );
+    assert_eq!((active.parameter, active.move_axis()), (1.0, None));
+    for factor in [2.0, 0.5, 3.0] {
+        history
+            .update_move(token, id, ManipulationProvenance::Native, factor)
+            .unwrap();
+        assert_eq!(scale_of(&history), [factor; 3]);
+        assert!(history.undo.is_empty());
+    }
+    let preview = history.scene.clone();
+    assert_eq!(
+        history
+            .finish_move(
+                token,
+                id,
+                ManipulationProvenance::Native,
+                ManipulationFinish::Commit
+            )
+            .unwrap(),
+        EditOutcome::Changed
+    );
+    assert_eq!(history.undo.len(), 1);
+    assert!(history.undo());
+    assert_eq!(history.scene, original);
+    assert!(history.redo());
+    assert_eq!(history.scene, preview);
+}
+
+#[test]
+fn scale_refusal_in_drag_keeps_the_last_valid_preview_and_identity_is_unchanged() {
+    let mut history = cube_history();
+    let token = Uuid::new_v4();
+    let id = history
+        .begin_scale(
+            &target(&history),
+            ScaleHandle::X,
+            token,
+            ManipulationProvenance::Remote,
+            BUDGET,
+        )
+        .unwrap();
+    assert_eq!(
+        history.begin_move(
+            &target(&history),
+            WorldAxis::X,
+            token,
+            ManipulationProvenance::Remote,
+            BUDGET
+        ),
+        Err(ManipulationError::Busy)
+    );
+    history
+        .update_move(token, id, ManipulationProvenance::Remote, 4.0)
+        .unwrap();
+    let preview = history.scene.clone();
+    for refused in [0.0, -2.0, f64::NAN, f64::MAX * 4.0, 1e308] {
+        assert!(
+            history
+                .update_move(token, id, ManipulationProvenance::Remote, refused)
+                .is_err()
+        );
+        assert_eq!(history.scene, preview);
+    }
+    assert_eq!(
+        history.update_move(token, id, ManipulationProvenance::Native, 2.0),
+        Err(ManipulationError::WrongOwner)
+    );
+    history
+        .update_move(token, id, ManipulationProvenance::Remote, 1.0)
+        .unwrap();
+    assert_eq!(
+        history
+            .finish_move(
+                token,
+                id,
+                ManipulationProvenance::Remote,
+                ManipulationFinish::Commit
+            )
+            .unwrap(),
+        EditOutcome::Unchanged
+    );
+    assert!(history.undo.is_empty());
+}
+
+#[test]
+fn refused_scale_begin_consumes_no_id() {
+    let mut history = History::new(test_fixtures::pivoted_shape().0);
+    let result = history.begin_scale(
+        &target(&history),
+        ScaleHandle::Y,
+        Uuid::new_v4(),
+        ManipulationProvenance::Native,
+        BUDGET,
+    );
+    assert!(matches!(
+        result,
+        Err(ManipulationError::Native(NativeError::UnsupportedScale(
+            ScaleUnsupported::SelectedPivot
+        )))
+    ));
+    assert!(history.active_manipulation().is_none());
+    assert_eq!(history.next_manipulation_id, 0);
 }

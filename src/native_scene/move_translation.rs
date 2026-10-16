@@ -33,6 +33,7 @@ impl WorldAxis {
 pub enum ChannelLeaf {
     Translate,
     Rotate,
+    Scale,
 }
 
 impl ChannelLeaf {
@@ -41,6 +42,7 @@ impl ChannelLeaf {
         match self {
             Self::Translate => format!("translate{axis}"),
             Self::Rotate => format!("rotate{axis}"),
+            Self::Scale => format!("scale{axis}"),
         }
     }
 }

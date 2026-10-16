@@ -1,7 +1,7 @@
 use super::{Command, EditOutcome, History};
 use crate::native_scene::{
-    ChannelBaseline, NativeError, NativeId, NativeScene, ObjectRotateFrame, RotateAxis,
-    TransformTarget, WorldAxis, WorldMoveFrame,
+    ChannelBaseline, NativeError, NativeId, NativeScene, ObjectRotateFrame, ObjectScaleFrame,
+    RotateAxis, ScaleHandle, TransformTarget, WorldAxis, WorldMoveFrame,
 };
 use crate::view_scene::{ViewError, ViewScene};
 use std::{fmt, mem::size_of};
@@ -75,10 +75,11 @@ impl std::error::Error for ManipulationError {}
 pub enum ManipulationKindState {
     Move { axis: WorldAxis },
     Rotate { axis: RotateAxis },
+    Scale { handle: ScaleHandle },
 }
 
 /// Read-only view of the active manipulation; `parameter` is in the kind's internal unit
-/// (centimeters for Move, degrees for Rotate).
+/// (centimeters for Move, degrees for Rotate, a unitless factor for Scale).
 pub struct ManipulationState<'a> {
     pub id: ManipulationId,
     pub target: &'a TransformTarget,
@@ -91,7 +92,7 @@ impl ManipulationState<'_> {
     pub fn move_axis(&self) -> Option<WorldAxis> {
         match self.kind {
             ManipulationKindState::Move { axis } => Some(axis),
-            ManipulationKindState::Rotate { .. } => None,
+            ManipulationKindState::Rotate { .. } | ManipulationKindState::Scale { .. } => None,
         }
     }
 
@@ -112,12 +113,18 @@ enum ManipulationKind {
         frame: ObjectRotateFrame,
         baseline: ChannelBaseline,
     },
+    Scale {
+        handle: ScaleHandle,
+        frame: ObjectScaleFrame,
+        baseline: ChannelBaseline,
+    },
 }
 
 impl ManipulationKind {
     fn initial_parameter(&self) -> f64 {
         match self {
             Self::Move { .. } | Self::Rotate { .. } => 0.0,
+            Self::Scale { .. } => 1.0,
         }
     }
 
@@ -125,12 +132,15 @@ impl ManipulationKind {
         match self {
             Self::Move { axis, .. } => ManipulationKindState::Move { axis: *axis },
             Self::Rotate { axis, .. } => ManipulationKindState::Rotate { axis: *axis },
+            Self::Scale { handle, .. } => ManipulationKindState::Scale { handle: *handle },
         }
     }
 
     fn baseline(&self) -> &ChannelBaseline {
         match self {
-            Self::Move { baseline, .. } | Self::Rotate { baseline, .. } => baseline,
+            Self::Move { baseline, .. }
+            | Self::Rotate { baseline, .. }
+            | Self::Scale { baseline, .. } => baseline,
         }
     }
 
@@ -142,6 +152,7 @@ impl ManipulationKind {
         let values = match self {
             Self::Move { axis, frame, .. } => frame.translation(*axis, parameter)?,
             Self::Rotate { axis, frame, .. } => frame.rotation(*axis, parameter)?,
+            Self::Scale { handle, frame, .. } => frame.scale(*handle, parameter)?,
         };
         scene.preview_channels(self.baseline(), values)
     }
@@ -229,6 +240,25 @@ impl History {
             let (frame, baseline) = scene.begin_object_rotation(target, axis)?;
             Ok(ManipulationKind::Rotate {
                 axis,
+                frame,
+                baseline,
+            })
+        })
+    }
+
+    /// Begins an object-space scale; `update_move` then takes the unitless factor.
+    pub fn begin_scale(
+        &mut self,
+        target: &TransformTarget,
+        handle: ScaleHandle,
+        scene_token: Uuid,
+        provenance: ManipulationProvenance,
+        byte_budget: usize,
+    ) -> Result<ManipulationId, ManipulationError> {
+        self.begin_manipulation(target, scene_token, provenance, byte_budget, |scene| {
+            let (frame, baseline) = scene.begin_object_scale(target, handle)?;
+            Ok(ManipulationKind::Scale {
+                handle,
                 frame,
                 baseline,
             })
