@@ -397,3 +397,20 @@ fn source_free_scene_with_default_leaves_is_not_refused() {
             .unwrap();
     }
 }
+
+// Near gimbal lock (cos y about 1e-3) the Euler decomposition no longer reproduces the target
+// matrix to ROUNDTRIP_EPSILON, though the pitch is far from the 1e-6 gimbal bound. Found by a
+// sweep over pitches 80 to 90 degrees that refused 0.2% of the Y and Z rings; this input pins the check.
+#[test]
+fn near_gimbal_decomposition_drift_is_refused() {
+    let (scene, node) = rotated([-5.0, 88.9499105, -53.0]);
+    let frame = frame(&scene, node, RotateAxis::Y);
+    assert!(matches!(
+        frame.rotation(RotateAxis::Y, 0.9),
+        Err(NativeError::UnsupportedRotate(
+            RotateUnsupported::NumericalAngle
+        ))
+    ));
+    // The same baseline turns fine by a step that keeps the decomposition accurate.
+    assert!(frame.rotation(RotateAxis::Y, 0.3).is_ok());
+}
