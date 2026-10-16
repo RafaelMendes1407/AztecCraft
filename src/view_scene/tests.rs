@@ -253,6 +253,7 @@ const IDENTITY: InternalTransform = InternalTransform {
     scale: [1.0; 3],
     rotate_pivot_cm: [0.0; 3],
     scale_pivot_cm: [0.0; 3],
+    extras: None,
 };
 
 fn front_camera() -> Camera {
@@ -265,6 +266,7 @@ fn scale_pivot_is_fixed_and_rotation_uses_its_own_pivot() {
     let transform = InternalTransform {
         scale: [1.2474601320620895; 3],
         scale_pivot_cm: pivot.to_array(),
+        extras: None,
         ..IDENTITY
     };
     let matrix = local_matrix(transform).unwrap();
@@ -289,6 +291,7 @@ fn internal_centimeter_radian_channels_are_not_converted_again() {
         translation_cm: [100.0, 0.0, 0.0],
         scale: [2.0, 1.0, 1.0],
         scale_pivot_cm: [2.0, 0.0, 0.0],
+        extras: None,
         ..IDENTITY
     };
     let matrix = local_matrix(transform).unwrap();

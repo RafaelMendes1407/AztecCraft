@@ -554,6 +554,7 @@ pub(super) fn construct(
                 scale_pivot,
                 restrictions: Vec::new(),
                 unsupported_transform: Vec::new(),
+                extras: TransformExtras::default(),
                 view,
             });
         } else {

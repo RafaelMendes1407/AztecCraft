@@ -26,6 +26,7 @@ fn same_node_structure(a: &NativeTransformNode, b: &NativeTransformNode) -> bool
         && a.name == b.name
         && a.restrictions == b.restrictions
         && a.unsupported_transform == b.unsupported_transform
+        && a.extras == b.extras
         && a.view == b.view
 }
 

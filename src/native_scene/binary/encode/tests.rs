@@ -438,3 +438,13 @@ fn private_originals_encode_identically_and_edits_change_only_one_word() {
         );
     }
 }
+
+#[test]
+fn nodes_differing_only_in_extras_are_structurally_unequal() {
+    let (_, scene) = fixture();
+    let a = scene.nodes[0].clone();
+    let mut b = a.clone();
+    assert!(same_node_structure(&a, &b));
+    b.extras.shear = Some([0.5, 0.0, 0.0]);
+    assert!(!same_node_structure(&a, &b));
+}

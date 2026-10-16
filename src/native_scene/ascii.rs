@@ -1,6 +1,6 @@
 use super::{
     DagEdge, GeometryViewFacts, NativeCurveShape, NativeError, NativeId, NativeScene,
-    NativeTransform, NativeTransformNode, Scalar, Units,
+    NativeTransform, NativeTransformNode, Scalar, TransformExtras, Units,
     admission::Budget,
     curve::CurveSource,
     source::{SourceFormat, SourceRetention},
@@ -424,6 +424,7 @@ impl Builder<'_, '_> {
                     scale_pivot: [0.0; 3].map(Scalar::new),
                     restrictions: Vec::new(),
                     unsupported_transform: Vec::new(),
+                    extras: TransformExtras::default(),
                     view: GeometryViewFacts::authored(),
                 });
                 self.scene.dag.push(DagEdge {
