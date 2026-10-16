@@ -1885,6 +1885,46 @@ fn headless_gpu_red_assigned_face_renders_red_dominant_and_undo_restores_grey() 
     assert_eq!(center(&mut gpu, history.scene()), [83, 83, 83, 255]);
 }
 
+#[test]
+fn selected_and_unselected_pixels_differ_after_lighting_for_every_tested_base() {
+    use azteccraft::shading::shade;
+    let tint = SELECTION_TINT_RGB;
+    let mut bases = Vec::new();
+    for r in tint[0] - 10..=tint[0] + 10 {
+        for g in tint[1] - 10..=tint[1] + 10 {
+            for b in tint[2] - 10..=tint[2] + 10 {
+                bases.push([r, g, b]);
+            }
+        }
+    }
+    for r in (0..=255u8).step_by(5) {
+        for g in (0..=255u8).step_by(5) {
+            for b in (0..=255u8).step_by(5) {
+                bases.push([r, g, b]);
+            }
+        }
+    }
+    bases.extend([[0; 3], [255; 3], [127; 3], [126; 3], [128; 3]]);
+    // Back-facing (the 0.4 floor), a range of oblique angles, and front-on.
+    let views = [
+        [0.0, 0.0, -1.0],
+        [1.0, 0.0, 0.2],
+        [1.0, 0.0, 1.0],
+        [0.3, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+    ];
+    for base in bases {
+        let selected = selected_base(base);
+        for normal in views {
+            assert_ne!(
+                shade(normal, [0.0, 0.0, 1.0], selected),
+                shade(normal, [0.0, 0.0, 1.0], base),
+                "{base:?} {normal:?}"
+            );
+        }
+    }
+}
+
 fn rotated_cube(degrees_y: f64) -> NativeScene {
     let mut scene = NativeScene::default();
     let node = scene.create(Primitive::Cube, "cube").unwrap();

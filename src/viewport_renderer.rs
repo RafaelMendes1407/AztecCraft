@@ -17,9 +17,15 @@ use std::{fmt, ops::Range, sync::Arc};
 /// the historical selected fill (95, 110, 120).
 const SELECTION_TINT_RGB: [u8; 3] = [107, 137, 157];
 
-/// Always differs from `base`. The average with the tint maps the tint and tint - 1 per channel
-/// onto themselves, so a base equal to either on every channel falls back to the average with
-/// its complement (127 per channel), which differs because no tint channel is 127 or 126.
+/// Smallest per-channel gap between a selected and an unselected base on at least one channel.
+/// `shade()` scales by at least `AMBIENT_FLOOR` (0.4) and rounds, so a gap of 3 (3 * 0.4 > 1)
+/// keeps the two colours different on screen at the floor, obliquely and front-on.
+const MIN_SELECTION_DELTA: u8 = 3;
+
+/// A base whose selected colour differs from it by at least `MIN_SELECTION_DELTA` on some
+/// channel, so the pixels differ after lighting. The tint average comes within that gap only for
+/// bases near the tint; those use the average with their complement (about 127 per channel),
+/// which is far from every such base.
 fn selected_base(base: [u8; 3]) -> [u8; 3] {
     let blend = |other: [u8; 3]| -> [u8; 3] {
         std::array::from_fn(|channel| {
@@ -27,7 +33,13 @@ fn selected_base(base: [u8; 3]) -> [u8; 3] {
         })
     };
     let tinted = blend(SELECTION_TINT_RGB);
-    if tinted == base {
+    let gap = |color: [u8; 3]| {
+        (0..3)
+            .map(|c| color[c].abs_diff(base[c]))
+            .max()
+            .unwrap_or(0)
+    };
+    if gap(tinted) < MIN_SELECTION_DELTA {
         blend(base.map(|channel| 255 - channel))
     } else {
         tinted

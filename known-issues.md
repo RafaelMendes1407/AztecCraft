@@ -396,3 +396,11 @@ headless offscreen harness shows no grid pixel in a window at the cube centre
 (`headless_gpu_offscreen_does_not_reproduce_issue_111`), but a grid line may simply not cross that
 window at that view, so this is weak evidence of any difference from the app. If they do differ,
 look at the real egui render pass first (depth attachment or compositing).
+
+## Selection tint is distinct on screen only for tested lighting (#122)
+
+`selected_base` guarantees a gap of at least 3 on one channel between the selected and the
+unselected base colour, which keeps the lit pixels different at the 0.4 ambient floor, obliquely and
+front-on (grid test over the neighbourhood of the tint plus a 52-step colour grid). It is a display
+legibility rule, not a Maya selection colour, and it does not cover colour management or future
+lighting models.
