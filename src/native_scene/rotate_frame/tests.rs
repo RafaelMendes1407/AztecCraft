@@ -31,6 +31,8 @@ fn frame(scene: &NativeScene, node: NodeId, axis: RotateAxis) -> RotateFrame {
         .0
 }
 
+mod world;
+
 fn matrix_deg(degrees: [f64; 3]) -> DMat3 {
     rotation_matrix(degrees.map(f64::to_radians))
 }
