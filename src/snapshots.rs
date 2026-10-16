@@ -13,22 +13,25 @@ fn path(name: &str) -> PathBuf {
 }
 
 pub(crate) fn assert_snapshot(name: &str, actual: &str) {
-    let path = path(name);
-    if std::env::var_os("UPDATE_SNAPSHOTS").is_some_and(|value| value == "1") {
+    assert_text_file(&path(name), name, actual, "UPDATE_SNAPSHOTS");
+}
+
+/// Byte-compares `actual` with the committed text file at `path`, ignoring CRLF from a checkout
+/// that applied autocrlf. `update_var=1` rewrites the file instead.
+pub(crate) fn assert_text_file(path: &std::path::Path, name: &str, actual: &str, update_var: &str) {
+    if std::env::var_os(update_var).is_some_and(|value| value == "1") {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, actual).unwrap();
+        std::fs::write(path, actual).unwrap();
         return;
     }
-    let expected = std::fs::read(&path).unwrap_or_else(|error| {
-        panic!(
-            "snapshot {name} is unreadable ({error}); regenerate with UPDATE_SNAPSHOTS=1 and review the diff"
-        )
+    let expected = std::fs::read(path).unwrap_or_else(|error| {
+        panic!("{name} is unreadable ({error}); regenerate with {update_var}=1 and review the diff")
     });
     // A checkout may apply autocrlf despite .gitattributes; line endings are not content.
     let expected = String::from_utf8_lossy(&expected).replace("\r\n", "\n");
     if let Some(difference) = first_difference(&expected, actual) {
         panic!(
-            "snapshot {name} differs, {difference}\nregenerate with UPDATE_SNAPSHOTS=1 only if the change is intended"
+            "{name} differs, {difference}\nregenerate with {update_var}=1 only if the change is intended"
         );
     }
 }
@@ -150,4 +153,18 @@ pub(crate) fn normalize_json(
         ),
         other => other.clone(),
     }
+}
+
+#[test]
+fn crlf_checkout_of_a_committed_file_passes_and_real_drift_fails() {
+    let dir = std::env::temp_dir().join(format!("azteccraft-textfile-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("doc.md");
+    std::fs::write(&file, "a\r\n\r\nb\r\n").unwrap();
+    assert_text_file(&file, "doc", "a\n\nb\n", "AZTECCRAFT_UNSET_UPDATE_VAR");
+    let drift = std::panic::catch_unwind(|| {
+        assert_text_file(&file, "doc", "a\n\nc\n", "AZTECCRAFT_UNSET_UPDATE_VAR");
+    });
+    assert!(drift.is_err());
+    std::fs::remove_dir_all(&dir).unwrap();
 }

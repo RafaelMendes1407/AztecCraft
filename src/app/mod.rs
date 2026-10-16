@@ -241,7 +241,7 @@ mod tests;
 
 #[cfg(test)]
 #[path = "../snapshots.rs"]
-mod snapshots;
+pub(crate) mod snapshots;
 
 #[cfg(test)]
 #[path = "../entry_point_tests.rs"]

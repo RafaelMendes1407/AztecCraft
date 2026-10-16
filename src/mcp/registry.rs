@@ -104,14 +104,11 @@ Argument schemas are served by `tools/list`; see [mcp.md](mcp.md) for behaviour 
 
     #[test]
     fn tool_doc_matches_registry() {
-        let rendered = render();
-        if std::env::var_os("UPDATE_DOCS").is_some() {
-            std::fs::write(DOC_PATH, &rendered).unwrap();
-        }
-        assert_eq!(
-            std::fs::read_to_string(DOC_PATH).expect("run with UPDATE_DOCS=1 to create it"),
-            rendered,
-            "stale .project-docs/mcp-tools.md; regenerate with UPDATE_DOCS=1"
+        crate::app::snapshots::assert_text_file(
+            std::path::Path::new(DOC_PATH),
+            ".project-docs/mcp-tools.md",
+            &render(),
+            "UPDATE_DOCS",
         );
     }
 
