@@ -84,6 +84,18 @@ async fn move_sdk_absolute_preview_cancel_commit_busy_and_tokens_share_one_histo
             json!({"scene_token":token,"shape_id":"1","value":0.25}),
         ),
         (
+            "create_session_material",
+            json!({"scene_token":token,"color":[1,0,0]}),
+        ),
+        (
+            "assign_session_material",
+            json!({"scene_token":token,"shape_id":"1","color":[1,0,0]}),
+        ),
+        (
+            "set_session_material_color",
+            json!({"scene_token":token,"material_id":"1","color":[1,0,0]}),
+        ),
+        (
             "set_selection_mode",
             json!({"scene_token":token,"mode":"face"}),
         ),

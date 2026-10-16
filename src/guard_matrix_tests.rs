@@ -11,8 +11,11 @@
 
 use super::*;
 use crate::editor_operations::{FileDecision, MoveDistance, RemoteRequest, TransformInput};
+use azteccraft::history::Command;
 use azteccraft::history::{ManipulationFinish, ManipulationId};
-use azteccraft::native_scene::{NativeScene, TransformTarget, WorldAxis};
+use azteccraft::native_scene::{
+    MaterialChoice, NativeScene, SessionMaterialId, TransformTarget, WorldAxis,
+};
 use std::fmt::Write as _;
 
 #[allow(dead_code)]
@@ -159,6 +162,8 @@ enum Pre {
     SecondNodeFaceMode,
     /// Makes the Attribute Editor the active dock panel, the only state that accepts a tab.
     AttributeEditorDock,
+    /// Creates session material 1 (refused on sourced scenes, where the cell shows that).
+    SessionMaterial,
 }
 
 struct Sample {
@@ -470,6 +475,19 @@ fn seeds(t: &Targets) -> Vec<Operation> {
             shape: t.shape,
             value: 0.25,
         },
+        Operation::CreateSessionMaterial {
+            color: [1.0, 0.0, 0.0],
+        },
+        Operation::AssignSessionMaterial {
+            shape: t.shape,
+            material: MaterialChoice::New {
+                color: [1.0, 0.0, 0.0],
+            },
+        },
+        Operation::SetSessionMaterialColor {
+            material: SessionMaterialId::from_index(1),
+            color: [0.0, 1.0, 0.0],
+        },
         Operation::Inspect,
         Operation::Create {
             primitive: Primitive::Plane,
@@ -595,6 +613,49 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
                 value: 0.25,
             },
         )],
+        Operation::CreateSessionMaterial { .. } => vec![sample(
+            "create_session_material",
+            Operation::CreateSessionMaterial {
+                color: [1.0, 0.0, 0.0],
+            },
+        )],
+        Operation::AssignSessionMaterial { .. } => vec![
+            sample(
+                "assign_session_material(new)",
+                Operation::AssignSessionMaterial {
+                    shape: t.shape,
+                    material: MaterialChoice::New {
+                        color: [1.0, 0.0, 0.0],
+                    },
+                },
+            ),
+            sample(
+                "assign_session_material(initial)",
+                Operation::AssignSessionMaterial {
+                    shape: t.shape,
+                    material: MaterialChoice::Existing(SessionMaterialId::from_index(0)),
+                },
+            ),
+        ],
+        Operation::SetSessionMaterialColor { .. } => vec![
+            sample(
+                "set_session_material_color(unknown)",
+                Operation::SetSessionMaterialColor {
+                    material: SessionMaterialId::from_index(1),
+                    color: [0.0, 1.0, 0.0],
+                },
+            ),
+            Sample {
+                pre: Pre::SessionMaterial,
+                ..sample(
+                    "set_session_material_color(created)",
+                    Operation::SetSessionMaterialColor {
+                        material: SessionMaterialId::from_index(1),
+                        color: [0.0, 1.0, 0.0],
+                    },
+                )
+            },
+        ],
         Operation::Inspect => vec![sample("inspect", Operation::Inspect)],
         Operation::Create { .. } => vec![
             sample(
@@ -949,6 +1010,18 @@ fn observe(editor: &Editor, roots: &[&std::path::Path]) -> Observed {
         ("name_field", format!("{:?}", editor.name)),
         ("channel_fields", editor.channels.join(",")),
         ("channel_intents", flags(&editor.channel_intents)),
+        (
+            "session_materials",
+            format!(
+                "{:?}",
+                scene
+                    .session_materials()
+                    .iter()
+                    .skip(1)
+                    .map(|material| material.color())
+                    .collect::<Vec<_>>()
+            ),
+        ),
         ("modal", editor.files.is_modal().to_string()),
         ("closing", editor.files.is_closing().to_string()),
         (
@@ -1024,6 +1097,11 @@ fn run_cell(state: State, pipeline: Pipeline, index: usize) -> (String, String) 
     match pre {
         Pre::None => {}
         Pre::FaceMode => rig.editor.selection_mode = SelectionMode::Face,
+        Pre::SessionMaterial => {
+            let _ = rig.editor.history.execute(Command::CreateSessionMaterial {
+                color: [1.0, 0.0, 0.0],
+            });
+        }
         Pre::AttributeEditorDock => {
             rig.editor.sidebar_dock = Some(crate::editor_operations::SidebarPanel::AttributeEditor)
         }

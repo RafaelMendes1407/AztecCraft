@@ -112,6 +112,7 @@ mod official_client {
     mod node_edit;
     mod selection;
     mod session;
+    mod session_material;
     mod shading;
     mod snapshots;
     mod sphere;

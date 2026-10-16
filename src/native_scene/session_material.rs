@@ -175,12 +175,18 @@ impl NativeScene {
     /// whose appearance the session table does not own. Taking the shape itself means an unknown
     /// id cannot be asked about; the lookup is one `BTreeMap` probe, O(log n) in assignments.
     pub fn session_material(&self, shape: &NativeMeshShape) -> Option<&Lambert> {
+        let id = self.session_material_id(shape)?;
+        self.session_materials.materials.get(id.0)
+    }
+
+    /// The id behind [`Self::session_material`]; valid only at the current history position.
+    pub fn session_material_id(&self, shape: &NativeMeshShape) -> Option<SessionMaterialId> {
         if self.source.is_some() {
             return None;
         }
         let group = self.session_materials.assignments.get(&shape.id).copied();
         let group = self.session_materials.groups.get(group.unwrap_or(0))?;
-        self.session_materials.materials.get(group.material.0)
+        Some(group.material)
     }
 
     pub fn create_session_material(

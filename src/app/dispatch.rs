@@ -251,6 +251,16 @@ impl Editor {
             Operation::SetMaterialDiffuse { shape, value } => {
                 Command::SetMaterialDiffuse { shape, value }
             }
+            #[cfg(any(test, feature = "mcp"))]
+            Operation::CreateSessionMaterial { color } => Command::CreateSessionMaterial { color },
+            #[cfg(any(test, feature = "mcp"))]
+            Operation::AssignSessionMaterial { shape, material } => {
+                Command::AssignSessionMaterial { shape, material }
+            }
+            #[cfg(any(test, feature = "mcp"))]
+            Operation::SetSessionMaterialColor { material, color } => {
+                Command::SetSessionMaterialColor { material, color }
+            }
             Operation::SetGridVisible { visible } => {
                 let changed = self.grid_visible != visible;
                 self.grid_visible = visible;
@@ -539,10 +549,22 @@ impl Editor {
                 ));
             }
         };
-        let outcome = self
-            .history
-            .execute(command)
-            .map_err(OperationError::from_history)?;
+        let session_material_command = matches!(
+            command,
+            Command::CreateSessionMaterial { .. }
+                | Command::AssignSessionMaterial { .. }
+                | Command::SetSessionMaterialColor { .. }
+        );
+        let outcome = self.history.execute(command).map_err(|error| {
+            #[cfg(any(test, feature = "mcp"))]
+            if session_material_command
+                && error != azteccraft::native_scene::NativeError::BusyManipulation
+            {
+                return OperationError::SessionMaterial(error);
+            }
+            let _ = session_material_command;
+            OperationError::from_history(error)
+        })?;
         if let EditOutcome::Created(id) = outcome {
             self.remembered_face = None;
             self.selected = Some(id);
@@ -559,7 +581,13 @@ impl Editor {
             EditOutcome::Created(id) => OperationReply::Created {
                 node_id: id.to_decimal(),
             },
-            EditOutcome::Changed | EditOutcome::SessionMaterial(_) => OperationReply::Changed,
+            #[cfg(any(test, feature = "mcp"))]
+            EditOutcome::SessionMaterial(material) => OperationReply::SessionMaterial {
+                material_id: material.index().to_string(),
+            },
+            #[cfg(not(any(test, feature = "mcp")))]
+            EditOutcome::SessionMaterial(_) => OperationReply::Changed,
+            EditOutcome::Changed => OperationReply::Changed,
             EditOutcome::Unchanged => OperationReply::Unchanged,
         })
     }
