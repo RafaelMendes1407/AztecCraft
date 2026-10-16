@@ -240,6 +240,7 @@ impl Editor {
             if let Some(intent) = selection_intent {
                 let mode = match intent {
                     SelectionModeIntent::Face => SelectionMode::Face,
+                    SelectionModeIntent::Object => SelectionMode::Object,
                     SelectionModeIntent::Toggle => match self.selection_mode {
                         SelectionMode::Object => SelectionMode::Face,
                         SelectionMode::Face => SelectionMode::Object,

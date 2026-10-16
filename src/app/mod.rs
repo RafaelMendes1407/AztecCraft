@@ -47,6 +47,7 @@ impl MaterialDraft {
 #[derive(Clone, Copy)]
 enum SelectionModeIntent {
     Toggle,
+    Object,
     Face,
 }
 

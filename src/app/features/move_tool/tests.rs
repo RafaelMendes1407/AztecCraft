@@ -62,7 +62,7 @@ fn viewport(output: &egui::FullOutput) -> Rect {
         .expect("actual viewport callback")
 }
 
-fn setup(scale: f32) -> (Editor, egui::Context, Rect) {
+pub(in crate::app) fn setup(scale: f32) -> (Editor, egui::Context, Rect) {
     let mut editor = Editor {
         renderer: Some(crate::viewport_renderer::tests::renderer_handle()),
         camera: azteccraft::viewport::Camera::new(
@@ -110,7 +110,12 @@ fn setup(scale: f32) -> (Editor, egui::Context, Rect) {
     (editor, context, rect)
 }
 
-fn press_x(editor: &mut Editor, context: &egui::Context, rect: Rect, scale: f32) -> Pos2 {
+pub(in crate::app) fn press_x(
+    editor: &mut Editor,
+    context: &egui::Context,
+    rect: Rect,
+    scale: f32,
+) -> Pos2 {
     let position = rect.center() + egui::vec2(40.0 / scale, 0.0);
     frame(
         editor,

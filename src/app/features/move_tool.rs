@@ -665,4 +665,4 @@ impl Editor {
 
 #[cfg(test)]
 #[path = "move_tool/tests.rs"]
-mod tests;
+pub(in crate::app) mod tests;
