@@ -5530,3 +5530,70 @@ fn vertex_edge_and_mode_operations_refuse_modal_and_closing_without_changes() {
         }
     }
 }
+
+#[test]
+fn native_selection_changes_refuse_modal_before_committing_drafts() {
+    for mode in [
+        SelectionMode::Face,
+        SelectionMode::Vertex,
+        SelectionMode::Edge,
+    ] {
+        let mut editor = Editor::default();
+        editor.create(Primitive::Cube);
+        set_mode(&mut editor, mode);
+        let pick = |editor: &Editor, index: usize| match mode {
+            SelectionMode::Face => Operation::SelectFace {
+                target: Some(selected_face(editor, index)),
+            },
+            SelectionMode::Vertex => Operation::SelectVertex {
+                target: Some(selected_vertex(editor, index)),
+            },
+            _ => Operation::SelectEdge {
+                target: Some(selected_edge(editor, index)),
+            },
+        };
+        let first = pick(&editor, 1);
+        remote(&mut editor, first).unwrap();
+        editor.new_document().unwrap();
+        assert!(editor.files.is_modal() && !editor.files.is_closing());
+        editor.name = "pending draft".into();
+        let state = |editor: &Editor| {
+            (
+                editor.history.scene().clone(),
+                editor.selected,
+                editor.selected_path.clone(),
+                editor.selection_mode,
+                editor.remembered_vertex.clone(),
+                editor.remembered_edge.clone(),
+                editor.remembered_face.clone(),
+                editor.scene_token,
+                editor.name.clone(),
+            )
+        };
+        let before = state(&editor);
+        let clear = match mode {
+            SelectionMode::Face => Operation::SelectFace { target: None },
+            SelectionMode::Vertex => Operation::SelectVertex { target: None },
+            _ => Operation::SelectEdge { target: None },
+        };
+        for operation in [
+            pick(&editor, 2),
+            clear,
+            Operation::Select {
+                node: None,
+                instance_path: None,
+            },
+            Operation::SetSelectionMode(SelectionMode::Object),
+            Operation::SetSelectionMode(mode),
+        ] {
+            assert!(
+                matches!(
+                    editor.apply_operation(operation),
+                    Err(OperationError::BusyEditing)
+                ),
+                "{mode:?}"
+            );
+            assert_eq!(state(&editor), before);
+        }
+    }
+}
