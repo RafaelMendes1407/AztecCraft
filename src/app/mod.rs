@@ -1,10 +1,12 @@
 use crate::editor_operations::{
-    ActiveTool, Operation, OperationError, OperationReply, SelectionMode, SidebarPanel,
+    ActiveTool, AttributeEditorTab, Operation, OperationError, OperationReply, SelectionMode,
+    SidebarPanel,
 };
 #[cfg(any(test, feature = "mcp"))]
 use crate::editor_operations::{
-    CameraInspection, FaceSelectionPolicy, FaceSelectionTarget, NodeInspection, RemoteRequest,
-    SceneInspection, ShapeInspection, SidebarPanelsInspection, TransformInput, UnitsInspection,
+    AttributeEditorTabInspection, CameraInspection, FaceSelectionPolicy, FaceSelectionTarget,
+    NodeInspection, RemoteRequest, SceneInspection, ShapeInspection, SidebarPanelsInspection,
+    TransformInput, UnitsInspection,
 };
 #[cfg(any(test, feature = "mcp"))]
 use azteccraft::native_scene::{LinearUnit, NativeTransform};
@@ -65,6 +67,7 @@ pub struct Editor {
     grid_visible: bool,
     sidebar_dock: Option<SidebarPanel>,
     sidebar_panel_request: Option<(SidebarPanel, bool)>,
+    attribute_editor_tab: Option<AttributeEditorTab>,
     active_tool: ActiveTool,
     native_move: Option<features::move_tool::NativeMove>,
     move_viewport: Option<features::move_tool::MoveViewportFeedback>,
@@ -100,6 +103,7 @@ impl Default for Editor {
             grid_visible: true,
             sidebar_dock: Some(SidebarPanel::ChannelBox),
             sidebar_panel_request: None,
+            attribute_editor_tab: None,
             active_tool: ActiveTool::Select,
             native_move: None,
             move_viewport: None,
@@ -124,9 +128,7 @@ impl Default for Editor {
 
 impl Editor {
     pub(super) fn sidebar_panel_visible(&self, panel: SidebarPanel) -> bool {
-        match panel {
-            SidebarPanel::ChannelBox => self.sidebar_dock == Some(SidebarPanel::ChannelBox),
-        }
+        self.sidebar_dock == Some(panel)
     }
     #[cfg(feature = "mcp")]
     pub(crate) fn start_mcp(&mut self, context: &egui::Context) -> std::io::Result<()> {

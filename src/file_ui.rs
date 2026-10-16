@@ -351,6 +351,7 @@ impl Editor {
         self.name_intent = false;
         self.material_shape = None;
         self.material_draft = None;
+        self.attribute_editor_tab = None;
         self.camera = camera;
         self.status = "Scene ready".into();
         self.error = false;

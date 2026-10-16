@@ -5,6 +5,7 @@ impl Editor {
         self.material_draft = None;
         self.channel_intents = [false; 9];
         self.name_intent = false;
+        self.normalize_attribute_editor_tab();
         let Some(node) = self
             .selected
             .and_then(|id| self.history.scene().node(id).ok())
@@ -31,14 +32,10 @@ impl Editor {
         let values = node.transform().values();
         self.channels = values.map(|value| value.to_string());
         let transform = node.transform_id();
-        let direct = |shape| {
-            self.history.scene().dag_edges().iter().any(|edge| {
-                edge.parent() == Some(transform)
-                    && edge.child() == shape
-                    && self.history.scene().shape(shape).is_ok()
-            })
-        };
-        if !self.material_shape.is_some_and(direct) {
+        if !self
+            .material_shape
+            .is_some_and(|shape| self.is_direct_shape(transform, shape))
+        {
             let mut shapes = self
                 .history
                 .scene()

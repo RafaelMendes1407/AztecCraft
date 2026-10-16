@@ -1,6 +1,7 @@
 {
   "inspection": {
     "appearance_incomplete": false,
+    "attribute_editor_tab": null,
     "camera": {
       "distance": 8.0,
       "eye": [
@@ -171,6 +172,7 @@
       }
     ],
     "sidebar_panels": {
+      "attribute_editor": false,
       "channel_box": true
     },
     "source_appearance": {

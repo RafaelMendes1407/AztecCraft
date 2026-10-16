@@ -14,7 +14,8 @@ impl Editor {
             | Operation::FrameSelected
             | Operation::SetActiveTool(_)
             | Operation::SetGridVisible { .. }
-            | Operation::SetSidebarPanelVisible { .. } => None,
+            | Operation::SetSidebarPanelVisible { .. }
+            | Operation::SelectAttributeEditorTab { .. } => None,
             Operation::Orbit { .. } | Operation::Pan { .. } | Operation::Dolly { .. } => None,
             Operation::Undo => Some("Undo"),
             Operation::Redo => Some("Redo"),
@@ -138,7 +139,9 @@ impl Editor {
         }
         if matches!(
             operation,
-            Operation::SetGridVisible { .. } | Operation::SetSidebarPanelVisible { .. }
+            Operation::SetGridVisible { .. }
+                | Operation::SetSidebarPanelVisible { .. }
+                | Operation::SelectAttributeEditorTab { .. }
         ) && self.files.is_modal()
         {
             return Err(OperationError::BusyEditing);
@@ -266,6 +269,9 @@ impl Editor {
                 } else {
                     OperationReply::Unchanged
                 });
+            }
+            Operation::SelectAttributeEditorTab { tab } => {
+                return self.select_attribute_editor_tab(tab);
             }
             Operation::Create { primitive, name } => {
                 let name = name.unwrap_or_else(|| {

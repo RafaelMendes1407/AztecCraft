@@ -14,7 +14,7 @@ mod material_fixture {
     ));
 }
 
-fn material_editor() -> Editor {
+pub(in crate::app) fn material_editor() -> Editor {
     let scene = azteccraft::native_scene::binary::decode(
         material_fixture::appearance_specimen_with_users(2).into(),
     )
@@ -1364,7 +1364,10 @@ fn native_hidden_close_checks_pending_input_without_mcp() {
     }
 }
 
-fn remote(editor: &mut Editor, operation: Operation) -> Result<OperationReply, OperationError> {
+pub(in crate::app) fn remote(
+    editor: &mut Editor,
+    operation: Operation,
+) -> Result<OperationReply, OperationError> {
     editor.remote_operation(
         RemoteRequest {
             expected_scene_token: Some(editor.scene_token),
