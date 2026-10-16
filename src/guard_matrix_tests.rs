@@ -605,6 +605,20 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
                     name: None,
                 },
             ),
+            sample(
+                "create(cylinder)",
+                Operation::Create {
+                    primitive: Primitive::Cylinder,
+                    name: None,
+                },
+            ),
+            sample(
+                "create(cone)",
+                Operation::Create {
+                    primitive: Primitive::Cone,
+                    name: None,
+                },
+            ),
         ],
         Operation::Select { .. } => vec![
             sample(
