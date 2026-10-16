@@ -4,7 +4,7 @@ use super::{
     transport::{Control, Shared, check_serialized_size},
 };
 use crate::editor_operations::{MAX_RESULT_BYTES, OperationError, OperationReply};
-use azteccraft::{history::MoveError, native_scene::NativeError};
+use azteccraft::{history::ManipulationError, native_scene::NativeError};
 use rmcp::{
     RoleServer, ServerHandler,
     model::{
@@ -58,11 +58,11 @@ fn tool_reply(reply: Result<OperationReply, OperationError>) -> CallToolResult {
                 OperationError::BusyEditing => "busy_editing",
                 OperationError::BusyManipulation => "busy_manipulation",
                 OperationError::Move(error) => match error {
-                    MoveError::StaleScene => "stale_scene",
-                    MoveError::StaleMove => "stale_move",
-                    MoveError::WrongOwner => "move_owner",
-                    MoveError::Busy => "busy_manipulation",
-                    MoveError::Native(NativeError::AbsentChannelLeaf { .. }) => {
+                    ManipulationError::StaleScene => "stale_scene",
+                    ManipulationError::StaleMove => "stale_move",
+                    ManipulationError::WrongOwner => "move_owner",
+                    ManipulationError::Busy => "busy_manipulation",
+                    ManipulationError::Native(NativeError::AbsentChannelLeaf { .. }) => {
                         "absent_channel_leaf"
                     }
                     _ => "move_error",

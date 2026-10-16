@@ -290,7 +290,7 @@ async fn native_sdk_uncertain_receipt_survives_close_reply_flush_failure_until_d
     assert!(matches!(
         editor
             .apply_operation_guarded(
-                azteccraft::history::MoveProvenance::Native,
+                azteccraft::history::ManipulationProvenance::Native,
                 Operation::SaveScene,
                 &guard
             )

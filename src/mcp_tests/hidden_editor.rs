@@ -121,7 +121,7 @@ fn face_remote_operations_and_hidden_callbacks_preserve_guarded_selection_baseli
 fn remote_numeric_move_survives_successive_actual_hidden_editor_callbacks() {
     use crate::editor_operations::MoveDistance;
     use azteccraft::{
-        history::{MoveFinish, MoveId},
+        history::{ManipulationFinish, ManipulationId},
         native_scene::WorldAxis,
     };
     let context = egui::Context::default();
@@ -147,9 +147,9 @@ fn remote_numeric_move_survives_successive_actual_hidden_editor_callbacks() {
     let Ok(OperationReply::MoveStarted { move_id }) = begin.try_recv().unwrap() else {
         panic!()
     };
-    let id = MoveId::from_decimal(&move_id).unwrap();
+    let id = ManipulationId::from_decimal(&move_id).unwrap();
     hidden_frame(&mut editor, &context, vec![]);
-    assert_eq!(editor.history.active_move().unwrap().id, id);
+    assert_eq!(editor.history.active_manipulation().unwrap().id, id);
     let mut update = ingress
         .queue(RemoteRequest {
             expected_scene_token: Some(token),
@@ -167,14 +167,14 @@ fn remote_numeric_move_survives_successive_actual_hidden_editor_callbacks() {
     let preview = editor.history.scene().clone();
     assert_eq!(preview.nodes()[0].transform().translation[0], 2.0);
     hidden_frame(&mut editor, &context, vec![]);
-    assert_eq!(editor.history.active_move().unwrap().id, id);
+    assert_eq!(editor.history.active_manipulation().unwrap().id, id);
     assert_eq!(editor.history.scene(), &preview);
     let mut finish = ingress
         .queue(RemoteRequest {
             expected_scene_token: Some(token),
             operation: Operation::FinishMove {
                 id,
-                finish: MoveFinish::Commit,
+                finish: ManipulationFinish::Commit,
             },
         })
         .unwrap();
@@ -183,7 +183,7 @@ fn remote_numeric_move_survives_successive_actual_hidden_editor_callbacks() {
         finish.try_recv().unwrap(),
         Ok(OperationReply::Changed)
     ));
-    assert!(editor.history.active_move().is_none());
+    assert!(editor.history.active_manipulation().is_none());
     let mut undo = ingress
         .queue(RemoteRequest {
             expected_scene_token: Some(token),

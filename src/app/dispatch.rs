@@ -70,8 +70,8 @@ impl Editor {
         if request.expected_scene_token != Some(self.scene_token) {
             return Err(OperationError::StaleScene);
         }
-        if let Some(active) = self.history.active_move()
-            && (active.provenance != MoveProvenance::Remote
+        if let Some(active) = self.history.active_manipulation()
+            && (active.provenance != ManipulationProvenance::Remote
                 || !matches!(
                     request.operation,
                     Operation::UpdateMove { .. } | Operation::FinishMove { .. }
@@ -88,7 +88,11 @@ impl Editor {
         {
             return Err(OperationError::BusyEditing);
         }
-        self.apply_operation_guarded(MoveProvenance::Remote, request.operation, may_install)
+        self.apply_operation_guarded(
+            ManipulationProvenance::Remote,
+            request.operation,
+            may_install,
+        )
     }
     #[cfg(any(test, feature = "mcp"))]
     pub(super) fn transform_input(
@@ -119,11 +123,11 @@ impl Editor {
         &mut self,
         operation: Operation,
     ) -> Result<OperationReply, OperationError> {
-        self.apply_operation_guarded(MoveProvenance::Native, operation, &|| true)
+        self.apply_operation_guarded(ManipulationProvenance::Native, operation, &|| true)
     }
     pub(super) fn apply_operation_guarded(
         &mut self,
-        provenance: MoveProvenance,
+        provenance: ManipulationProvenance,
         operation: Operation,
         may_install: &dyn Fn() -> bool,
     ) -> Result<OperationReply, OperationError> {
@@ -536,7 +540,7 @@ impl Editor {
             })
     }
     pub(super) fn commit_pending(&mut self) -> bool {
-        if self.history.active_move().is_some() {
+        if self.history.active_manipulation().is_some() {
             self.status = OperationError::BusyManipulation.to_string();
             self.error = true;
             return false;

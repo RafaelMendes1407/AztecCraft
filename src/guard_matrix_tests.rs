@@ -11,7 +11,7 @@
 
 use super::*;
 use crate::editor_operations::{FileDecision, MoveDistance, RemoteRequest, TransformInput};
-use azteccraft::history::{MoveFinish, MoveId};
+use azteccraft::history::{ManipulationFinish, ManipulationId};
 use azteccraft::native_scene::{NativeScene, TransformTarget, WorldAxis};
 use std::fmt::Write as _;
 
@@ -193,7 +193,7 @@ struct Targets {
     shape: NativeId,
     /// Second node and its shape when the scene has one; otherwise the first node's.
     other: (azteccraft::scene::NodeId, Vec<NativeId>, NativeId),
-    move_id: MoveId,
+    move_id: ManipulationId,
     pending_id: Uuid,
     ascii: std::path::PathBuf,
     save_as: std::path::PathBuf,
@@ -250,10 +250,10 @@ fn targets(rig: &Rig) -> Targets {
         path: editor.selected_path.clone(),
         shape,
         other,
-        move_id: editor
-            .history
-            .active_move()
-            .map_or_else(|| MoveId::from_decimal("999").unwrap(), |active| active.id),
+        move_id: editor.history.active_manipulation().map_or_else(
+            || ManipulationId::from_decimal("999").unwrap(),
+            |active| active.id,
+        ),
         pending_id: editor
             .files
             .pending_inspection()
@@ -367,9 +367,9 @@ fn build(state: State) -> Rig {
         }
         State::LocalMove | State::RemoteMove => {
             let provenance = if state == State::LocalMove {
-                MoveProvenance::Native
+                ManipulationProvenance::Native
             } else {
-                MoveProvenance::Remote
+                ManipulationProvenance::Remote
             };
             editor.active_tool = ActiveTool::Move;
             let target = TransformTarget {
@@ -386,7 +386,7 @@ fn build(state: State) -> Rig {
                     &|| true,
                 )
                 .unwrap();
-            assert!(editor.history.active_move().is_some());
+            assert!(editor.history.active_manipulation().is_some());
         }
         State::NameDraft => editor.name = "draft name".into(),
         State::MaterialDraft => {
@@ -462,7 +462,7 @@ fn seeds(t: &Targets) -> Vec<Operation> {
         },
         Operation::FinishMove {
             id: t.move_id,
-            finish: MoveFinish::Commit,
+            finish: ManipulationFinish::Commit,
         },
         Operation::SetMaterialDiffuse {
             shape: t.shape,
@@ -575,7 +575,7 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
             "finish_move(commit)",
             Operation::FinishMove {
                 id: t.move_id,
-                finish: MoveFinish::Commit,
+                finish: ManipulationFinish::Commit,
             },
         )],
         Operation::SetMaterialDiffuse { .. } => vec![sample(
@@ -808,9 +808,9 @@ fn observe(editor: &Editor, roots: &[&std::path::Path]) -> Observed {
         .selected
         .and_then(|id| scene.node(id).ok())
         .map_or("-", |node| node.name());
-    let active_move = match editor.history.active_move() {
+    let active_manipulation = match editor.history.active_manipulation() {
         None => "none",
-        Some(active) if active.provenance == MoveProvenance::Native => "native",
+        Some(active) if active.provenance == ManipulationProvenance::Native => "native",
         Some(_) => "remote",
     };
     let pending = editor.files.pending_inspection();
@@ -845,7 +845,7 @@ fn observe(editor: &Editor, roots: &[&std::path::Path]) -> Observed {
             ),
         ),
         ("status_is_error", editor.error.to_string()),
-        ("active_move", active_move.to_owned()),
+        ("active_move", active_manipulation.to_owned()),
         ("native_move_drag", editor.native_move.is_some().to_string()),
         (
             "pointer_consumed_frame",
@@ -949,10 +949,11 @@ fn run_cell(state: State, pipeline: Pipeline, index: usize) -> (String, String) 
     let may_install = rig.may_install;
     let operation = std::mem::replace(&mut chosen.operation, Operation::Inspect);
     let result = match pipeline {
-        Pipeline::Native => {
-            rig.editor
-                .apply_operation_guarded(MoveProvenance::Native, operation, &move || may_install)
-        }
+        Pipeline::Native => rig.editor.apply_operation_guarded(
+            ManipulationProvenance::Native,
+            operation,
+            &move || may_install,
+        ),
         Pipeline::Remote => {
             let expected = rig.token.unwrap_or(rig.editor.scene_token);
             rig.editor.remote_operation_guarded(

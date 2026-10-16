@@ -7,9 +7,9 @@ use std::{fmt, mem::size_of};
 use uuid::Uuid;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct MoveId(u64);
+pub struct ManipulationId(u64);
 
-impl MoveId {
+impl ManipulationId {
     pub fn to_decimal(self) -> String {
         self.0.to_string()
     }
@@ -20,19 +20,19 @@ impl MoveId {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MoveProvenance {
+pub enum ManipulationProvenance {
     Native,
     Remote,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MoveFinish {
+pub enum ManipulationFinish {
     Commit,
     Cancel,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum MoveError {
+pub enum ManipulationError {
     Native(NativeError),
     View(ViewError),
     Busy,
@@ -42,19 +42,19 @@ pub enum MoveError {
     IdsExhausted,
 }
 
-impl From<NativeError> for MoveError {
+impl From<NativeError> for ManipulationError {
     fn from(error: NativeError) -> Self {
         Self::Native(error)
     }
 }
 
-impl From<ViewError> for MoveError {
+impl From<ViewError> for ManipulationError {
     fn from(error: ViewError) -> Self {
         Self::View(error)
     }
 }
 
-impl fmt::Display for MoveError {
+impl fmt::Display for ManipulationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Native(error) => error.fmt(f),
@@ -68,22 +68,22 @@ impl fmt::Display for MoveError {
     }
 }
 
-impl std::error::Error for MoveError {}
+impl std::error::Error for ManipulationError {}
 
 pub struct MoveState<'a> {
-    pub id: MoveId,
+    pub id: ManipulationId,
     pub target: &'a TransformTarget,
     pub axis: WorldAxis,
-    pub provenance: MoveProvenance,
+    pub provenance: ManipulationProvenance,
     pub distance_cm: f64,
 }
 
 pub(super) struct MoveTransaction {
-    id: MoveId,
+    id: ManipulationId,
     scene_token: Uuid,
     target: TransformTarget,
     axis: WorldAxis,
-    provenance: MoveProvenance,
+    provenance: ManipulationProvenance,
     frame: WorldMoveFrame,
     baseline: MoveTranslationBaseline,
     view_budget: usize,
@@ -94,25 +94,25 @@ impl MoveTransaction {
     fn matches(
         &self,
         scene_token: Uuid,
-        id: MoveId,
-        provenance: MoveProvenance,
-    ) -> Result<(), MoveError> {
+        id: ManipulationId,
+        provenance: ManipulationProvenance,
+    ) -> Result<(), ManipulationError> {
         if scene_token != self.scene_token {
-            return Err(MoveError::StaleScene);
+            return Err(ManipulationError::StaleScene);
         }
         if id != self.id {
-            return Err(MoveError::StaleMove);
+            return Err(ManipulationError::StaleMove);
         }
         if provenance != self.provenance {
-            return Err(MoveError::WrongOwner);
+            return Err(ManipulationError::WrongOwner);
         }
         Ok(())
     }
 }
 
 impl History {
-    pub fn active_move(&self) -> Option<MoveState<'_>> {
-        self.active_move.as_ref().map(|active| MoveState {
+    pub fn active_manipulation(&self) -> Option<MoveState<'_>> {
+        self.active_manipulation.as_ref().map(|active| MoveState {
             id: active.id,
             target: &active.target,
             axis: active.axis,
@@ -126,16 +126,16 @@ impl History {
         target: &TransformTarget,
         axis: WorldAxis,
         scene_token: Uuid,
-        provenance: MoveProvenance,
+        provenance: ManipulationProvenance,
         byte_budget: usize,
-    ) -> Result<MoveId, MoveError> {
-        if self.active_move.is_some() {
-            return Err(MoveError::Busy);
+    ) -> Result<ManipulationId, ManipulationError> {
+        if self.active_manipulation.is_some() {
+            return Err(ManipulationError::Busy);
         }
         let next_id = self
-            .next_move_id
+            .next_manipulation_id
             .checked_add(1)
-            .ok_or(MoveError::IdsExhausted)?;
+            .ok_or(ManipulationError::IdsExhausted)?;
         let (frame, baseline) = self.scene.begin_move_translation(target, axis)?;
         let mut path = Vec::new();
         path.try_reserve_exact(target.path.len())
@@ -150,8 +150,8 @@ impl History {
             .checked_sub(metadata)
             .ok_or(ViewError::ResourceLimit)?;
         ViewScene::from_native(&self.scene, view_budget)?;
-        self.active_move = Some(MoveTransaction {
-            id: MoveId(next_id),
+        self.active_manipulation = Some(MoveTransaction {
+            id: ManipulationId(next_id),
             scene_token,
             target: TransformTarget {
                 node: target.node,
@@ -164,18 +164,21 @@ impl History {
             view_budget,
             distance_cm: 0.0,
         });
-        self.next_move_id = next_id;
-        Ok(MoveId(next_id))
+        self.next_manipulation_id = next_id;
+        Ok(ManipulationId(next_id))
     }
 
     pub fn update_move(
         &mut self,
         scene_token: Uuid,
-        id: MoveId,
-        provenance: MoveProvenance,
+        id: ManipulationId,
+        provenance: ManipulationProvenance,
         distance_cm: f64,
-    ) -> Result<EditOutcome, MoveError> {
-        let active = self.active_move.as_mut().ok_or(MoveError::StaleMove)?;
+    ) -> Result<EditOutcome, ManipulationError> {
+        let active = self
+            .active_manipulation
+            .as_mut()
+            .ok_or(ManipulationError::StaleMove)?;
         active.matches(scene_token, id, provenance)?;
         let translation = active.frame.translation(active.axis, distance_cm)?;
         let (previous, changed) = self
@@ -196,20 +199,23 @@ impl History {
     pub fn finish_move(
         &mut self,
         scene_token: Uuid,
-        id: MoveId,
-        provenance: MoveProvenance,
-        finish: MoveFinish,
-    ) -> Result<EditOutcome, MoveError> {
-        self.active_move
+        id: ManipulationId,
+        provenance: ManipulationProvenance,
+        finish: ManipulationFinish,
+    ) -> Result<EditOutcome, ManipulationError> {
+        self.active_manipulation
             .as_ref()
-            .ok_or(MoveError::StaleMove)?
+            .ok_or(ManipulationError::StaleMove)?
             .matches(scene_token, id, provenance)?;
         // Clear before any fallible scene work so a failure cannot leave an unfinishable move.
-        let active = self.active_move.take().ok_or(MoveError::StaleMove)?;
+        let active = self
+            .active_manipulation
+            .take()
+            .ok_or(ManipulationError::StaleMove)?;
         let channels = self.scene.move_translation_changes(&active.baseline)?;
         let node = active.target.node;
         self.scene.restore_move_translation(&active.baseline)?;
-        if finish == MoveFinish::Cancel || channels.iter().all(Option::is_none) {
+        if finish == ManipulationFinish::Cancel || channels.iter().all(Option::is_none) {
             return Ok(if channels.iter().all(Option::is_none) {
                 EditOutcome::Unchanged
             } else {
@@ -224,9 +230,9 @@ impl History {
         .map_err(Into::into)
     }
 
-    pub fn cancel_active_move(&mut self) -> Result<EditOutcome, MoveError> {
+    pub fn cancel_active_move(&mut self) -> Result<EditOutcome, ManipulationError> {
         // Clear before any fallible scene work so a failure cannot leave an unfinishable move.
-        let Some(active) = self.active_move.take() else {
+        let Some(active) = self.active_manipulation.take() else {
             return Ok(EditOutcome::Unchanged);
         };
         let channels = self.scene.move_translation_changes(&active.baseline)?;

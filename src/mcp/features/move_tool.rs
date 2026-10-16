@@ -6,7 +6,7 @@ use crate::{
     },
 };
 use azteccraft::{
-    history::MoveFinish,
+    history::ManipulationFinish,
     native_scene::{TransformTarget, WorldAxis},
 };
 use rmcp::{
@@ -121,8 +121,8 @@ fn parse_update_move(arguments: JsonObject) -> Result<RemoteRequest, ErrorData> 
 fn parse_finish_move(arguments: JsonObject) -> Result<RemoteRequest, ErrorData> {
     let args: FinishMoveArgs = decode(arguments)?;
     let finish = match args.finish {
-        FinishInput::Commit => MoveFinish::Commit,
-        FinishInput::Cancel => MoveFinish::Cancel,
+        FinishInput::Commit => ManipulationFinish::Commit,
+        FinishInput::Cancel => ManipulationFinish::Cancel,
     };
     Ok(scoped(
         token(&args.scene_token)?,
