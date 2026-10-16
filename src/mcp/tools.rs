@@ -59,7 +59,7 @@ fn tool_reply(reply: Result<OperationReply, OperationError>) -> CallToolResult {
                 OperationError::BusyManipulation => "busy_manipulation",
                 OperationError::Move(error) => match error {
                     ManipulationError::StaleScene => "stale_scene",
-                    ManipulationError::StaleMove => "stale_move",
+                    ManipulationError::StaleManipulation => "stale_move",
                     ManipulationError::WrongOwner => "move_owner",
                     ManipulationError::Busy => "busy_manipulation",
                     ManipulationError::Native(NativeError::AbsentChannelLeaf { .. }) => {

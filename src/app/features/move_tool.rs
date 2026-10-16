@@ -429,7 +429,7 @@ impl Editor {
                 self.move_consumed_frame = true;
                 self.move_suppress_primary = pointer.down;
                 return Err(OperationError::Move(
-                    azteccraft::history::ManipulationError::StaleMove,
+                    azteccraft::history::ManipulationError::StaleManipulation,
                 ));
             }
             if !native.drag.same_capture(&capture)
@@ -550,7 +550,7 @@ impl Editor {
             .history
             .active_manipulation()
             .ok_or(OperationError::Move(
-                azteccraft::history::ManipulationError::StaleMove,
+                azteccraft::history::ManipulationError::StaleManipulation,
             ))?
             .id;
         self.native_move = Some(NativeMove {
