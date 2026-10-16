@@ -26,6 +26,18 @@ pub(in crate::app) struct MoveViewportFeedback {
 }
 
 const FACE_MODE_REFUSAL: &str = "Move is unavailable in Face selection; switch to Object selection";
+const VERTEX_MODE_REFUSAL: &str =
+    "Move is unavailable in Vertex selection; switch to Object selection";
+const EDGE_MODE_REFUSAL: &str = "Move is unavailable in Edge selection; switch to Object selection";
+
+fn move_refusal(mode: SelectionMode) -> Option<&'static str> {
+    match mode {
+        SelectionMode::Face => Some(FACE_MODE_REFUSAL),
+        SelectionMode::Vertex => Some(VERTEX_MODE_REFUSAL),
+        SelectionMode::Edge => Some(EDGE_MODE_REFUSAL),
+        SelectionMode::Object | SelectionMode::Hierarchy => None,
+    }
+}
 
 fn axis_name(axis: WorldAxis) -> &'static str {
     match axis {
@@ -139,8 +151,8 @@ impl Editor {
         axis: WorldAxis,
         provenance: ManipulationProvenance,
     ) -> Result<OperationReply, OperationError> {
-        if self.selection_mode == SelectionMode::Face {
-            return Err(OperationError::InvalidInput(FACE_MODE_REFUSAL.into()));
+        if let Some(refusal) = move_refusal(self.selection_mode) {
+            return Err(OperationError::InvalidInput(refusal.into()));
         }
         if self.selected != Some(target.node) || self.selected_path != target.path {
             return Err(OperationError::InvalidInput(
@@ -232,8 +244,8 @@ impl Editor {
         use crate::editor_operations::{
             ActiveMoveInspection, MoveAxisInspection, MoveInspection, MoveViewportInspection,
         };
-        let frame = if self.selection_mode == SelectionMode::Face {
-            Err(OperationError::InvalidInput(FACE_MODE_REFUSAL.into()))
+        let frame = if let Some(refusal) = move_refusal(self.selection_mode) {
+            Err(OperationError::InvalidInput(refusal.into()))
         } else {
             self.selected_move_target().and_then(|target| {
                 self.history
@@ -501,9 +513,9 @@ impl Editor {
             }
             return Ok(true);
         }
-        if self.selection_mode == SelectionMode::Face {
+        if let Some(refusal) = move_refusal(self.selection_mode) {
             if self.active_tool == ActiveTool::Move && pointer.pressed {
-                self.status = FACE_MODE_REFUSAL.into();
+                self.status = refusal.into();
                 self.error = false;
             }
             return Ok(false);
@@ -582,8 +594,8 @@ impl Editor {
             return;
         }
         let geometry = (|| {
-            if self.selection_mode == SelectionMode::Face {
-                return Err(OperationError::InvalidInput(FACE_MODE_REFUSAL.into()));
+            if let Some(refusal) = move_refusal(self.selection_mode) {
+                return Err(OperationError::InvalidInput(refusal.into()));
             }
             let target = self.selected_move_target()?;
             let frame = self

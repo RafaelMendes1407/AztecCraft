@@ -2,9 +2,11 @@ use super::*;
 
 impl Editor {
     pub(super) fn native_operation(&mut self, operation: Operation) {
-        if self.selection_mode == SelectionMode::Face && matches!(operation, Operation::Delete(_)) {
-            self.status =
-                "Face deletion is unsupported; switch to Object or Hierarchy selection".into();
+        if self.selection_mode.is_component() && matches!(operation, Operation::Delete(_)) {
+            self.status = format!(
+                "{} deletion is unsupported; switch to Object or Hierarchy selection",
+                self.component_noun()
+            );
             self.error = true;
             return;
         }
@@ -443,7 +445,7 @@ impl Editor {
                 let path = selected_path.unwrap_or_default();
                 let changed = self.selected != node || self.selected_path != path;
                 if changed {
-                    self.remembered_face = None;
+                    self.clear_remembered_components();
                 }
                 self.selected = node;
                 self.selected_path = path;
@@ -479,6 +481,12 @@ impl Editor {
                 });
             }
             Operation::FrameSelected => {
+                if matches!(
+                    self.selection_mode,
+                    SelectionMode::Vertex | SelectionMode::Edge
+                ) {
+                    return Err(OperationError::NoSelection);
+                }
                 let path = if self.selection_mode != SelectionMode::Face {
                     let id = self.selected.ok_or(OperationError::NoSelection)?;
                     Some(self.selection_path(
@@ -566,7 +574,7 @@ impl Editor {
             OperationError::from_history(error)
         })?;
         if let EditOutcome::Created(id) = outcome {
-            self.remembered_face = None;
+            self.clear_remembered_components();
             self.selected = Some(id);
             self.selected_path = vec![
                 self.history

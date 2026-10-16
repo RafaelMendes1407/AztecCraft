@@ -124,14 +124,13 @@ impl Editor {
                 }
                 if ui
                     .add_enabled(
-                        authoring
-                            && self.selected.is_some()
-                            && self.selection_mode != SelectionMode::Face,
+                        authoring && self.selected.is_some() && !self.selection_mode.is_component(),
                         egui::Button::new("Delete"),
                     )
-                    .on_disabled_hover_text(
-                        "Object or Hierarchy selection required; face deletion is unsupported",
-                    )
+                    .on_disabled_hover_text(format!(
+                        "Object or Hierarchy selection required; {} deletion is unsupported",
+                        self.component_noun().to_lowercase()
+                    ))
                     .clicked()
                 {
                     *delete_intent = true;

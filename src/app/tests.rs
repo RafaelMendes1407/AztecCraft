@@ -2572,6 +2572,33 @@ fn face_native_closing_editor_refuses_mode_intents_without_selection_changes() {
 }
 
 #[test]
+fn vertex_and_edge_modes_refuse_native_delete_and_frame_without_a_component() {
+    for (mode, noun) in [
+        (SelectionMode::Vertex, "Vertex"),
+        (SelectionMode::Edge, "Edge"),
+    ] {
+        let mut editor = Editor::default();
+        editor.create(Primitive::Cube);
+        editor.selection_mode = mode;
+        let (before, token) = (editor.history.scene().clone(), editor.scene_token);
+        editor.native_operation(Operation::Delete(editor.selected.unwrap()));
+        assert_eq!(editor.history.scene(), &before);
+        assert_eq!(editor.scene_token, token);
+        assert!(editor.error);
+        assert_eq!(
+            editor.status,
+            format!("{noun} deletion is unsupported; switch to Object or Hierarchy selection")
+        );
+        let camera = editor.camera.clone();
+        assert!(matches!(
+            editor.apply_operation(Operation::FrameSelected),
+            Err(OperationError::NoSelection)
+        ));
+        assert_eq!(editor.camera, camera);
+    }
+}
+
+#[test]
 fn face_native_pending_mode_prevents_keyboard_and_channel_object_delete() {
     for button in [false, true] {
         let mut editor = Editor::default();
@@ -3988,8 +4015,13 @@ fn button_disabled(output: &egui::FullOutput, label: &str) -> bool {
 }
 
 #[test]
-fn delete_controls_are_enabled_in_hierarchy_mode_and_disabled_in_face_mode() {
-    for mode in [SelectionMode::Hierarchy, SelectionMode::Face] {
+fn delete_controls_are_enabled_in_hierarchy_mode_and_disabled_in_component_modes() {
+    for mode in [
+        SelectionMode::Hierarchy,
+        SelectionMode::Face,
+        SelectionMode::Vertex,
+        SelectionMode::Edge,
+    ] {
         let mut editor = Editor::default();
         editor.create(Primitive::Cube);
         editor.native_operation(Operation::SetSelectionMode(mode));
@@ -3997,7 +4029,7 @@ fn delete_controls_are_enabled_in_hierarchy_mode_and_disabled_in_face_mode() {
         let ctx = egui::Context::default();
         ctx.enable_accesskit();
         let output = frame(&mut editor, &ctx, vec![]);
-        let expect_disabled = mode == SelectionMode::Face;
+        let expect_disabled = mode.is_component();
         assert_eq!(
             button_disabled(&output, "Delete selected"),
             expect_disabled,

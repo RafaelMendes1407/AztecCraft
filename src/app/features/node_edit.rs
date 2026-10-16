@@ -12,26 +12,27 @@ impl Editor {
         else {
             self.selected = None;
             self.selected_path.clear();
-            self.remembered_face = None;
+            self.clear_remembered_components();
             self.name.clear();
             self.channels = Default::default();
             self.material_shape = None;
             return;
         };
-        if self.remembered_face.as_ref().is_some_and(|target| {
+        let stale_component = self.remembered_face.as_ref().is_some_and(|target| {
             Some(target.transform) != self.selected
                 || target
                     .path
                     .split_last()
                     .is_none_or(|(_, path)| path != self.selected_path)
                 || self.history.scene().resolve_face_target(target).is_err()
-        }) {
-            self.remembered_face = None;
-        }
+        });
         self.name = node.name().into();
         let values = node.transform().values();
         self.channels = values.map(|value| value.to_string());
         let transform = node.transform_id();
+        if stale_component {
+            self.clear_remembered_components();
+        }
         if !self
             .material_shape
             .is_some_and(|shape| self.is_direct_shape(transform, shape))
@@ -207,12 +208,13 @@ impl Editor {
         ui.separator();
         if ui
             .add_enabled(
-                authoring && self.selection_mode != SelectionMode::Face,
+                authoring && !self.selection_mode.is_component(),
                 egui::Button::new("Delete selected"),
             )
-            .on_disabled_hover_text(
-                "Face deletion is unsupported; switch to Object or Hierarchy selection",
-            )
+            .on_disabled_hover_text(format!(
+                "{} deletion is unsupported; switch to Object or Hierarchy selection",
+                self.component_noun()
+            ))
             .clicked()
         {
             *delete_intent = true;

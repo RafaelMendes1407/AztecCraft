@@ -134,6 +134,18 @@ impl Default for Editor {
 }
 
 impl Editor {
+    /// Names the component type in refusal text; Face when no component mode is active.
+    fn component_noun(&self) -> &'static str {
+        match self.selection_mode {
+            SelectionMode::Vertex => "Vertex",
+            SelectionMode::Edge => "Edge",
+            _ => "Face",
+        }
+    }
+    fn clear_remembered_components(&mut self) {
+        self.remembered_face = None;
+    }
+
     pub(super) fn sidebar_panel_visible(&self, panel: SidebarPanel) -> bool {
         self.sidebar_dock == Some(panel)
     }

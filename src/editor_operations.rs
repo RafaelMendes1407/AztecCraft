@@ -71,14 +71,35 @@ pub enum DocumentOrigin {
     LegacyAztec,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SelectionMode {
     #[default]
     Object,
     Face,
     Hierarchy,
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "no user surface selects it until the selection operations land"
+        )
+    )]
+    Vertex,
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "no user surface selects it until the selection operations land"
+        )
+    )]
+    Edge,
+}
+
+impl SelectionMode {
+    pub fn is_component(self) -> bool {
+        matches!(self, Self::Vertex | Self::Edge | Self::Face)
+    }
 }
 /// Session-only viewport shading, like grid visibility; never saved or dirtying.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

@@ -344,7 +344,7 @@ impl Editor {
         self.move_viewport = None;
         self.selected = None;
         self.selected_path.clear();
-        self.remembered_face = None;
+        self.clear_remembered_components();
         self.name.clear();
         self.channels = Default::default();
         self.channel_intents = [false; 9];

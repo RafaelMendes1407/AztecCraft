@@ -174,6 +174,8 @@ impl Editor {
                 SelectionMode::Object => "Object selection",
                 SelectionMode::Face => "Face selection | visible centers only",
                 SelectionMode::Hierarchy => "Hierarchy selection | Root",
+                SelectionMode::Vertex => "Vertex selection",
+                SelectionMode::Edge => "Edge selection",
             });
             ui.separator();
             grid_requested = ui
@@ -300,7 +302,9 @@ impl Editor {
                     SelectionModeIntent::Object => SelectionMode::Object,
                     SelectionModeIntent::Hierarchy => SelectionMode::Hierarchy,
                     SelectionModeIntent::Toggle => match self.selection_mode {
-                        SelectionMode::Face => SelectionMode::Object,
+                        SelectionMode::Face | SelectionMode::Vertex | SelectionMode::Edge => {
+                            SelectionMode::Object
+                        }
                         SelectionMode::Object | SelectionMode::Hierarchy => SelectionMode::Face,
                     },
                 };
@@ -362,6 +366,7 @@ impl Editor {
                             .map_err(|e| OperationError::File(e.to_string()))?;
                         self.apply_operation(Operation::SelectFace { target })?;
                     }
+                    SelectionMode::Vertex | SelectionMode::Edge => {}
                 }
             }
             let painted = input.paint(
@@ -369,11 +374,12 @@ impl Editor {
                 &self.camera,
                 &view,
                 match self.selection_mode {
-                    SelectionMode::Object | SelectionMode::Hierarchy => {
-                        crate::viewport_renderer::SelectionFeedback::Object(
-                            self.selected.map(|_| self.selected_path.as_slice()),
-                        )
-                    }
+                    SelectionMode::Object
+                    | SelectionMode::Hierarchy
+                    | SelectionMode::Vertex
+                    | SelectionMode::Edge => crate::viewport_renderer::SelectionFeedback::Object(
+                        self.selected.map(|_| self.selected_path.as_slice()),
+                    ),
                     SelectionMode::Face => crate::viewport_renderer::SelectionFeedback::Face {
                         active: self
                             .selected
