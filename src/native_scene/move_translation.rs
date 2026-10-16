@@ -409,7 +409,7 @@ impl NativeScene {
         let inverse_parent = parent_linear.inverse();
         let parent_norm = infinity_norm(parent_linear);
         let condition = parent_norm * infinity_norm(inverse_parent);
-        let origin_cm = parent_world.transform_point3(DVec3::from_array(transform.translation_cm));
+        let origin_cm = parent_world.transform_point3(transform.origin_cm());
         if !inverse_parent.is_finite()
             || !condition.is_finite()
             || condition > MAX_PARENT_CONDITION

@@ -516,3 +516,15 @@ are follow-ups. Ids are table indices reused after undo, so clients must not cac
 table holds at most 512 materials, far inside the `inspect_scene` budget (tested); creating past it returns `session_material_limit`. The default shader is unverified for Maya 2026 and linear colour
 is shown as sRGB bytes, so no parity is claimed. No MCP test creates two instances of one shape
 (no instancing operation exists yet); that case is covered by core and `ViewScene` unit tests.
+
+## Scale handle origin ignores some transform extras
+
+**Severity:** low
+**Area:** manipulator display
+**Issue:** cristim/AztecCraft#105
+
+The Scale handle sits at the parent's map of T + RT. With transform extras, Scale's fixed point
+is M*sp, so the drawn handle drifts from it when the node has a nonzero scalePivotTranslate, or a
+nonzero rotatePivot with a rotation other than identity. Maya's own placement is unverified.
+Display only: no edit math reads the frame origin, and Move and Rotate refuse a nonzero rotate
+pivot, so T + RT is their pivot.

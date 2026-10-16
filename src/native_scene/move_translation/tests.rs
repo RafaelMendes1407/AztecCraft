@@ -649,3 +649,54 @@ fn seeded_sweep_of_large_translations_and_distances_stays_representable_on_every
         }
     }
 }
+
+#[test]
+fn move_origin_is_the_world_pivot_including_rotate_pivot_translate() {
+    let (mut scene, root, child, _) = test_fixtures::grouped_shape();
+    scene
+        .set_transform(
+            root,
+            NativeTransform {
+                translation: [10.0, 0.0, 0.0],
+                rotation: [0.0, 0.0, 90.0],
+                scale: [2.0, 2.0, 2.0],
+            },
+        )
+        .unwrap();
+    scene
+        .set_transform(
+            child,
+            NativeTransform {
+                translation: [1.0, 0.0, 0.0],
+                ..NativeTransform::default()
+            },
+        )
+        .unwrap();
+    test_fixtures::set_extras(
+        &mut scene,
+        child,
+        TransformExtras {
+            rotate_pivot_translate: Some([0.0, 3.0, 0.0]),
+            ..TransformExtras::default()
+        },
+    );
+    let selected = target(&scene, child);
+    // Parent maps (x, y, z) to (10 - 2y, 2x, 2z); the pivot is the local (1, 3, 0).
+    let expected = [4.0, 2.0, 0.0];
+    near(
+        scene
+            .world_move_frame(&selected)
+            .unwrap()
+            .origin_cm()
+            .to_array(),
+        expected,
+    );
+    near(
+        scene
+            .manipulator_frame(&selected)
+            .unwrap()
+            .origin_cm
+            .to_array(),
+        expected,
+    );
+}

@@ -1,13 +1,12 @@
-use super::rotate_frame::rotation_matrix;
 use super::*;
-use glam::DMat3;
 
 /// Where the Rotate and Scale handles sit and where the node's own axes point in the world.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ManipulatorFrame {
     pub origin_cm: DVec3,
     /// The node's X, Y and Z as seen from the world: the parents' linear map times the node's
-    /// rotation. Not normalized, and mirrored or skewed when a parent has negative or uneven
+    /// rotation (rotate order and rotate axis included). The node's own shear and scale never
+    /// enter it. Not normalized, and mirrored or skewed when a parent has negative or uneven
     /// scale; the handles refuse such frames.
     pub object_axes: [DVec3; 3],
 }
@@ -26,10 +25,13 @@ impl NativeScene {
         let transform = self.internal_transform(target.node)?;
         let refused = NativeError::UnsupportedMove(WorldMoveUnsupported::ParentTransform);
         let parent_world = self.ancestor_world(target)?.ok_or(refused.clone())?;
-        let origin_cm = parent_world.transform_point3(DVec3::from_array(transform.translation_cm));
-        let axes = DMat3::from_mat4(parent_world) * rotation_matrix(transform.rotation_radians);
+        let origin_cm = parent_world.transform_point3(transform.origin_cm());
+        let axes = transform
+            .rotation_frame()
+            .map(|rotation| DMat3::from_mat4(parent_world) * rotation)
+            .ok_or(refused.clone())?;
         let object_axes = [axes.x_axis, axes.y_axis, axes.z_axis];
-        if !origin_cm.is_finite() || object_axes.iter().any(|axis| !axis.is_finite()) {
+        if !origin_cm.is_finite() {
             return Err(refused);
         }
         Ok(ManipulatorFrame {
