@@ -24,9 +24,14 @@ fn index(icon: UiIcon) -> usize {
         UiIcon::FileNew => 15,
         UiIcon::FileOpen => 16,
         UiIcon::FileSave => 17,
+        UiIcon::PolyCube => 18,
+        UiIcon::PolyPlane => 19,
+        UiIcon::Undo => 20,
+        UiIcon::Redo => 21,
+        UiIcon::FrameSelected => 22,
     }
 }
-const ICON_COUNT: usize = 18;
+const ICON_COUNT: usize = 23;
 
 struct Raster {
     w: usize,
@@ -333,6 +338,11 @@ fn golden(icon: UiIcon) -> [&'static str; 12] {
         UiIcon::FileNew => GOLDEN_FILE_NEW,
         UiIcon::FileOpen => GOLDEN_FILE_OPEN,
         UiIcon::FileSave => GOLDEN_FILE_SAVE,
+        UiIcon::PolyCube => GOLDEN_POLY_CUBE,
+        UiIcon::PolyPlane => GOLDEN_POLY_PLANE,
+        UiIcon::Undo => GOLDEN_UNDO,
+        UiIcon::Redo => GOLDEN_REDO,
+        UiIcon::FrameSelected => GOLDEN_FRAME_SELECTED,
     }
 }
 
@@ -591,6 +601,77 @@ const GOLDEN_FILE_SAVE: [&str; 12] = [
     ".##......##.",
     ".##########.",
     "..########..",
+    "............",
+];
+
+const GOLDEN_POLY_CUBE: [&str; 12] = [
+    "............",
+    ".....##.....",
+    "...######...",
+    "..########..",
+    "..########..",
+    "..########..",
+    "..########..",
+    "..########..",
+    "...######...",
+    ".....##.....",
+    "..########..",
+    "..########..",
+];
+const GOLDEN_POLY_PLANE: [&str; 12] = [
+    "............",
+    "............",
+    "...########.",
+    "...########.",
+    "...#######..",
+    "..########..",
+    "..########..",
+    "..#######...",
+    ".########...",
+    ".########...",
+    "............",
+    "............",
+];
+const GOLDEN_UNDO: [&str; 12] = [
+    "............",
+    "..#.#####...",
+    ".##.######..",
+    ".###.....##.",
+    "..........##",
+    "...........#",
+    "...........#",
+    "...........#",
+    "..........##",
+    ".........##.",
+    ".........#..",
+    "............",
+];
+const GOLDEN_REDO: [&str; 12] = [
+    "............",
+    "...#####.#..",
+    "..######.##.",
+    ".##.....###.",
+    "##..........",
+    "#...........",
+    "#...........",
+    "#...........",
+    "##..........",
+    ".##.........",
+    "..#.........",
+    "............",
+];
+const GOLDEN_FRAME_SELECTED: [&str; 12] = [
+    "............",
+    ".####..####.",
+    ".#........#.",
+    ".#........#.",
+    ".#...##...#.",
+    "....####....",
+    "....####....",
+    ".#...##...#.",
+    ".#........#.",
+    ".#........#.",
+    ".####..####.",
     "............",
 ];
 
@@ -929,5 +1010,89 @@ fn regions_keep_a_visible_gap() {
             gap >= MIN_INK_GAP_PX,
             "{icon:?} shapes {i} and {j} are only {gap} px apart"
         );
+    }
+}
+
+/// Index of the arrowhead among the Undo and Redo shapes.
+const UNDO_HEAD_SHAPE: usize = 1;
+
+/// Shape point lists of `icon` in a 24px rect at the origin, as plain coordinates.
+fn icon_points(icon: UiIcon) -> Vec<Vec<Pos2>> {
+    let rect = Rect::from_min_size(Pos2::ZERO, egui::vec2(GRID, GRID));
+    shapes(icon, rect)
+        .into_iter()
+        .map(|s| match s {
+            Shape::Path(p) => p.points,
+            _ => panic!("{icon:?}: expected path shapes only"),
+        })
+        .collect()
+}
+
+#[test]
+fn redo_geometry_is_the_mirror_of_undo() {
+    let (undo, redo) = (icon_points(UiIcon::Undo), icon_points(UiIcon::Redo));
+    assert_eq!(undo.len(), redo.len());
+    for (k, (u, r)) in undo.iter().zip(&redo).enumerate() {
+        assert_eq!(u.len(), r.len());
+        // The arc (shape 0) keeps its order; the arrowhead fan keeps vertex 0 and
+        // reverses the rest to stay clockwise.
+        let mut ordered = r.clone();
+        if k == UNDO_HEAD_SHAPE {
+            ordered[1..].reverse();
+        }
+        for (a, b) in u.iter().zip(&ordered) {
+            assert!(
+                (a.x + b.x - GRID).abs() < 1e-4 && (a.y - b.y).abs() < 1e-4,
+                "{a:?} is not the mirror of {b:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn redo_raster_is_undo_flipped_horizontally() {
+    for (size, ppp) in [(16.0, 1.0), (24.0, 1.0), (32.0, 2.0)] {
+        let (u, w) = alpha_grid(UiIcon::Undo, size, ppp);
+        let (r, _) = alpha_grid(UiIcon::Redo, size, ppp);
+        let worst = (0..w * w)
+            .map(|i| (u[(i / w) * w + (w - 1 - i % w)] - r[i]).abs())
+            .fold(0.0, f32::max);
+        assert!(
+            worst <= 1e-3,
+            "{size}px@{ppp}x flipped Undo differs from Redo by {worst}"
+        );
+    }
+}
+
+/// Ink masks (alpha >= 0.5) of each shape of `icon` at `size`px@1x.
+fn solid_masks(icon: UiIcon, size: f32) -> Vec<Vec<bool>> {
+    let rect = Rect::from_min_size(Pos2::new(MARGIN, MARGIN), egui::vec2(size, size));
+    shapes(icon, rect)
+        .into_iter()
+        .map(|s| {
+            rasterize(vec![s], size + 2.0 * MARGIN, 1.0)
+                .px
+                .iter()
+                .map(|p| p[3] / 255.0 >= 0.5)
+                .collect()
+        })
+        .collect()
+}
+
+/// Most existing icons touch pixel to pixel at 24px@1x (their gaps are under a pixel), so
+/// only the History arrow, whose head once fused with its arc, is held to a full pixel of
+/// clear space at the two smallest sizes.
+#[test]
+fn history_head_is_a_pixel_clear_of_the_arc_at_small_sizes() {
+    for icon in [UiIcon::Undo, UiIcon::Redo] {
+        for size in [16.0, 24.0] {
+            let m = solid_masks(icon, size);
+            let w = (size + 2.0 * MARGIN) as usize;
+            let gap = mask_gap(&m[0], &m[UNDO_HEAD_SHAPE], w);
+            assert!(
+                gap >= MIN_INK_GAP_PX,
+                "{icon:?} {size}px arc-head gap {gap}"
+            );
+        }
     }
 }

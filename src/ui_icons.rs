@@ -29,6 +29,11 @@ pub enum UiIcon {
     FileNew,
     FileOpen,
     FileSave,
+    PolyCube,
+    PolyPlane,
+    Undo,
+    Redo,
+    FrameSelected,
 }
 
 /// Tool Box order.
@@ -51,6 +56,11 @@ pub const ALL: &[UiIcon] = &[
     UiIcon::FileNew,
     UiIcon::FileOpen,
     UiIcon::FileSave,
+    UiIcon::PolyCube,
+    UiIcon::PolyPlane,
+    UiIcon::Undo,
+    UiIcon::Redo,
+    UiIcon::FrameSelected,
 ];
 
 // Newly chosen values; not sampled from any Maya image.
@@ -61,6 +71,14 @@ const AXIS_Z: Color32 = Color32::from_rgb(104, 152, 244);
 const NEUTRAL_MID: Color32 = Color32::from_rgb(150, 156, 164);
 const NEUTRAL_DARK: Color32 = Color32::from_rgb(106, 112, 122);
 const ACCENT: Color32 = Color32::from_rgb(238, 196, 92);
+const AMBER_LIGHT: Color32 = Color32::from_rgb(246, 200, 124);
+const AMBER_MID: Color32 = Color32::from_rgb(232, 173, 85);
+const AMBER_DARK: Color32 = Color32::from_rgb(168, 114, 52);
+const AMBER_SHADOW: Color32 = Color32::from_rgb(120, 84, 44);
+const CYAN_LIGHT: Color32 = Color32::from_rgb(126, 220, 230);
+const CYAN_MID: Color32 = Color32::from_rgb(88, 201, 213);
+const HISTORY_BLUE: Color32 = Color32::from_rgb(116, 169, 235);
+const FRAME_VIOLET: Color32 = Color32::from_rgb(185, 154, 221);
 
 const GRID: f32 = 24.0;
 /// Stroke width in grid units.
@@ -453,12 +471,22 @@ fn select_object(fit: &Fit) -> Vec<Shape> {
 
 /// A cube as three shaded rhombus regions separated by `REGION_GAP`.
 fn shaded_cube(fit: &Fit, center: Pos2, radius: f32) -> Vec<Shape> {
+    tinted_cube(
+        fit,
+        center,
+        radius,
+        [NEUTRAL_LIGHT, NEUTRAL_MID, NEUTRAL_DARK],
+    )
+}
+
+/// `shaded_cube` with chosen top, right and left face colours.
+fn tinted_cube(fit: &Fit, center: Pos2, radius: f32, tones: [Color32; 3]) -> Vec<Shape> {
     let [top, ur, lr, bottom, ll, ul, c] = cube_vertices(center, radius);
     let half_gap = REGION_GAP / 2.0;
     [
-        ([top, ur, c, ul], NEUTRAL_LIGHT),
-        ([c, ur, lr, bottom], NEUTRAL_MID),
-        ([c, bottom, ll, ul], NEUTRAL_DARK),
+        ([top, ur, c, ul], tones[0]),
+        ([c, ur, lr, bottom], tones[1]),
+        ([c, bottom, ll, ul], tones[2]),
     ]
     .iter()
     .map(|(face, color)| fit.fill(&inset(face, half_gap), *color))
@@ -778,6 +806,172 @@ fn file_save(fit: &Fit) -> Vec<Shape> {
     shapes
 }
 
+/// Poly Cube: a smaller amber cube lifted over a ground-shadow bar.
+const POLY_CUBE_CENTER: Pos2 = pos2(12.0, 10.9);
+const POLY_CUBE_RADIUS: f32 = 9.4;
+const SHADOW_TOP: f32 = 21.0;
+const SHADOW_BOTTOM: f32 = 23.0;
+const SHADOW_HALF_WIDTH: f32 = 9.5;
+
+fn poly_cube(fit: &Fit) -> Vec<Shape> {
+    let mut shapes = tinted_cube(
+        fit,
+        POLY_CUBE_CENTER,
+        POLY_CUBE_RADIUS,
+        [AMBER_LIGHT, AMBER_MID, AMBER_DARK],
+    );
+    let (l, r) = (
+        GRID_CENTER.x - SHADOW_HALF_WIDTH,
+        GRID_CENTER.x + SHADOW_HALF_WIDTH,
+    );
+    shapes.push(fit.fill(
+        &rect_path(pos2(l, SHADOW_TOP), pos2(r, SHADOW_BOTTOM)),
+        AMBER_SHADOW,
+    ));
+    shapes
+}
+
+/// Poly Plane corners (top-left, top-right, bottom-right, bottom-left): a parallelogram
+/// leaning right, tiled 2x2.
+const PLANE_CORNERS: [Pos2; 4] = [
+    pos2(7.0, 3.0),
+    pos2(23.0, 3.0),
+    pos2(17.0, 21.0),
+    pos2(1.0, 21.0),
+];
+
+/// Poly Plane tiles: each spans half the plane, starting at 0 or half.
+const PLANE_TILE: f32 = 0.5;
+const PLANE_TILE_STARTS: [f32; 2] = [0.0, PLANE_TILE];
+
+fn poly_plane(fit: &Fit) -> Vec<Shape> {
+    let [tl, tr, br, bl] = PLANE_CORNERS;
+    let at = |u: f32, v: f32| {
+        let top = tl + (tr - tl) * u;
+        let bottom = bl + (br - bl) * u;
+        top + (bottom - top) * v
+    };
+    let mut shapes = vec![];
+    for (row, v) in PLANE_TILE_STARTS.into_iter().enumerate() {
+        for (col, u) in PLANE_TILE_STARTS.into_iter().enumerate() {
+            let quad = [
+                at(u, v),
+                at(u + PLANE_TILE, v),
+                at(u + PLANE_TILE, v + PLANE_TILE),
+                at(u, v + PLANE_TILE),
+            ];
+            let tone = if (row + col) % 2 == 0 {
+                CYAN_LIGHT
+            } else {
+                CYAN_MID
+            };
+            shapes.push(fit.fill(&inset(&quad, REGION_GAP / 2.0), tone));
+        }
+    }
+    shapes
+}
+
+/// History arrow arc: ellipse centre and radii, and the parameter range swept from the
+/// right end, over the top, to the left end.
+const HISTORY_ARC_CENTER: Pos2 = pos2(12.8, 13.0);
+const HISTORY_ARC_RADII: Vec2 = vec2(10.0, 9.4);
+const HISTORY_ARC_START: f32 = 0.3 * PI;
+const HISTORY_ARC_END: f32 = -0.62 * PI;
+const HISTORY_ARC_POINTS: usize = 32;
+const HISTORY_STROKE: f32 = 1.8 * STROKE;
+/// Clear space between the arc's end and the arrowhead base, and the head's size.
+const HISTORY_HEAD_GAP: f32 = 2.6;
+const HISTORY_HEAD_LEN: f32 = 6.0;
+const HISTORY_HEAD_HALF: f32 = 4.2;
+
+/// Undo geometry in grid units: the open arc, and the head as a clockwise fan.
+fn undo_parts() -> (Vec<Pos2>, [Pos2; 3]) {
+    let arc = ellipse(
+        HISTORY_ARC_CENTER,
+        HISTORY_ARC_RADII,
+        0.0,
+        HISTORY_ARC_START,
+        HISTORY_ARC_END - HISTORY_ARC_START,
+        HISTORY_ARC_POINTS,
+    );
+    let end = arc[HISTORY_ARC_POINTS - 1];
+    let dir = (end - arc[HISTORY_ARC_POINTS - 2]).normalized();
+    let base = end + dir * HISTORY_HEAD_GAP;
+    let head = along(
+        base,
+        dir,
+        &[
+            (HISTORY_HEAD_LEN, 0.0),
+            (0.0, HISTORY_HEAD_HALF),
+            (0.0, -HISTORY_HEAD_HALF),
+        ],
+    );
+    (arc, [head[0], head[1], head[2]])
+}
+
+/// Mirrors grid points left to right about the grid centre.
+fn mirror_x(p: Pos2) -> Pos2 {
+    pos2(GRID - p.x, p.y)
+}
+
+/// Restores clockwise winding after a one-axis flip: keeps vertex 0, reverses the rest.
+fn reverse_winding(fan: &mut [Pos2]) {
+    fan[1..].reverse();
+}
+
+fn history(fit: &Fit, mirrored: bool) -> Vec<Shape> {
+    let (mut arc, mut head) = undo_parts();
+    if mirrored {
+        arc.iter_mut().for_each(|p| *p = mirror_x(*p));
+        head.iter_mut().for_each(|p| *p = mirror_x(*p));
+        reverse_winding(&mut head);
+    }
+    vec![
+        fit.stroke(&arc, false, HISTORY_BLUE, HISTORY_STROKE),
+        fit.fill(&head, HISTORY_BLUE),
+    ]
+}
+
+/// Frame Selected: corner brackets around a centred square.
+const FRAME_OUTER: f32 = 2.0;
+const FRAME_ARM: f32 = 7.0;
+const FRAME_THICK: f32 = 2.4;
+const FRAME_SQUARE_HALF: f32 = 3.0;
+
+fn frame_selected(fit: &Fit) -> Vec<Shape> {
+    let (arm, t) = (FRAME_ARM, FRAME_THICK);
+    // Top-left bracket, clockwise from its outer corner.
+    let local = [
+        (0.0, 0.0),
+        (arm, 0.0),
+        (arm, t),
+        (t, t),
+        (t, arm),
+        (0.0, arm),
+    ];
+    let mut shapes = vec![];
+    for (sx, sy) in [(1.0, 1.0), (-1.0, 1.0), (-1.0, -1.0), (1.0, -1.0)] {
+        let corner = pos2(
+            GRID_CENTER.x - sx * (GRID_CENTER.x - FRAME_OUTER),
+            GRID_CENTER.y - sy * (GRID_CENTER.y - FRAME_OUTER),
+        );
+        let mut pts: Vec<Pos2> = local
+            .iter()
+            .map(|&(u, v)| corner + vec2(sx * u, sy * v))
+            .collect();
+        if sx * sy < 0.0 {
+            reverse_winding(&mut pts);
+        }
+        shapes.push(fit.fill(&pts, FRAME_VIOLET));
+    }
+    let h = FRAME_SQUARE_HALF;
+    shapes.push(fit.fill(
+        &rect_path(GRID_CENTER - vec2(h, h), GRID_CENTER + vec2(h, h)),
+        FRAME_VIOLET,
+    ));
+    shapes
+}
+
 /// Geometry of `icon` fitted to `rect`, without needing a window. Disabled looks
 /// come from the host `Ui` (egui's disabled opacity); icons have no tone.
 pub fn shapes(icon: UiIcon, rect: Rect) -> Vec<Shape> {
@@ -819,6 +1013,11 @@ pub fn shapes(icon: UiIcon, rect: Rect) -> Vec<Shape> {
         UiIcon::FileNew => file_new(&fit),
         UiIcon::FileOpen => file_open(&fit),
         UiIcon::FileSave => file_save(&fit),
+        UiIcon::PolyCube => poly_cube(&fit),
+        UiIcon::PolyPlane => poly_plane(&fit),
+        UiIcon::Undo => history(&fit, false),
+        UiIcon::Redo => history(&fit, true),
+        UiIcon::FrameSelected => frame_selected(&fit),
     }
 }
 
