@@ -7,6 +7,7 @@ mod mesh;
 mod move_translation;
 mod rotate_frame;
 mod scale_frame;
+mod session_material;
 mod source;
 mod transform_extras;
 pub use appearance::{
@@ -19,6 +20,10 @@ pub(crate) use move_translation::ChannelBaseline;
 pub use move_translation::{ChannelLeaf, WorldAxis, WorldMoveFrame, WorldMoveUnsupported};
 pub use rotate_frame::{RotateAxis, RotateFrame, RotateSpace, RotateUnsupported};
 pub use scale_frame::{ScaleFrame, ScaleHandle, ScaleSpace, ScaleUnsupported};
+use session_material::SessionMaterials;
+pub use session_material::{
+    Lambert, MAX_SESSION_MATERIALS, MaterialChoice, SessionMaterialId, ShadingGroup,
+};
 use source::{ScalarOrigin, SourceFormat, SourceRetention, TransformField};
 pub use transform_extras::{InternalExtras, TransformExtras};
 
@@ -486,6 +491,7 @@ pub struct NativeScene {
     units: Units,
     source: Option<SourceRetention>,
     materials: Vec<appearance::MaterialDiffuse>,
+    session_materials: SessionMaterials,
     next_id: u64,
     next_native_id: u64,
 }
@@ -552,6 +558,7 @@ impl PartialEq for NativeScene {
             && self.units == other.units
             && self.source == other.source
             && self.materials == other.materials
+            && self.session_materials == other.session_materials
     }
 }
 
@@ -565,6 +572,7 @@ impl Default for NativeScene {
             units: Units::default(),
             source: None,
             materials: Vec::new(),
+            session_materials: SessionMaterials::default(),
             next_id: 1,
             next_native_id: 1,
         }
@@ -1117,6 +1125,7 @@ impl NativeScene {
             .collect();
         let node = self.nodes.remove(index);
         self.shapes.retain(|shape| !exclusive.contains(&shape.id));
+        self.session_materials.prune(&self.shapes);
         self.dag.retain(|edge| {
             edge.child != node.transform_id && edge.parent != Some(node.transform_id)
         });
@@ -1236,6 +1245,8 @@ impl NativeScene {
     }
     pub fn validate(&self) -> Result<(), NativeError> {
         self.validate_materials()?;
+        self.session_materials
+            .validate(&self.shapes, self.source.is_some())?;
         #[cfg(test)]
         FULL_VALIDATIONS.with(|count| count.set(count.get() + 1));
         let mut ids = std::collections::HashSet::new();
@@ -1431,6 +1442,10 @@ pub enum NativeError {
     NameCollision,
     UnsupportedEdit,
     ReadOnlyFormat,
+    UnknownSessionMaterial(SessionMaterialId),
+    SessionColorOutOfRange,
+    InitialSessionMaterialLocked,
+    InvalidSessionMaterials,
     UnsupportedMove(WorldMoveUnsupported),
     UnsupportedRotate(RotateUnsupported),
     UnsupportedScale(ScaleUnsupported),
@@ -1476,6 +1491,18 @@ impl fmt::Display for NativeError {
                 f.write_str("native ownership or edit effects are unsupported")
             }
             Self::ReadOnlyFormat => f.write_str("Maya ASCII scenes are read-only in this version"),
+            Self::UnknownSessionMaterial(id) => {
+                write!(f, "session material {} does not exist", id.index())
+            }
+            Self::InitialSessionMaterialLocked => {
+                f.write_str("the initial session material keeps the viewport base fill")
+            }
+            Self::SessionColorOutOfRange => {
+                f.write_str("session material colour channels must be within 0 through 1")
+            }
+            Self::InvalidSessionMaterials => {
+                f.write_str("invalid session material table references")
+            }
             Self::AbsentChannelLeaf { channel, component } => write!(
                 f,
                 "{} is absent from the Maya binary source and cannot be edited; leaf insertion is unsupported",

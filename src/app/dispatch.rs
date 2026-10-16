@@ -536,7 +536,7 @@ impl Editor {
             EditOutcome::Created(id) => OperationReply::Created {
                 node_id: id.to_decimal(),
             },
-            EditOutcome::Changed => OperationReply::Changed,
+            EditOutcome::Changed | EditOutcome::SessionMaterial(_) => OperationReply::Changed,
             EditOutcome::Unchanged => OperationReply::Unchanged,
         })
     }
