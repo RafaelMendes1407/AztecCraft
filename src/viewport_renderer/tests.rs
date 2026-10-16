@@ -2267,6 +2267,26 @@ fn wireframe_degrades_face_centres_instead_of_failing_the_frame_over_budget() {
     assert!(wire.centers.is_empty());
     assert!(!wire.lines.is_empty());
     assert!(!build(ShadingMode::SmoothShadeAll).centers_degraded);
+    let small = ViewScene::from_native(&cube(), VIEW_BUDGET).unwrap();
+    let small_instance = &small.instances()[0];
+    let small_submission = Submission::new(
+        &small,
+        &camera(0.01),
+        [SIZE; 2],
+        SelectionFeedback::Face {
+            active: Some((
+                small_instance.transform(),
+                &small_instance.path()[..small_instance.path().len() - 1],
+            )),
+            selected: None,
+        },
+        true,
+        ShadingMode::Wireframe,
+        FORMAT,
+        u64::MAX,
+    )
+    .unwrap();
+    assert!(!small_submission.centers_degraded);
     let surfaced = |shading| {
         renderer_handle()
             .callback(
