@@ -586,13 +586,22 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
             },
         )],
         Operation::Inspect => vec![sample("inspect", Operation::Inspect)],
-        Operation::Create { .. } => vec![sample(
-            "create(plane)",
-            Operation::Create {
-                primitive: Primitive::Plane,
-                name: None,
-            },
-        )],
+        Operation::Create { .. } => vec![
+            sample(
+                "create(plane)",
+                Operation::Create {
+                    primitive: Primitive::Plane,
+                    name: None,
+                },
+            ),
+            sample(
+                "create(sphere)",
+                Operation::Create {
+                    primitive: Primitive::Sphere,
+                    name: None,
+                },
+            ),
+        ],
         Operation::Select { .. } => vec![
             sample(
                 "select(node)",
