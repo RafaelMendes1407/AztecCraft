@@ -93,7 +93,12 @@ jobs:
       - name: Packaging tests
         run: python -m pytest -c packaging/pyproject.toml packaging/tests
       - name: Install pinned Rust
-        run: rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt
+        shell: bash
+        # Runner images sometimes ship a partial 1.99.0 install, so rustup reports
+        # "detected conflict: bin/cargo-clippy"; reinstall the toolchain once from scratch.
+        run: |
+          install() { rustup toolchain install 1.99.0 --profile minimal --component clippy,rustfmt; }
+          install || { rustup toolchain uninstall 1.99.0 && install; }
       - name: Format
         run: cargo +1.99.0 fmt --all -- --check
       - name: Vendored atomic format
