@@ -63,9 +63,11 @@ impl Editor {
         };
         let face_bytes = remembered_bytes(self.remembered_face.as_ref().map(|t| t.path.len()))?;
         let vertex_bytes = remembered_bytes(self.remembered_vertex.as_ref().map(|t| t.path.len()))?;
+        let edge_bytes = remembered_bytes(self.remembered_edge.as_ref().map(|t| t.path.len()))?;
         if path_bytes
             .checked_add(face_bytes)
             .and_then(|bytes| bytes.checked_add(vertex_bytes))
+            .and_then(|bytes| bytes.checked_add(edge_bytes))
             .is_none_or(|bytes| bytes > crate::editor_operations::MAX_RESULT_BYTES / 2)
         {
             return Err(OperationError::TooLarge);
@@ -287,6 +289,15 @@ impl Editor {
                     vertex_index: target.vertex_index,
                 }
             }),
+            remembered_edge: self
+                .remembered_edge
+                .as_ref()
+                .map(|target| EdgeSelectionTarget {
+                    node_id: target.transform.to_decimal(),
+                    shape_id: target.shape.to_decimal(),
+                    instance_path: target.path.iter().map(|id| id.to_decimal()).collect(),
+                    edge_index: target.edge_index,
+                }),
             face_selection_policy: FaceSelectionPolicy::VisibleCentersOnly,
             can_undo: self.history.can_undo(),
             can_redo: self.history.can_redo(),

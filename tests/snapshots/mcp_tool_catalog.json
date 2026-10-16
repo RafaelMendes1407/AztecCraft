@@ -258,7 +258,7 @@
   },
   {
     "name": "set_selection_mode",
-    "description": "Set Object, Face, Vertex or Hierarchy (Root sub-mask only) selection mode without editing the scene; a valid remembered face or vertex stays inactive outside its own mode",
+    "description": "Set Object, Face, Vertex, Edge or Hierarchy (Root sub-mask only) selection mode without editing the scene; a valid remembered face, vertex or edge stays inactive outside its own mode",
     "inputSchema": {
       "$defs": {
         "SelectionMode": {
@@ -266,7 +266,8 @@
             "object",
             "face",
             "hierarchy",
-            "vertex"
+            "vertex",
+            "edge"
           ],
           "type": "string"
         }
@@ -420,6 +421,73 @@
         "target"
       ],
       "title": "SelectVertexArgs",
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "select_edge",
+    "description": "Select a complete canonical edge target in Edge mode, or clear it with null; explicit targets need not be visible and select their owning instance",
+    "inputSchema": {
+      "$defs": {
+        "EdgeSelectionTarget": {
+          "additionalProperties": false,
+          "properties": {
+            "edge_index": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "instance_path": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 257,
+              "minItems": 2,
+              "type": "array"
+            },
+            "node_id": {
+              "type": "string"
+            },
+            "shape_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "node_id",
+            "shape_id",
+            "instance_path",
+            "edge_index"
+          ],
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "scene_token": {
+          "type": "string"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EdgeSelectionTarget"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "scene_token",
+        "target"
+      ],
+      "title": "SelectEdgeArgs",
       "type": "object"
     },
     "annotations": {

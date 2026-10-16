@@ -189,11 +189,12 @@ application policy.
 **Severity:** low
 **Area:** MCP inspection
 
-`Editor::inspect` adds the `remembered_face` and `remembered_vertex` path bytes
-to the path total before comparing against the inspection limit. The per-pick
-path cap (`MAX_TRANSFORM_DEPTH + 1`) is tested for the vertex. The aggregate
-sum term is not tested for either type (pre-existing for the face, now also for
-the vertex), so dropping it fails no test.
+`Editor::inspect` adds the `remembered_face`, `remembered_vertex` and
+`remembered_edge` path bytes to the path total before comparing against the
+inspection limit. The per-pick path cap (`MAX_TRANSFORM_DEPTH + 1`) is tested
+for the vertex and the edge. The aggregate sum term is not tested for any type
+(pre-existing for the face, now also for the vertex and the edge), so dropping
+it fails no test.
 
 ## Static ASCII curves have bounded read-only coverage
 
