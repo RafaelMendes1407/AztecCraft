@@ -739,6 +739,43 @@
     }
   },
   {
+    "name": "set_shading_mode",
+    "description": "Set the current viewport's shading mode explicitly to wireframe or smooth_shade_all. Session-only and idempotent; does not edit the scene, change picking or report GPU health",
+    "inputSchema": {
+      "$defs": {
+        "ShadingMode": {
+          "description": "Session-only viewport shading, like grid visibility; never saved or dirtying.",
+          "enum": [
+            "wireframe",
+            "smooth_shade_all"
+          ],
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/ShadingMode"
+        },
+        "scene_token": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "scene_token",
+        "mode"
+      ],
+      "title": "ShadingArgs",
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
     "name": "orbit_camera",
     "description": "Orbit the live camera by [yaw, pitch] radians; pitch clamps near the poles",
     "inputSchema": {

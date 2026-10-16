@@ -390,6 +390,13 @@ ambient floor (0.4) is chosen for legibility, not measured from Maya (provisiona
 receive only the ambient floor (no two-sided lighting, culling off), so an open plane looks dark
 from behind; Maya's two-sided default is unverified.
 
+## Wireframe shading keeps triangle picking
+
+Wireframe skips the surface fill but picking stays the CPU triangle ray test and face-center
+filter, so a click inside a face still selects it. Maya's Wireframe picks by edge or marquee.
+Edges are always drawn in Smooth Shade All (Maya's default is off). The 4 and 5 hotkeys and the
+Shading menu contents come from 2025 pages and are provisional for 2026.
+
 ## Rotate and Scale handle limits are provisional
 
 The Rotate ring angle comes from a ray-plane hit. Just above the edge-on limit

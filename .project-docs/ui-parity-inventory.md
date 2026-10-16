@@ -121,7 +121,7 @@ The viewport header at src/app.rs:1668-1684 shows the camera name, the selection
 | ViewCube | source not yet researched | Missing | absent from the viewport header at src/app.rs:1668-1684 | none | P2 | S8 Panels and quick layouts (#48 / #69) |
 | Heads-up display | source not yet researched | Missing | absent from the viewport header at src/app.rs:1668-1684 | none | P3 | S8 Panels and quick layouts (#48 / #69) |
 | Panel menu: View | [panelmenus] contents UNCONFIRMED | Missing | absent | none | P1 | S8 Panels and quick layouts (#48 / #69) |
-| Panel menu: Shading | [panelmenus] contents UNCONFIRMED | Missing | absent | none | P1 | S8 Panels and quick layouts (#48 / #69) |
+| Panel menu: Shading | [panelmenus] contents UNCONFIRMED | Partial | src/app/panels.rs Shading menu: Wireframe and Smooth Shade All work; Wireframe on Shaded and Use Default Material are disabled rows with a reason | `set_shading_mode` | P1 | S8 Panels and quick layouts (#48 / #69) |
 | Panel menu: Lighting | [panelmenus] contents UNCONFIRMED | Missing | absent | none | P2 | S8 Panels and quick layouts (#48 / #69) |
 | Panel menu: Show | [panelmenus] contents UNCONFIRMED | Missing | absent | none | P2 | S8 Panels and quick layouts (#48 / #69) |
 | Panel menu: Renderer | [panelmenus] contents UNCONFIRMED | Missing | absent | none | P3 | S8 Panels and quick layouts (#48 / #69) |
@@ -130,7 +130,7 @@ The viewport header at src/app.rs:1668-1684 shows the camera name, the selection
 | Panel Toolbar group: View (Select Camera, Lock Camera, Bookmarks, Image Plane, 2D Pan/Zoom, Blue Pencil) | [paneltoolbar] | Missing | only the camera name label at src/app.rs:1670 | `orbit_camera`, `pan_camera`, `dolly_camera`, `frame_selected` | P2 | S8 Panels and quick layouts (#48 / #69) |
 | Panel Toolbar group: Camera Settings, Grid | [paneltoolbar] | Supported | src/app.rs:1676-1681 "Grid" (Grid toggle) | `set_grid_visibility` | P1 | S8 Panels and quick layouts (#48 / #69) |
 | Panel Toolbar group: Camera Settings, others (Film Gate, Resolution Gate, Gate Mask, Field Chart, Safe Action, Safe Title) | [paneltoolbar] | Missing | absent | none | P3 | S8 Panels and quick layouts (#48 / #69) |
-| Panel Toolbar group: Shading (Wireframe, Smooth Shade All, Default Material, Wireframe on Shaded, Textured) | [paneltoolbar] | Missing | absent | none | P1 | S8 Panels and quick layouts (#48 / #69) |
+| Panel Toolbar group: Shading (Wireframe, Smooth Shade All, Default Material, Wireframe on Shaded, Textured) | [paneltoolbar] | Partial | one Shading menu in the panel header (not a toolbar group); Wireframe and Smooth Shade All only; hotkeys 4 and 5 are PROVISIONAL (2025 page); 6 and 7 report unsupported | `set_shading_mode` | P1 | S8 Panels and quick layouts (#48 / #69) |
 | Panel Toolbar group: Lighting (Use All Lights, Shadows) | [paneltoolbar] | Missing | absent | none | P3 | S8 Panels and quick layouts (#48 / #69) |
 | Panel Toolbar group: Isolate Select | [paneltoolbar] | Missing | absent | none | P2 | S8 Panels and quick layouts (#48 / #69) |
 | Panel Toolbar group: Viewport 2.0 effects (SSAO, Motion blur, MSAA, Depth of field) | [paneltoolbar] | Missing | absent | none | P3 | S8 Panels and quick layouts (#48 / #69) |

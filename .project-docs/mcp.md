@@ -74,6 +74,7 @@ Call `inspect_scene` first. Every other tool requires `scene_token`, a UUID stri
 | `redo` | None | Changed or unchanged history state |
 | `frame_selected` | None | Frames the selected object in Object mode or selected face corners in Face mode; no active face returns `no_selection` |
 | `set_grid_visibility` | `visible`: required boolean | Changed or unchanged grid visibility in this window's viewport |
+| `set_shading_mode` | `mode`: required, `"wireframe"` or `"smooth_shade_all"` | Changed or unchanged shading mode in this window's viewport |
 | `set_sidebar_panel_visibility` | `panel`: required, `"channel_box"` or `"attribute_editor"`; `visible`: required boolean | Changed or unchanged visibility of that sidebar panel in this window; the dock shows one panel, so showing one hides the other |
 | `select_attribute_editor_tab` | `tab`: required `{kind, id}`; `kind`: `"transform"`, `"shape"` or `"material"`; `id`: decimal id (the selected node for `transform`, a direct shape for `shape` and `material`) | Changed or unchanged Attribute Editor tab; refused as `invalid_input` unless `attribute_editor` is the active panel or when the tab does not resolve for the current selection |
 | `orbit_camera` | `radians`: two finite numbers, yaw and pitch deltas | Changed or unchanged camera; pitch clamps near the poles |
@@ -199,6 +200,20 @@ draft; remote setters reject drafts through the ordinary shared guards.
 The fixed XZ grid retains its existing extent, spacing and colors. Grid settings,
 global or additional panels, persistence and a default shortcut are unsupported.
 This scope does not establish Maya grid appearance or behavior parity.
+
+`set_shading_mode` requires the current scene token and an explicit `mode` of
+`wireframe` or `smooth_shade_all`; other strings (including `default_material`),
+null, numbers and unknown fields refuse. Repeating a mode returns unchanged.
+Inspection reports authoritative `shading` even without a GPU. The setting starts
+`smooth_shade_all`, survives New/Open and belongs to this viewport's session. It
+does not edit NativeScene, create an undo entry, mark the document dirty or change
+its token. It shares the Grid guards: stale token, differing draft, text focus,
+modal, closing and an active Move refuse. Wireframe skips only the surface fill:
+picking and face-center selection are unchanged, so Maya's edge/marquee Wireframe
+picking is not reproduced. Wireframe on Shaded, Use Default Material, textured
+shading and lights are unsupported and have no mode value. Native hotkeys 4 and 5
+(provisional source) select the modes; 6 and 7 only set a status message. This scope
+does not establish Maya shading or lighting parity.
 
 `set_sidebar_panel_visibility` requires the current scene token, a `panel` and an
 explicit JSON boolean `visible`. `panel` accepts `channel_box` and `attribute_editor`; any other
@@ -369,6 +384,7 @@ Nine verified tools establish the initial server foundation, not catch-up with e
 | Native Tool Box Lasso, Paint Selection, Rotate, Scale and Last Used | Visibly disabled and unsupported in the native UI ("not implemented yet" hover text); no operation and no MCP tool, and none is advertised. Last Used dynamic behaviour is also unsupported |
 | Interactive camera orbit/pan/dolly | Three navigation tools use the same typed operations as native captured gestures; live camera state is inspectable |
 | Viewport Grid visibility | `set_grid_visibility` shares the checkable native Grid button's typed setter; `grid_visible` exposes the authoritative session state. Fixed grid only; options, global/additional panels and persistence are unsupported |
+| Viewport Shading (Wireframe, Smooth Shade All) | `set_shading_mode` shares the native Shading menu's typed setter; `shading` exposes the authoritative session state. Wireframe on Shaded, Use Default Material, Shaded + Textured and Use All Lights are visibly unsupported and have no tool or mode value |
 | Status Line sidebar and selection toggles | The Channel Box and Attribute Editor toggles are supported through `set_sidebar_panel_visibility` (state in `inspect_scene` `sidebar_panels`); the Hierarchy (Root sub-mask only), Object and Component selection modes use `set_selection_mode` (Component is Face). The menu-set selector is native-only and has no state, so no tool (only Modeling is active). The selection mode menu (presets) is native-only, disabled, stateless and has no tool. Modeling Toolkit, HumanIK and Tool Settings are visibly unsupported and have no tool |
 | Attribute Editor panel, tabs and Ctrl+A | The panel (transform, direct shape and material tabs; Transform tab shares the Channel Box drafts and edits) is switched by `set_sidebar_panel_visibility` and its tab by `select_attribute_editor_tab`; state is `sidebar_panels.attribute_editor` and `attribute_editor_tab`. Transform and Diffuse edits use `edit_node`, `set_transform` and `set_material_diffuse`. Pin Tab, connected-node tabs, Notes, Extra Attributes, Add/Show/Hide Attributes, Presets and the other attribute sections are visibly unsupported and have no tool; Ctrl+A is a native key event dispatching the same setter |
 | Status Line file buttons | New, Open and Save use the existing `new_scene`, `open_scene` and `save_scene` tools; the buttons and the File menu share one native handler. Save As has no strip button |
@@ -404,7 +420,7 @@ directly, with one checked conversion for declared SDK distances.
 During a gesture, inspection reads the live authoritative preview. Unrelated
 remote mutations, Save, Undo/Redo and camera operations return
 `busy_manipulation`. Only matching remote-owned updates/finish are accepted;
-remote calls cannot finish a native drag. Viewport Grid visibility, sidebar panel visibility, selection mode and
+remote calls cannot finish a native drag. Viewport Grid visibility, shading mode, sidebar panel visibility, selection mode and
 Face selection are likewise refused with `busy_manipulation` while any Move is
 active. Human Escape, tool/selection/selection-mode/lifecycle
 changes cancel a native drag before their existing native guard path. Move is
