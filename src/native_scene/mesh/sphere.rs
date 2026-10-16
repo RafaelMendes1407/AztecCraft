@@ -1,4 +1,4 @@
-use super::{DirectedEdge, NativeFace, NativeMesh, Points};
+use super::NativeMesh;
 use std::f64::consts::PI;
 
 // PROVISIONAL (#5): radius 1 and 20x20 are the polySphere node defaults; Maya 2026 is unverified.
@@ -54,22 +54,6 @@ impl NativeMesh {
                 vertex(HEIGHT_DIVISIONS - 1, column + 1),
             ]);
         }
-        let mut mesh = Self {
-            point_offsets: Vec::new(),
-            points: Points::Float3(points),
-            edges: Vec::new(),
-            faces: Vec::new(),
-            unsupported_channels: Vec::new(),
-        };
-        for corners in loops {
-            let outer: Vec<DirectedEdge> = (0..corners.len())
-                .map(|i| mesh.edge([corners[i], corners[(i + 1) % corners.len()]]))
-                .collect();
-            mesh.faces.push(NativeFace {
-                outer,
-                holes: Vec::new(),
-            });
-        }
-        mesh
+        Self::from_loops(points, loops)
     }
 }

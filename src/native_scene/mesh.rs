@@ -319,6 +319,26 @@ impl NativeMesh {
         }
         native
     }
+    /// Closed polygon mesh from `f32` points and vertex loops; edges are shared and hard.
+    fn from_loops(points: Vec<[f32; 3]>, loops: Vec<Vec<usize>>) -> Self {
+        let mut mesh = Self {
+            point_offsets: Vec::new(),
+            points: Points::Float3(points),
+            edges: Vec::new(),
+            faces: Vec::new(),
+            unsupported_channels: Vec::new(),
+        };
+        for corners in loops {
+            let outer: Vec<DirectedEdge> = (0..corners.len())
+                .map(|i| mesh.edge([corners[i], corners[(i + 1) % corners.len()]]))
+                .collect();
+            mesh.faces.push(NativeFace {
+                outer,
+                holes: Vec::new(),
+            });
+        }
+        mesh
+    }
     fn edge(&mut self, endpoints: [usize; 2]) -> DirectedEdge {
         for (edge, existing) in self.edges.iter().enumerate() {
             if existing.endpoints == endpoints {
