@@ -5,7 +5,8 @@ use crate::{
 mod move_transaction;
 use move_transaction::MoveTransaction;
 pub use move_transaction::{
-    ManipulationError, ManipulationFinish, ManipulationId, ManipulationProvenance, MoveState,
+    ManipulationError, ManipulationFinish, ManipulationId, ManipulationKindState,
+    ManipulationProvenance, ManipulationState,
 };
 
 #[derive(Clone, Debug)]

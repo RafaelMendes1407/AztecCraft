@@ -169,13 +169,6 @@ impl ObjectRotateFrame {
 }
 
 impl NativeScene {
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "wired into History::begin_rotate in the next commit"
-        )
-    )]
     pub(crate) fn begin_object_rotation(
         &self,
         target: &TransformTarget,

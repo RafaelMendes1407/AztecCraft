@@ -1,5 +1,5 @@
 use super::*;
-use crate::native_scene::{NativeTransform, binary, test_fixtures};
+use crate::native_scene::{NativeTransform, RotateUnsupported, binary, test_fixtures};
 use crate::scene::Primitive;
 
 mod wire {
@@ -282,7 +282,14 @@ fn nested_stale_and_wrong_owner_requests_leave_the_matching_gesture_untouched() 
         Err(ManipulationError::WrongOwner)
     );
     assert_eq!(history.scene, preview);
-    assert_eq!(history.active_manipulation().unwrap().distance_cm, 2.0);
+    assert_eq!(
+        history
+            .active_manipulation()
+            .unwrap()
+            .move_distance_cm()
+            .unwrap(),
+        2.0
+    );
     assert!(history.undo.is_empty() && history.redo.is_empty());
     history.cancel_active_move().unwrap();
     assert_eq!(
@@ -312,7 +319,14 @@ fn failed_numeric_or_view_preview_preserves_the_exact_previous_preview() {
         Err(ManipulationError::View(ViewError::NonFiniteWorld))
     );
     assert_eq!(history.scene, preview);
-    assert_eq!(history.active_manipulation().unwrap().distance_cm, 1.25);
+    assert_eq!(
+        history
+            .active_manipulation()
+            .unwrap()
+            .move_distance_cm()
+            .unwrap(),
+        1.25
+    );
     assert!(history.undo.is_empty() && history.redo.is_empty());
     history
         .finish_move(
@@ -616,7 +630,10 @@ fn remote_owned_move_can_only_finish_by_remote_owner_or_human_cancellation() {
         ),
         Err(ManipulationError::WrongOwner)
     );
-    assert_eq!(history.active_manipulation().unwrap().axis, WorldAxis::Z);
+    assert_eq!(
+        history.active_manipulation().unwrap().move_axis().unwrap(),
+        WorldAxis::Z
+    );
     assert_eq!(
         history.active_manipulation().unwrap().provenance,
         ManipulationProvenance::Remote
@@ -652,4 +669,180 @@ fn new_history_and_fresh_scene_token_reject_the_old_token_id_pair() {
         Err(ManipulationError::StaleScene)
     );
     replacement.cancel_active_move().unwrap();
+}
+
+fn start_rotate(history: &mut History, axis: RotateAxis, token: Uuid) -> ManipulationId {
+    history
+        .begin_rotate(
+            &target(history),
+            axis,
+            token,
+            ManipulationProvenance::Native,
+            BUDGET,
+        )
+        .unwrap()
+}
+
+fn rotation(history: &History) -> [f64; 3] {
+    history
+        .scene
+        .node(target(history).node)
+        .unwrap()
+        .transform()
+        .rotation
+}
+
+#[test]
+fn rotate_previews_make_exactly_one_undo_and_leave_other_channels_alone() {
+    let mut history = cube_history();
+    let original = history.scene.clone();
+    let token = Uuid::new_v4();
+    let id = start_rotate(&mut history, RotateAxis::Z, token);
+    let active = history.active_manipulation().unwrap();
+    assert_eq!(
+        active.kind,
+        ManipulationKindState::Rotate {
+            axis: RotateAxis::Z
+        }
+    );
+    assert_eq!((active.parameter, active.move_axis()), (0.0, None));
+    for degrees in [10.0, -35.0, 80.0] {
+        history
+            .update_move(token, id, ManipulationProvenance::Native, degrees)
+            .unwrap();
+        assert!((rotation(&history)[2] - degrees).abs() < 1e-9);
+        assert!(history.undo.is_empty());
+    }
+    let preview = history.scene.clone();
+    assert_eq!(
+        history
+            .finish_move(
+                token,
+                id,
+                ManipulationProvenance::Native,
+                ManipulationFinish::Commit
+            )
+            .unwrap(),
+        EditOutcome::Changed
+    );
+    assert_eq!(history.scene, preview);
+    assert_eq!(history.undo.len(), 1);
+    assert!(history.undo());
+    assert_eq!(history.scene, original);
+    assert!(history.redo());
+    assert_eq!(history.scene, preview);
+}
+
+#[test]
+fn rotate_shares_token_owner_stale_and_busy_guards_and_cancels_exactly() {
+    let mut history = cube_history();
+    let original = history.scene.clone();
+    let token = Uuid::new_v4();
+    let id = start_rotate(&mut history, RotateAxis::X, token);
+    let again = history.begin_rotate(
+        &target(&history),
+        RotateAxis::Y,
+        token,
+        ManipulationProvenance::Native,
+        BUDGET,
+    );
+    assert_eq!(again, Err(ManipulationError::Busy));
+    let moving = history.begin_move(
+        &target(&history),
+        WorldAxis::X,
+        token,
+        ManipulationProvenance::Native,
+        BUDGET,
+    );
+    assert_eq!(moving, Err(ManipulationError::Busy));
+    let other = ManipulationId(id.0 + 1);
+    for (scene_token, id, provenance, expected) in [
+        (
+            Uuid::new_v4(),
+            id,
+            ManipulationProvenance::Native,
+            ManipulationError::StaleScene,
+        ),
+        (
+            token,
+            other,
+            ManipulationProvenance::Native,
+            ManipulationError::StaleManipulation,
+        ),
+        (
+            token,
+            id,
+            ManipulationProvenance::Remote,
+            ManipulationError::WrongOwner,
+        ),
+    ] {
+        assert_eq!(
+            history.update_move(scene_token, id, provenance, 5.0),
+            Err(expected)
+        );
+        assert!(history.active_manipulation().is_some());
+    }
+    history
+        .update_move(token, id, ManipulationProvenance::Native, 25.0)
+        .unwrap();
+    assert_eq!(history.cancel_active_move().unwrap(), EditOutcome::Changed);
+    assert_eq!(history.scene, original);
+    assert!(history.active_manipulation().is_none() && history.undo.is_empty());
+}
+
+#[test]
+fn rotate_refusal_in_drag_keeps_the_last_valid_preview() {
+    let mut history = cube_history();
+    let token = Uuid::new_v4();
+    let id = start_rotate(&mut history, RotateAxis::Y, token);
+    history
+        .update_move(token, id, ManipulationProvenance::Native, 30.0)
+        .unwrap();
+    let preview = history.scene.clone();
+    for refused in [90.0, f64::NAN, 1e308] {
+        assert!(
+            history
+                .update_move(token, id, ManipulationProvenance::Native, refused)
+                .is_err()
+        );
+        assert_eq!(history.scene, preview);
+        assert_eq!(history.active_manipulation().unwrap().parameter, 30.0);
+    }
+    history
+        .update_move(token, id, ManipulationProvenance::Native, 0.0)
+        .unwrap();
+    assert_eq!(
+        history
+            .finish_move(
+                token,
+                id,
+                ManipulationProvenance::Native,
+                ManipulationFinish::Commit
+            )
+            .unwrap(),
+        EditOutcome::Unchanged
+    );
+    assert!(history.undo.is_empty());
+}
+
+#[test]
+fn refused_rotate_begin_consumes_no_id_and_leaves_no_transaction() {
+    let mut history = History::new(test_fixtures::pivoted_shape().0);
+    let before = history.scene.clone();
+    let result = history.begin_rotate(
+        &target(&history),
+        RotateAxis::X,
+        Uuid::new_v4(),
+        ManipulationProvenance::Native,
+        BUDGET,
+    );
+    assert!(matches!(
+        result,
+        Err(ManipulationError::Native(NativeError::UnsupportedRotate(
+            RotateUnsupported::SelectedPivot
+        )))
+    ));
+    assert!(history.active_manipulation().is_none());
+    assert_eq!(history.next_manipulation_id, 0);
+    assert_eq!(history.scene, before);
 }
