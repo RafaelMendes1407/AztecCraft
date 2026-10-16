@@ -387,6 +387,7 @@ pub struct SceneInspection {
     pub grid_visible: bool,
     pub shading: ShadingMode,
     pub face_centres_hidden: bool,
+    pub vertex_markers_hidden: bool,
     pub sidebar_panels: SidebarPanelsInspection,
     pub attribute_editor_tab: Option<AttributeEditorTabInspection>,
     pub depth_complete: bool,

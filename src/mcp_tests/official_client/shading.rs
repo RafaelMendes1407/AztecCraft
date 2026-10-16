@@ -127,10 +127,9 @@ async fn sdk_shading_mode_is_idempotent_session_only_and_guarded() {
     server.await.unwrap();
 }
 
-#[tokio::test]
-async fn sdk_inspection_reports_face_centres_hidden_for_an_over_budget_wireframe_frame() {
-    let context = egui::Context::default();
-    let (mut editor, client, server) = start(&context).await;
+/// A cube extruded 200 times so a Wireframe occlusion check over its faces or vertices exceeds
+/// the 1,000,000 intersection budget.
+fn over_budget_editor(editor: &mut Editor) {
     editor.renderer = Some(crate::viewport_renderer::tests::renderer_handle());
     editor.create(Primitive::Cube);
     let shape = editor.history.scene().shapes()[0].id();
@@ -153,17 +152,26 @@ async fn sdk_inspection_reports_face_centres_hidden_for_an_over_budget_wireframe
             })
             .unwrap();
     }
+}
+
+fn hidden_flags(editor: &mut Editor) -> [serde_json::Value; 2] {
+    let inspection = serde_json::to_value(editor.inspect(false).unwrap()).unwrap();
+    ["face_centres_hidden", "vertex_markers_hidden"].map(|key| inspection[key].clone())
+}
+
+#[tokio::test]
+async fn sdk_inspection_reports_face_centres_hidden_for_an_over_budget_wireframe_frame() {
+    let context = egui::Context::default();
+    let (mut editor, client, server) = start(&context).await;
+    over_budget_editor(&mut editor);
     editor.selection_mode = SelectionMode::Face;
-    let hidden = |editor: &mut Editor| {
-        serde_json::to_value(editor.inspect(false).unwrap()).unwrap()["face_centres_hidden"].clone()
-    };
     frame(&mut editor, &context, vec![]);
-    assert_eq!(hidden(&mut editor), false);
+    assert_eq!(hidden_flags(&mut editor), [false, false]);
     editor
         .apply_operation(Operation::SetShadingMode(ShadingMode::Wireframe))
         .unwrap();
     frame(&mut editor, &context, vec![]);
-    assert_eq!(hidden(&mut editor), true);
+    assert_eq!(hidden_flags(&mut editor), [true, false]);
     let inspected = call(
         &mut editor,
         &context,
@@ -175,11 +183,44 @@ async fn sdk_inspection_reports_face_centres_hidden_for_an_over_budget_wireframe
     .structured_content
     .unwrap();
     assert_eq!(inspected["inspection"]["face_centres_hidden"], true);
+    assert_eq!(inspected["inspection"]["vertex_markers_hidden"], false);
     editor
         .apply_operation(Operation::SetShadingMode(ShadingMode::SmoothShadeAll))
         .unwrap();
     frame(&mut editor, &context, vec![]);
-    assert_eq!(hidden(&mut editor), false);
+    assert_eq!(hidden_flags(&mut editor), [false, false]);
+    drop(client);
+    let _ = server.await;
+}
+
+#[tokio::test]
+async fn sdk_inspection_reports_vertex_markers_hidden_for_an_over_budget_wireframe_frame() {
+    let context = egui::Context::default();
+    let (mut editor, client, server) = start(&context).await;
+    over_budget_editor(&mut editor);
+    editor.selection_mode = SelectionMode::Vertex;
+    frame(&mut editor, &context, vec![]);
+    assert_eq!(hidden_flags(&mut editor), [false, false]);
+    editor
+        .apply_operation(Operation::SetShadingMode(ShadingMode::Wireframe))
+        .unwrap();
+    frame(&mut editor, &context, vec![]);
+    assert_eq!(hidden_flags(&mut editor), [false, true]);
+    let inspected = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "inspect_scene",
+        json!({}),
+    )
+    .await
+    .structured_content
+    .unwrap();
+    assert_eq!(inspected["inspection"]["face_centres_hidden"], false);
+    assert_eq!(inspected["inspection"]["vertex_markers_hidden"], true);
+    editor.selection_mode = SelectionMode::Face;
+    frame(&mut editor, &context, vec![]);
+    assert_eq!(hidden_flags(&mut editor), [true, false]);
     drop(client);
     let _ = server.await;
 }

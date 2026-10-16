@@ -171,18 +171,49 @@ pinned popup routing; separate menu+F8 and F11+F8+viewport-click tests do not pr
 that combined journey. Native window, other-platform input and Maya comparison
 remain separate verification requirements. See [selection policy](.project-docs/development.md#face-center-selection).
 
-## Vertex and Edge picking constants are provisional
+## Vertex and Edge picking and drawing constants are provisional
 
 **Severity:** low
 **Area:** component input and viewport
 
-`Camera::pick_vertex` and `pick_edge` exist, but no native control or MCP tool
-reaches them yet (#29). The 10 px vertex click box, the 6 px edge click distance
-and the 1e-4 relative view-depth tolerance shared by vertex and edge visibility
-are original provisional values, not verified Maya defaults; Maya's click
-tolerance and preselection defaults are UNCONFIRMED for 2026. Candidates are
-ranked by pointer distance, then depth, then source order, which is also an
-application policy.
+`Camera::pick_vertex` and `pick_edge` exist, and the viewport can draw vertex markers
+and Edge-mode edges, but no native control reaches them yet (#29; MCP selects them).
+The 10 px vertex click box, the 6 px edge click distance, the 5 px vertex marker, the
+3 px selected-edge strip and the depth tolerance below are original provisional values,
+not verified Maya defaults; Maya's click tolerance and preselection defaults are
+UNCONFIRMED for 2026. Colours follow only the Maya 2026 colour words (purple-ish
+vertex, highlighted when selected, light-blue edge, light-orange selected edge) with
+original RGB values. Candidates are ranked by pointer distance, then depth, then
+source order, which is also an application policy. In Vertex and Edge modes component
+feedback replaces Object feedback, so the selected object's faces are not tinted and
+selected curves are not highlighted.
+
+The vertex and edge depth tolerance is the flat constant `VERTEX_MARKER_DEPTH_TOLERANCE`
+= 6e-3. Its unit is a relative fraction of the linear view depth, the distance along the
+view axis from the eye: marker bias moves a point toward the eye by that fraction of its
+eye distance, and occlusion treats a hit as blocking only when its linear view depth is
+below `depth * (1 - 6e-3)`. It is neither normalized device depth nor world units. Marker
+bias, selected-edge strip bias, Wireframe marker filtering and pick occlusion share it, so
+draw and pick agree; the face centre keeps 1e-4. Readbacks (Apple M1 Pro, Metal, side-2
+cube at the origin, near 0.01, far 10000, yaw 0.6, pitch 0.4, 1024 px square, 45 degree
+fov): every corner with a front-facing face showed all 25 marker pixels and no hidden
+corner drew at the default distance 8 and at 120 for tolerances 6e-3 through 8e-3; 5e-3
+left one silhouette corner at 20/25, and 2e-2 let a hidden corner show at 120, so the
+margin is thin. Those numbers come from the Apple M1 Pro Metal adapter only. CI's
+software Vulkan job runs the GPU tests, but it was not used to choose or bracket this
+value; other adapters were not run. Limits: the tolerance is relative to distance, so
+plates thinner than about 0.05 units at the default distance 8 (6e-3 times 8) can show,
+or let a click pick, the vertex behind them; objects only a few px across can have a
+hidden corner picked; and at distances beyond about 500 a flat 6e-3 under-covers the
+Depth32Float resolution (no readback needed more at d=120 or d=300 with small-object
+runs, but the buffer's relative resolution grows with distance). A pixel-derived bias is
+the planned follow-up (#135).
+
+Wireframe hides occluded vertex markers like face centres, but draws the selected edge
+and every edge through surfaces. When that check is over budget `vertex_markers_hidden`
+(Vertex mode) or `face_centres_hidden` (Face mode) is true. The renderer draws every
+`ViewInstance` edge; the bin crate has no loose-edge fixture, so the face-less case is
+covered by the carried edge list and the picker tests, not pixels.
 
 ## Inspection budget for remembered component paths lacks a regression test
 

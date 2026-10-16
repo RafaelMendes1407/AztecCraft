@@ -155,7 +155,7 @@ fn near(a: f32, b: f32) -> Vec2 {
 #[test]
 fn depth_tolerances_are_pinned_independently() {
     assert_eq!(FACE_CENTER_DEPTH_TOLERANCE, 1e-4);
-    assert_eq!(VERTEX_MARKER_DEPTH_TOLERANCE, 1e-4);
+    assert_eq!(VERTEX_MARKER_DEPTH_TOLERANCE, 6e-3);
 }
 
 #[test]
@@ -208,11 +208,118 @@ fn vertex_pick_skips_an_occluded_vertex_and_uses_its_own_tolerance() {
         (-0.5, None),
         (0.5, Some(4)),
         (-0.0003, Some(4)),
-        (-0.0015, None),
+        (-0.0015, Some(4)),
+        (-0.02, Some(4)),
+        (-0.05, None),
     ] {
         let fixture = Fixture::new(quad(z), &[vec![0, 1, 2, 3]], &[]);
         assert_eq!(fixture.vertex_at(fixture.vertex(4)), Ok(expected), "z {z}");
     }
+}
+
+#[test]
+fn vertex_and_face_center_picks_read_their_own_depth_tolerance() {
+    // A wide quad at z = 0 and, `gap` behind it and far from its centre, a triangle whose vertex
+    // 4 and centre are both occluded by the quad's surface.
+    for (gap, vertex, face) in [
+        (0.00025, Some(4), Some(1)),
+        (0.0015, Some(4), None),
+        (0.05, None, None),
+    ] {
+        let points = vec![
+            world(-280.0, -250.0, 0.0),
+            world(280.0, -250.0, 0.0),
+            world(280.0, 250.0, 0.0),
+            world(-280.0, 250.0, 0.0),
+            world(200.0, 0.0, -gap),
+            world(240.0, 0.0, -gap),
+            world(220.0, 40.0, -gap),
+        ];
+        let fixture = Fixture::new(points.clone(), &[vec![0, 1, 2, 3], vec![4, 5, 6]], &[]);
+        assert_eq!(
+            fixture.vertex_at(fixture.vertex(4)),
+            Ok(vertex),
+            "gap {gap}"
+        );
+        let center = pixel_of(
+            (0..3)
+                .map(|i| fixture.view.instances()[0].world_vertices()[4 + i])
+                .sum::<Vec3>()
+                / 3.0,
+        );
+        let picked = camera()
+            .pick_face_center(
+                &fixture.view,
+                Some((fixture.owner, &fixture.path)),
+                center,
+                SIZE,
+                1.0,
+            )
+            .map(|target| target.map(|target| target.face_index));
+        assert_eq!(picked, Ok(face), "gap {gap}");
+    }
+}
+
+/// Quad plate at z = 0 and a loose vertex `gap` behind it, seen from `distance`: the picked
+/// vertex index at the vertex's own pixel.
+fn pick_behind_plate(distance: f32, gap: f32) -> Result<Option<usize>, ViewError> {
+    let camera = Camera::new(
+        Vec3::ZERO,
+        0.0,
+        0.0,
+        distance,
+        45_f32.to_radians(),
+        0.01,
+        10_000.0,
+    )
+    .unwrap();
+    let half = distance * 0.2;
+    let points = [
+        [-half, -half, 0.0],
+        [half, -half, 0.0],
+        [half, half, 0.0],
+        [-half, half, 0.0],
+        [0.0, 0.0, -gap],
+    ]
+    .map(|point: [f32; 3]| point.map(f64::from))
+    .to_vec();
+    let fixture = Fixture::new(points, &[vec![0, 1, 2, 3]], &[]);
+    let ndc = camera.project(Vec3::new(0.0, 0.0, -gap), 800.0 / 600.0);
+    let ndc = ndc.unwrap().unwrap();
+    let pointer = Vec2::new(ndc.x + 1.0, 1.0 - ndc.y) * 0.5 * Vec2::new(800.0, 600.0);
+    camera
+        .pick_vertex(
+            &fixture.view,
+            Some((fixture.owner, &fixture.path)),
+            pointer,
+            SIZE,
+            1.0,
+        )
+        .map(|target| target.map(|target| target.vertex_index))
+}
+
+#[test]
+fn a_thin_plate_in_front_of_a_vertex_hides_it_near_and_far() {
+    // The slack is the flat tolerance * distance, so the gaps are set relative to it: half of it
+    // the vertex counts as visible, twice it is hidden.
+    for distance in [5.0_f32, 120.0, 500.0] {
+        let slack = VERTEX_MARKER_DEPTH_TOLERANCE * distance;
+        for (gap, expected) in [(slack * 0.5, Some(4)), (slack * 2.0, None)] {
+            assert_eq!(
+                pick_behind_plate(distance, gap),
+                Ok(expected),
+                "distance {distance} gap {gap}"
+            );
+        }
+    }
+}
+
+#[test]
+fn plate_thickness_at_the_default_distance_is_pinned_in_absolute_units() {
+    // Independent of the tolerance constant: at distance 8, 0.1 units hides the vertex and 0.02
+    // does not.
+    assert_eq!(pick_behind_plate(8.0, 0.1), Ok(None));
+    assert_eq!(pick_behind_plate(8.0, 0.02), Ok(Some(4)));
 }
 
 #[test]
