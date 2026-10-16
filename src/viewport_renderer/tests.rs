@@ -2267,4 +2267,23 @@ fn wireframe_degrades_face_centres_instead_of_failing_the_frame_over_budget() {
     assert!(wire.centers.is_empty());
     assert!(!wire.lines.is_empty());
     assert!(!build(ShadingMode::SmoothShadeAll).centers_degraded);
+    let surfaced = |shading| {
+        renderer_handle()
+            .callback(
+                &view,
+                &camera(0.01),
+                Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::splat(128.0)),
+                [SIZE; 2],
+                SelectionFeedback::Face {
+                    active: Some(active),
+                    selected: None,
+                },
+                true,
+                shading,
+            )
+            .unwrap()
+            .1
+    };
+    assert!(surfaced(ShadingMode::Wireframe));
+    assert!(!surfaced(ShadingMode::SmoothShadeAll));
 }
