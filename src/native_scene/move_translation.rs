@@ -3,12 +3,12 @@ use glam::DMat3;
 use std::sync::Arc;
 
 const MAX_PARENT_CONDITION: f64 = 1e12;
-const ROUNDTRIP_EPSILON: f64 = 128.0 * f64::EPSILON;
+pub(super) const ROUNDTRIP_EPSILON: f64 = 128.0 * f64::EPSILON;
 // A move is refused when the stored translation cannot resolve it to about one part in 2^20.
-const MIN_RESOLUTION: f64 = 1.0 / 1_048_576.0;
+pub(super) const MIN_RESOLUTION: f64 = 1.0 / 1_048_576.0;
 
 // Upper bound of the spacing between f64 values near `value`.
-fn ulp_bound(value: f64) -> f64 {
+pub(super) fn ulp_bound(value: f64) -> f64 {
     value.abs().max(f64::MIN_POSITIVE) * f64::EPSILON
 }
 
@@ -74,7 +74,9 @@ pub struct WorldMoveFrame {
     absent_leaf: [bool; 3],
 }
 
-pub(crate) struct MoveTranslationBaseline {
+// Exact scalars of one transform field (translate, rotate or scale) captured at begin or preview.
+pub(crate) struct ChannelBaseline {
+    field: TransformField,
     node: NodeId,
     owner: NativeId,
     scalars: [Scalar; 3],
@@ -173,25 +175,32 @@ impl NativeScene {
         &self,
         target: &TransformTarget,
         axis: WorldAxis,
-    ) -> Result<(WorldMoveFrame, MoveTranslationBaseline), NativeError> {
+    ) -> Result<(WorldMoveFrame, ChannelBaseline), NativeError> {
         let frame = self.world_move_frame(target)?;
         frame.require_leaves(axis)?;
         let node = self.node(target.node)?;
         Ok((
             frame,
-            MoveTranslationBaseline {
-                node: target.node,
-                owner: node.transform_id,
-                scalars: std::array::from_fn(|component| node.channels[component].clone()),
-                source: self.source.as_ref().map(|source| source.bytes.clone()),
-            },
+            self.channel_baseline(node, TransformField::Translation),
         ))
     }
 
-    fn move_translation_owner(
+    pub(super) fn channel_baseline(
         &self,
-        baseline: &MoveTranslationBaseline,
-    ) -> Result<usize, NativeError> {
+        node: &NativeTransformNode,
+        field: TransformField,
+    ) -> ChannelBaseline {
+        let start = field_start(field);
+        ChannelBaseline {
+            field,
+            node: node.id,
+            owner: node.transform_id,
+            scalars: std::array::from_fn(|component| node.channels[start + component].clone()),
+            source: self.source.as_ref().map(|source| source.bytes.clone()),
+        }
+    }
+
+    fn channel_owner(&self, baseline: &ChannelBaseline) -> Result<usize, NativeError> {
         let index = self
             .nodes
             .iter()
@@ -205,8 +214,9 @@ impl NativeScene {
         if !same_source {
             return Err(NativeError::InvalidRetention);
         }
+        let start = field_start(baseline.field);
         for (component, original) in baseline.scalars.iter().enumerate() {
-            let current = &self.nodes[index].channels[component];
+            let current = &self.nodes[index].channels[start + component];
             if current.origin != original.origin {
                 return Err(NativeError::InvalidRetention);
             }
@@ -214,72 +224,78 @@ impl NativeScene {
                 self.source.as_ref(),
                 &self.units,
                 baseline.owner,
-                TransformField::Translation,
+                baseline.field,
                 component,
             )?;
             current.validate_origin(
                 self.source.as_ref(),
                 &self.units,
                 baseline.owner,
-                TransformField::Translation,
+                baseline.field,
                 component,
             )?;
         }
         Ok(index)
     }
 
-    pub(crate) fn preview_move_translation(
+    pub(crate) fn preview_channels(
         &mut self,
-        baseline: &MoveTranslationBaseline,
-        translation: [f64; 3],
-    ) -> Result<(MoveTranslationBaseline, bool), NativeError> {
-        if translation.iter().any(|value| !value.is_finite()) {
+        baseline: &ChannelBaseline,
+        values: [f64; 3],
+    ) -> Result<(ChannelBaseline, bool), NativeError> {
+        if values.iter().any(|value| !value.is_finite()) {
             return Err(NativeError::NonFinite);
         }
-        let index = self.move_translation_owner(baseline)?;
+        let index = self.channel_owner(baseline)?;
+        let start = field_start(baseline.field);
         let mut replacement = baseline.scalars.clone();
         for (component, scalar) in replacement.iter_mut().enumerate() {
-            if translation[component].to_bits() != scalar.value.to_bits() {
+            if values[component].to_bits() != scalar.value.to_bits() {
                 *scalar = scalar.replacement(
-                    translation[component],
+                    values[component],
                     self.source.as_ref(),
                     &self.units,
                     baseline.owner,
-                    TransformField::Translation,
+                    baseline.field,
                     component,
                 )?;
             }
         }
-        let previous = MoveTranslationBaseline {
+        let previous = ChannelBaseline {
+            field: baseline.field,
             node: baseline.node,
             owner: baseline.owner,
-            scalars: std::array::from_fn(|component| self.nodes[index].channels[component].clone()),
+            scalars: std::array::from_fn(|component| {
+                self.nodes[index].channels[start + component].clone()
+            }),
             source: baseline.source.clone(),
         };
-        let changed = self.nodes[index].channels[..3] != replacement;
-        self.nodes[index].channels[..3].clone_from_slice(&replacement);
+        let changed = self.nodes[index].channels[start..start + 3] != replacement;
+        self.nodes[index].channels[start..start + 3].clone_from_slice(&replacement);
         Ok((previous, changed))
     }
 
-    pub(crate) fn restore_move_translation(
+    pub(crate) fn restore_channels(
         &mut self,
-        baseline: &MoveTranslationBaseline,
+        baseline: &ChannelBaseline,
     ) -> Result<(), NativeError> {
-        let index = self.move_translation_owner(baseline)?;
-        self.nodes[index].channels[..3].clone_from_slice(&baseline.scalars);
+        let index = self.channel_owner(baseline)?;
+        let start = field_start(baseline.field);
+        self.nodes[index].channels[start..start + 3].clone_from_slice(&baseline.scalars);
         Ok(())
     }
 
-    pub(crate) fn move_translation_changes(
+    pub(crate) fn channel_changes(
         &self,
-        baseline: &MoveTranslationBaseline,
+        baseline: &ChannelBaseline,
     ) -> Result<[Option<f64>; 9], NativeError> {
-        let index = self.move_translation_owner(baseline)?;
+        let index = self.channel_owner(baseline)?;
+        let start = field_start(baseline.field);
         let mut channels = [None; 9];
         for (component, original) in baseline.scalars.iter().enumerate() {
-            let current = &self.nodes[index].channels[component];
+            let current = &self.nodes[index].channels[start + component];
             if current != original {
-                channels[component] = Some(current.value);
+                channels[start + component] = Some(current.value);
             }
         }
         Ok(channels)
@@ -388,6 +404,17 @@ impl NativeScene {
             linear_factor: self.units.linear_factor()?,
             absent_leaf,
         })
+    }
+}
+
+pub(super) fn field_start(field: TransformField) -> usize {
+    match field {
+        TransformField::Translation => 0,
+        TransformField::Rotation => 3,
+        TransformField::Scale => 6,
+        TransformField::RotatePivot | TransformField::ScalePivot => {
+            unreachable!("pivots are never edited through a channel baseline")
+        }
     }
 }
 

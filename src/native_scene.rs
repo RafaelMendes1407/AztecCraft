@@ -12,7 +12,7 @@ pub use appearance::{
 };
 pub use curve::{CurveForm, NativeCurveShape};
 pub use mesh::{DirectedEdge, NativeEdge, NativeFace, NativeMesh, Points};
-pub(crate) use move_translation::MoveTranslationBaseline;
+pub(crate) use move_translation::ChannelBaseline;
 pub use move_translation::{ChannelLeaf, WorldAxis, WorldMoveFrame, WorldMoveUnsupported};
 use source::{ScalarOrigin, SourceFormat, SourceRetention, TransformField};
 

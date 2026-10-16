@@ -1,7 +1,6 @@
 use super::{Command, EditOutcome, History};
 use crate::native_scene::{
-    MoveTranslationBaseline, NativeError, NativeId, NativeScene, TransformTarget, WorldAxis,
-    WorldMoveFrame,
+    ChannelBaseline, NativeError, NativeId, NativeScene, TransformTarget, WorldAxis, WorldMoveFrame,
 };
 use crate::view_scene::{ViewError, ViewScene};
 use std::{fmt, mem::size_of};
@@ -84,13 +83,13 @@ enum ManipulationKind {
     Move {
         axis: WorldAxis,
         frame: WorldMoveFrame,
-        baseline: MoveTranslationBaseline,
+        baseline: ChannelBaseline,
     },
 }
 
 /// Exact scene state captured by a preview so a failed one can be undone.
 enum ManipulationSnapshot {
-    Move(MoveTranslationBaseline),
+    Move(ChannelBaseline),
 }
 
 impl ManipulationKind {
@@ -106,7 +105,7 @@ impl ManipulationKind {
                 baseline,
             } => {
                 let translation = frame.translation(*axis, parameter)?;
-                let (previous, changed) = scene.preview_move_translation(baseline, translation)?;
+                let (previous, changed) = scene.preview_channels(baseline, translation)?;
                 Ok((ManipulationSnapshot::Move(previous), changed))
             }
         }
@@ -114,13 +113,13 @@ impl ManipulationKind {
 
     fn restore(&self, scene: &mut NativeScene) -> Result<(), NativeError> {
         match self {
-            Self::Move { baseline, .. } => scene.restore_move_translation(baseline),
+            Self::Move { baseline, .. } => scene.restore_channels(baseline),
         }
     }
 
     fn changes(&self, scene: &NativeScene) -> Result<[Option<f64>; 9], NativeError> {
         match self {
-            Self::Move { baseline, .. } => scene.move_translation_changes(baseline),
+            Self::Move { baseline, .. } => scene.channel_changes(baseline),
         }
     }
 }
@@ -128,7 +127,7 @@ impl ManipulationKind {
 impl ManipulationSnapshot {
     fn restore(&self, scene: &mut NativeScene) -> Result<(), NativeError> {
         match self {
-            Self::Move(previous) => scene.restore_move_translation(previous),
+            Self::Move(previous) => scene.restore_channels(previous),
         }
     }
 }
