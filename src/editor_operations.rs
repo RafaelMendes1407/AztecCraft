@@ -155,7 +155,6 @@ impl ManipulationSpace {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ManipulationValue {
     Degrees(f64),
-    #[cfg(any(test, feature = "mcp"))]
     Angle(f64),
     Factor(f64),
 }

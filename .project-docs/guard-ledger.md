@@ -53,7 +53,7 @@ These are not expressible as a shared guard and must not be hoisted without a ne
   (matrix states `no_install`, `no_install_modal`).
 - Read-only Maya ASCII is decided by the scene (`authoring_read_only_reason`,
   `src/native_scene.rs:989`) and surfaces as `ReadOnlyFormat`; Move, Rotate and Scale map it in
-  `begin_error` (`src/app/features/manipulation_tool.rs:120`).
+  `begin_error` (`src/app/features/manipulation_tool.rs:119`).
 - `EditNode` with no fields returns `Unchanged` after only checking the node (`src/app/dispatch.rs:348`).
 - Delete in Face mode is refused only in `native_operation` (`src/app/dispatch.rs:5`), above the
   pipeline. The matrix calls the pipeline directly, so its `delete(face_mode)` cells show the
@@ -61,7 +61,7 @@ These are not expressible as a shared guard and must not be hoisted without a ne
   covers the UI refusal. The remote pipeline has no such refusal today, which is a bug
   (cristim/AztecCraft#83, listed in `known-issues.md`); the snapshot records current behavior and
   must change with the fix. The Move, Rotate and Scale Face-mode refusal is in the shared target check
-  (`check_manipulation_target`, `src/app/features/manipulation_tool.rs:140`) and applies to both pipelines (`begin_move(face_mode)` cells).
+  (`check_manipulation_target`, `src/app/features/manipulation_tool.rs:139`) and applies to both pipelines (`begin_move(face_mode)` cells).
 - The `read_only_ascii` fixture is a curve-only scene with no mesh. `set_material_diffuse`,
   `select_face(face_mode)` and `extrude_face` therefore fail there with a missing-shape error, not
   `ReadOnlyFormat`; read-only refusal is shown by `create`, `delete`, `rename` and the other

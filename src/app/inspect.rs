@@ -316,7 +316,6 @@ pub(in crate::app) fn linear_unit_name(unit: &LinearUnit) -> &str {
     }
 }
 
-#[cfg(any(test, feature = "mcp"))]
 pub(in crate::app) fn angular_unit_name(unit: &AngularUnit) -> &str {
     match unit {
         AngularUnit::Degree => "deg",

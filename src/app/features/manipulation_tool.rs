@@ -39,7 +39,6 @@ pub(in crate::app) struct ManipulationOptions {
     pub(in crate::app) refusal: Option<String>,
     // The last remote value as given, in scene units: inspection echoes it bit-exactly instead of
     // converting the internal parameter back, which can differ in the last bit.
-    #[cfg_attr(not(any(test, feature = "mcp")), allow(dead_code))]
     pub(in crate::app) declared: Option<(ManipulationId, f64)>,
 }
 
@@ -215,7 +214,6 @@ impl Editor {
     ) -> Result<OperationReply, OperationError> {
         let (number, parameter) = match value {
             ManipulationValue::Degrees(value) => (value, "angle"),
-            #[cfg(any(test, feature = "mcp"))]
             ManipulationValue::Angle(value) => (value, "angle"),
             ManipulationValue::Factor(value) => (value, "factor"),
         };
@@ -243,7 +241,6 @@ impl Editor {
             )));
         }
         // A declared angle is in the scene's angular unit; Move's linear conversion never applies.
-        #[cfg(any(test, feature = "mcp"))]
         let number = if let ManipulationValue::Angle(angle) = value {
             let degrees = angle
                 * self
@@ -261,13 +258,10 @@ impl Editor {
         } else {
             number
         };
-        #[cfg(any(test, feature = "mcp"))]
         let declared = match value {
             ManipulationValue::Angle(angle) => Some(angle),
             _ => None,
         };
-        #[cfg(not(any(test, feature = "mcp")))]
-        let declared: Option<f64> = None;
         let updated = self
             .history
             .update_move(self.scene_token, id, provenance, number);
@@ -678,14 +672,15 @@ impl Editor {
                         });
                 }
                 let hint = if tool == ActiveTool::Rotate {
-                    "degrees"
+                    crate::app::inspect::angular_unit_name(&self.history.scene().units().angular)
+                        .to_owned()
                 } else {
-                    "factor"
+                    "factor".to_owned()
                 };
                 let response = ui.add(
                     egui::TextEdit::singleline(&mut self.manipulation.numeric)
                         .id(manipulation_value_id())
-                        .hint_text(hint)
+                        .hint_text(hint.as_str())
                         .desired_width(80.0),
                 );
                 let entered =
@@ -733,7 +728,7 @@ impl Editor {
                     axis: self.manipulation.rotate_axis,
                     space,
                 },
-                ManipulationValue::Degrees(number),
+                ManipulationValue::Angle(number),
             ),
             ActiveTool::Scale => (
                 Operation::BeginScale {
