@@ -237,7 +237,7 @@ impl ViewportRenderer {
         selection: SelectionFeedback<'_>,
         grid_visible: bool,
         shading: ShadingMode,
-    ) -> Result<egui::epaint::PaintCallback, RenderError> {
+    ) -> Result<(egui::epaint::PaintCallback, bool), RenderError> {
         if let Some(error) = self.terminal_error() {
             return Err(RenderError::Backend(error));
         }
@@ -262,12 +262,16 @@ impl ViewportRenderer {
         {
             *self.submission.lock() = Some(submission.clone());
         }
-        Ok(egui_wgpu::Callback::new_paint_callback(
-            rect,
-            ViewportCallback {
-                submission,
-                errors: self.errors.clone(),
-            },
+        let degraded = submission.centers_degraded;
+        Ok((
+            egui_wgpu::Callback::new_paint_callback(
+                rect,
+                ViewportCallback {
+                    submission,
+                    errors: self.errors.clone(),
+                },
+            ),
+            degraded,
         ))
     }
 }
@@ -278,6 +282,8 @@ struct Submission {
     surfaces: Range<u32>,
     lines: Range<u32>,
     centers: Range<u32>,
+    /// Wireframe skipped face centres because the occlusion check exceeded its work budget.
+    centers_degraded: bool,
 }
 
 impl Submission {
@@ -345,6 +351,7 @@ impl Submission {
             surfaces: 0..0,
             lines: 0..0,
             centers: 0..0,
+            centers_degraded: false,
         };
         submission
             .bytes
@@ -450,7 +457,8 @@ impl Submission {
         submission.lines = surface_end..submission.vertex_count();
         let center_start = submission.vertex_count();
         if shading == ShadingMode::Wireframe {
-            // No surface depth exists, so draw only the centers the CPU picker can reach.
+            // No surface depth exists, so centres need the CPU occlusion filter. Over budget the
+            // frame hides them (flagged to the user) instead of failing; edges and grid still draw.
             let mut eligible = 0_usize;
             let mut triangles = 0_usize;
             for instance in scene.instances() {
@@ -465,16 +473,17 @@ impl Submission {
                         .ok_or(RenderError::ResourceLimit)?;
                 }
             }
-            azteccraft::viewport::face_center_work(eligible, triangles)
-                .map_err(|_| RenderError::ResourceLimit)?;
+            submission.centers_degraded =
+                azteccraft::viewport::face_center_work(eligible, triangles).is_err();
         }
         let frame = camera
             .occlusion_frame(Vec2::new(physical_size[0] as f32, physical_size[1] as f32))
             .map_err(|_| RenderError::NonFiniteClip)?;
+        let draw_centers = !submission.centers_degraded;
         for instance in scene
             .instances()
             .iter()
-            .filter(|instance| selection.centers(instance))
+            .filter(|instance| draw_centers && selection.centers(instance))
         {
             for face in instance.faces() {
                 let center = face

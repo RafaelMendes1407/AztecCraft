@@ -268,9 +268,12 @@ impl ViewportInput {
                     shading,
                 )
             });
-        let diagnostic = callback.as_ref().err().map(ToString::to_string);
-        if let Ok(callback) = &callback {
+        let mut diagnostic = callback.as_ref().err().map(ToString::to_string);
+        if let Ok((callback, degraded)) = &callback {
             painter.add(callback.clone());
+            if *degraded {
+                diagnostic = Some(FACE_CENTERS_HIDDEN.into());
+            }
         }
         let appearance = if scene
             .instances()
@@ -295,6 +298,8 @@ impl ViewportInput {
         callback.map(|_| ())
     }
 }
+
+pub const FACE_CENTERS_HIDDEN: &str = "Face centres hidden: too many faces for occlusion check";
 
 #[cfg(test)]
 #[path = "viewport_ui/tests.rs"]

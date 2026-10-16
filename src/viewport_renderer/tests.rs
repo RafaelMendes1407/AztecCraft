@@ -709,7 +709,8 @@ fn headless_gpu_face_centers_match_picker_for_planar_nonplanar_and_degenerate_fa
                             true,
                             ShadingMode::SmoothShadeAll,
                         )
-                        .unwrap(),
+                        .unwrap()
+                        .0,
                 );
             });
             let image = gpu.render(frame);
@@ -1480,7 +1481,8 @@ fn headless_gpu_actual_callback_scissor_and_following_egui_restore_at_one_and_tw
                         true,
                         ShadingMode::SmoothShadeAll,
                     )
-                    .unwrap(),
+                    .unwrap()
+                    .0,
             );
             ui.painter().rect_filled(
                 Rect::from_min_max(
@@ -2228,4 +2230,41 @@ fn wireframe_emits_only_face_centres_the_cpu_occlusion_filter_accepts() {
     // Smooth Shade All leaves occlusion to the GPU depth test, so every in-frustum centre is emitted.
     assert_eq!(smooth.centers.len(), 6 * 6);
     assert_eq!(wire.centers.len(), visible * 6);
+}
+
+#[test]
+fn wireframe_degrades_face_centres_instead_of_failing_the_frame_over_budget() {
+    let mut native = cube();
+    let shape = native.shapes()[0].id();
+    for _ in 0..200 {
+        native.extrude_face(shape, 1, 0.01).unwrap();
+    }
+    let view = ViewScene::from_native(&native, VIEW_BUDGET).unwrap();
+    let instance = &view.instances()[0];
+    assert!(instance.faces().len() > 710);
+    let active = (
+        instance.transform(),
+        &instance.path()[..instance.path().len() - 1],
+    );
+    let build = |shading| {
+        Submission::new(
+            &view,
+            &camera(0.01),
+            [SIZE; 2],
+            SelectionFeedback::Face {
+                active: Some(active),
+                selected: None,
+            },
+            true,
+            shading,
+            FORMAT,
+            u64::MAX,
+        )
+        .unwrap()
+    };
+    let wire = build(ShadingMode::Wireframe);
+    assert!(wire.centers_degraded);
+    assert!(wire.centers.is_empty());
+    assert!(!wire.lines.is_empty());
+    assert!(!build(ShadingMode::SmoothShadeAll).centers_degraded);
 }

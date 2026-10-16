@@ -399,6 +399,13 @@ orange edges (current behaviour, not changed). Maya's Wireframe picks by edge or
 Edges are always drawn in Smooth Shade All (Maya's default is off). The 4 and 5 hotkeys and the
 Shading menu contents come from 2025 pages and are provisional for 2026.
 
+Wireframe Face-mode centre markers cost O(active-shape faces x scene triangles) per frame, uncached.
+Over the 1_000_000 work budget (about 710 faces in a single mesh) the frame hides the centre markers
+and the viewport overlay shows "Face centres hidden: too many faces for occlusion check"; edges and
+grid still draw. Hidden, not unfiltered, because unfiltered markers would show unreachable centres
+the picker rejects. Picking is unaffected apart from its own budget error. A cache or spatial index
+would lift the limit.
+
 ## Rotate and Scale handle limits are provisional
 
 The Rotate ring angle comes from a ray-plane hit. Just above the edge-on limit
