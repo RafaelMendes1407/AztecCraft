@@ -205,10 +205,12 @@ impl Editor {
         ui.separator();
         if ui
             .add_enabled(
-                authoring && self.selection_mode == SelectionMode::Object,
+                authoring && self.selection_mode != SelectionMode::Face,
                 egui::Button::new("Delete selected"),
             )
-            .on_disabled_hover_text("Face deletion is unsupported; switch to Object selection")
+            .on_disabled_hover_text(
+                "Face deletion is unsupported; switch to Object or Hierarchy selection",
+            )
             .clicked()
         {
             *delete_intent = true;

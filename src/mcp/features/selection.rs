@@ -171,7 +171,7 @@ pub(in crate::mcp) const TOOLS: &[ToolSpec] = &[
     },
     ToolSpec {
         name: "set_selection_mode",
-        description: "Set Object or Face selection mode without editing the scene; a valid remembered face stays inactive in Object mode",
+        description: "Set Object, Face or Hierarchy (Root sub-mask only) selection mode without editing the scene; a valid remembered face stays inactive outside Face mode",
         schema: schema::<SelectionModeArgs>,
         parse: parse_set_selection_mode,
         idempotent: true,

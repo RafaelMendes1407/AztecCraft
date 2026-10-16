@@ -49,6 +49,7 @@ enum SelectionModeIntent {
     Toggle,
     Object,
     Face,
+    Hierarchy,
 }
 
 pub struct Editor {

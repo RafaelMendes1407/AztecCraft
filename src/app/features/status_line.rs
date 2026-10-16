@@ -21,28 +21,27 @@ struct ModeButton {
     label: &'static str,
     icon: UiIcon,
     hover: &'static str,
-    /// `None` while the mode is unsupported.
-    target: Option<(SelectionModeIntent, SelectionMode)>,
+    target: (SelectionModeIntent, SelectionMode),
 }
 
 const SELECTION_MODES: [ModeButton; 3] = [
     ModeButton {
         label: "Hierarchy selection",
         icon: UiIcon::SelectHierarchy,
-        hover: "Hierarchy selection: not implemented yet",
-        target: None,
+        hover: "Hierarchy selection (Root only; Leaf and Template unsupported)",
+        target: (SelectionModeIntent::Hierarchy, SelectionMode::Hierarchy),
     },
     ModeButton {
         label: "Object selection",
         icon: UiIcon::SelectObject,
         hover: "Object selection (F8 toggles)",
-        target: Some((SelectionModeIntent::Object, SelectionMode::Object)),
+        target: (SelectionModeIntent::Object, SelectionMode::Object),
     },
     ModeButton {
         label: "Component selection",
         icon: UiIcon::SelectComponent,
         hover: "Component selection (Face only; Vertex, Edge, UV unsupported)  F11",
-        target: Some((SelectionModeIntent::Face, SelectionMode::Face)),
+        target: (SelectionModeIntent::Face, SelectionMode::Face),
     },
 ];
 
@@ -118,10 +117,9 @@ impl Editor {
             }
             ui.separator();
             for button in &SELECTION_MODES {
-                let selected = button
-                    .target
-                    .is_some_and(|(_, mode)| mode == self.selection_mode);
-                let enabled = admitted && button.target.is_some();
+                let (intent, mode) = button.target;
+                let selected = mode == self.selection_mode;
+                let enabled = admitted;
                 let response = icon_button(
                     ui,
                     button.label,
@@ -130,7 +128,7 @@ impl Editor {
                     selected,
                     button.hover,
                 );
-                if let (true, Some((intent, _))) = (response.clicked(), button.target) {
+                if response.clicked() {
                     selection_intent.get_or_insert(intent);
                 }
             }
