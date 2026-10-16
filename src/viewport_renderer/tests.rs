@@ -1716,3 +1716,29 @@ fn headless_gpu_near_crossing_geometry_survives_and_occlusion_is_order_independe
         assert_eq!(scene, before);
     }
 }
+
+#[test]
+fn surface_fill_is_the_named_base_until_shading_is_wired() {
+    let view = ViewScene::from_native(&cube(), VIEW_BUDGET).unwrap();
+    let submission = Submission::new(
+        &view,
+        &camera(0.01),
+        [SIZE; 2],
+        SelectionFeedback::Object(None),
+        true,
+        FORMAT,
+        u64::MAX,
+    )
+    .unwrap();
+    let [red, green, blue] = SURFACE_BASE_RGB;
+    let expected = Color32::from_rgb(red, green, blue).to_normalized_gamma_f32();
+    assert!(!submission.surfaces.is_empty());
+    for vertex in submission.surfaces.clone() {
+        let start = vertex as usize * VERTEX_BYTES + 4 * size_of::<f32>();
+        let color: [f32; 4] = std::array::from_fn(|channel| {
+            let at = start + channel * size_of::<f32>();
+            f32::from_ne_bytes(submission.bytes[at..at + 4].try_into().unwrap())
+        });
+        assert_eq!(color, expected, "vertex {vertex}");
+    }
+}
