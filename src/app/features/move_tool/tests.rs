@@ -133,6 +133,7 @@ fn press_x(editor: &mut Editor, context: &egui::Context, rect: Rect, scale: f32)
 #[test]
 fn real_w_q_and_vector_buttons_activate_tools_and_leave_unsupported_tools_disabled() {
     let (mut editor, context, _) = setup(1.0);
+    context.enable_accesskit();
     let output = frame(
         &mut editor,
         &context,
@@ -145,13 +146,23 @@ fn real_w_q_and_vector_buttons_activate_tools_and_leave_unsupported_tools_disabl
     );
     assert_eq!(editor.active_tool, ActiveTool::Select);
     let label = output
-        .shapes
+        .platform_output
+        .accesskit_update
+        .as_ref()
+        .unwrap()
+        .nodes
         .iter()
-        .find_map(|shape| match &shape.shape {
-            Shape::Text(text) if text.galley.job.text == "Move" => {
-                Some(text.pos + text.galley.size() * 0.5)
-            }
-            _ => None,
+        .find_map(|(_, node)| {
+            let bounds = node.bounds()?;
+            (node.label() == Some("Move")
+                && node.role() == egui::accesskit::Role::Button
+                && bounds.x1 < 100.0)
+                .then(|| {
+                    Pos2::new(
+                        ((bounds.x0 + bounds.x1) / 2.0) as f32,
+                        ((bounds.y0 + bounds.y1) / 2.0) as f32,
+                    )
+                })
         })
         .unwrap();
     frame(

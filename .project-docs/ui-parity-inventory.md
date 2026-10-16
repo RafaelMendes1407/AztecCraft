@@ -13,7 +13,7 @@ Precedence: [inventory-seed.md](inventory-seed.md) and [parity.md](parity.md) ow
 - Evidence: required for Supported and Visible-unsupported rows. Missing rows say what was checked.
 - Priority: P1 is frequent and blocking in a modeler's daily loop. P2 is regular use. P3 is occasional or outside the modeling loop.
 - Visible-unsupported rows confirmed in a native macOS screenshot on 2026-10-16 of a build whose application code is identical to ef86b64: Tool Box Move/Rotate/Scale/Snap, shelf Extrude/Bevel/Materials, five Time Slider buttons. The screenshot shows the menu-bar labels only, with no menu open, so menu contents were checked from source. Rows tagged source-verified are not shown in that screenshot.
-- On this SHA, Move, Rotate and Scale in the Tool Box are disabled. PR #77 (Move) is not included.
+- On this SHA, Move, Rotate and Scale in the Tool Box are disabled. PR #77 (Move) is not included. The Tool Box rows in section 4 were updated for the icon-only Tool Box change and are cited at that branch.
 - MCP is ahead of the native UI; the shelf Extrude is deliberately disabled (known-issues.md). Enabling it is a backlog item.
 - Names of tools come from `src/mcp/tools.rs`.
 
@@ -94,17 +94,17 @@ One fixed shelf row exists under the menu bar. Tab order and the Poly Modeling t
 
 ## 4. Tool Box and quick layouts
 
-Move, Rotate and Scale are disabled on this SHA. PR #77 (Move) is not in this SHA.
+The Tool Box rows below reflect the icon-only Tool Box change (feat/70-wire-ui-icons): Select, Lasso, Paint Selection, Move, Rotate, Scale and Last Used in the documented order, with labels in hover text and AccessKit. Select and Move are live through `set_active_tool`; the other five are disabled. Cites in those rows are at that branch, not ef86b64.
 
 | Maya 2026 element | Source | AztecCraft status | Evidence | MCP | Priority | Proposed slice |
 | --- | --- | --- | --- | --- | --- | --- |
-| Select tool (Q; Q-click Selection Mask marking menu) | [toolbox] | Partial | src/app.rs:1621 "select_indicator" and src/tool_icons.rs:32 "select_indicator" (non-interactive indicator; click picking works; no Q key, no marking menu) | `select_node` | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
-| Lasso tool | [toolbox] | Missing | absent | none | P2 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
-| Paint Selection tool | [toolbox] | Missing | absent | none | P3 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
-| Move tool (W) | [toolbox] | Visible-unsupported | src/app.rs:1623-1628 "Move" (disabled) | none | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
-| Rotate tool (E) | [toolbox] | Visible-unsupported | src/app.rs:1623-1628 "Rotate" (disabled) | none | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
-| Scale tool (R) | [toolbox] | Visible-unsupported | src/app.rs:1623-1628 "Scale" (disabled) | none | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
-| Last Used tool (Y) | [toolbox] | Missing | absent | none | P2 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| Select tool (Q; Q-click Selection Mask marking menu) | [toolbox] | Supported | src/app/panels.rs:108 "SetActiveTool" (icon-only button, hover "Select tool (Q)" at src/app/panels.rs:68; Q-click marking menu unsupported) | `set_active_tool`, `select_node` | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| Lasso tool | [toolbox] | Visible-unsupported | src/app/panels.rs:70 "Lasso" (disabled, hover "not implemented yet") | none | P2 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| Paint Selection tool | [toolbox] | Visible-unsupported | src/app/panels.rs:75 "Paint Selection" (disabled, hover "not implemented yet") | none | P3 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| Move tool (W) | [toolbox] | Supported | src/app/panels.rs:108 "SetActiveTool" (icon-only button, hover "Move tool (W)" at src/app/panels.rs:81) | `set_active_tool` | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| Rotate tool (E) | [toolbox] | Visible-unsupported | src/app/panels.rs:87 "Rotate" (disabled, hover "not implemented yet") | none | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| Scale tool (R) | [toolbox] | Visible-unsupported | src/app/panels.rs:89 "Scale" (disabled, hover "not implemented yet") | none | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| Last Used tool (Y) | [toolbox] | Visible-unsupported | src/app/panels.rs:94 "Last Used" (disabled, hover "not implemented yet"; dynamic last-used behaviour unsupported) | none | P2 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
 | Show Manipulators (T) | [overview] | Missing | absent | none | P2 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
 | Quick Layout: single pane | [quicklayout] | Missing | absent; fixed layout at src/app.rs:1594-1643 | none | P2 | S8 Panels and quick layouts (#48 / #69) |
 | Quick Layout: four panes | [quicklayout] | Missing | absent | none | P2 | S8 Panels and quick layouts (#48 / #69) |
