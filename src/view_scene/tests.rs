@@ -794,12 +794,14 @@ fn triangles_keep_three_corners_and_quad_diagonal_has_source_order() {
     let triangle = ViewFace {
         source_index: 7,
         corners: ViewCorners::Triangle([3, 4, 5]),
+        normal: Vec3::ZERO,
     };
     assert_eq!(triangle.corners(), &[3, 4, 5]);
     assert_eq!(triangle.triangles().collect::<Vec<_>>(), [[3, 4, 5]]);
     let quad = ViewFace {
         source_index: 8,
         corners: ViewCorners::Quad([0, 1, 2, 3]),
+        normal: Vec3::ZERO,
     };
     assert_eq!(quad.triangles().collect::<Vec<_>>(), [[0, 1, 2], [0, 2, 3]]);
 }
@@ -820,6 +822,7 @@ fn center_fixture(vertices: Vec<Vec3>, corners: ViewCorners) -> (ViewScene, Node
     instance.faces = vec![ViewFace {
         source_index: 0,
         corners,
+        normal: Vec3::ZERO,
     }];
     let path = instance.path[..instance.path.len() - 1].to_vec();
     (view, owner, path)
@@ -847,6 +850,7 @@ fn center_mean_uses_all_ordered_corners_without_f32_accumulation_overflow() {
     let face = ViewFace {
         source_index: 0,
         corners: ViewCorners::Triangle([0, 1, 2]),
+        normal: Vec3::ZERO,
     };
     assert_eq!(
         face.center(&[Vec3::splat(f32::MAX); 3]).unwrap(),
@@ -1021,6 +1025,7 @@ fn center_visibility_uses_center_ray_even_for_offset_clicks_and_all_faces_occlud
     instance.faces.push(ViewFace {
         source_index: 1,
         corners: ViewCorners::Quad([4, 5, 6, 7]),
+        normal: Vec3::ZERO,
     });
     let camera = front_camera();
     let hit = camera
@@ -1156,6 +1161,7 @@ fn center_work_admission_counts_only_click_eligible_faces_and_checks_exact_produ
         view.instances[0].faces.push(ViewFace {
             source_index: index,
             corners: ViewCorners::Quad([start, start + 1, start + 2, start + 3]),
+            normal: Vec3::ZERO,
         });
     }
     assert_eq!(
@@ -1528,6 +1534,7 @@ fn center_pick_still_rejects_back_face_centers_and_centers_behind_another_object
     instance.faces.push(ViewFace {
         source_index: 99,
         corners: ViewCorners::Quad([base, base + 1, base + 2, base + 3]),
+        normal: Vec3::ZERO,
     });
     let pointer = center_pointer(&camera, center, size, 1.0);
     let hit = camera
@@ -1552,6 +1559,7 @@ fn center_depth_tolerance_admits_rounding_gaps_but_not_half_percent_occluders() 
         instance.faces.push(ViewFace {
             source_index: 1,
             corners: ViewCorners::Quad([4, 5, 6, 7]),
+            normal: Vec3::ZERO,
         });
         let hit = camera
             .pick_face_center(
@@ -1608,6 +1616,7 @@ fn quad_and_triangle_keep_their_variants_and_the_pinned_fan() {
     let quad = ViewFace {
         source_index: 0,
         corners: ViewCorners::Quad([4, 5, 6, 7]),
+        normal: Vec3::ZERO,
     };
     assert_eq!(quad.triangles().collect::<Vec<_>>(), [[4, 5, 6], [4, 6, 7]]);
     let (view, _, _) = ngon_view(ngon_points(4, 1.0)).unwrap();
@@ -1873,4 +1882,92 @@ fn skew_loop_with_a_repeated_corner_is_currently_accepted() {
     let (native, _) = test_fixtures::polygon_shape(points, &[vec![0, 1, 2, 0, 3, 4]]);
     let view = ViewScene::from_native(&native, VIEW_BUDGET).unwrap();
     assert_eq!(view.instances()[0].faces()[0].corners(), [0, 1, 2, 0, 3, 4]);
+}
+
+fn outward_unit_faces(primitive: Primitive) -> Vec<(Vec3, Vec3, usize)> {
+    let mut native = NativeScene::default();
+    native.create(primitive, "shape").unwrap();
+    let view = ViewScene::from_native(&native, VIEW_BUDGET).unwrap();
+    let instance = &view.instances()[0];
+    instance
+        .faces()
+        .iter()
+        .map(|face| {
+            let center = face.center(instance.world_vertices()).unwrap();
+            (face.normal(), center, face.corners().len())
+        })
+        .collect()
+}
+
+#[test]
+fn cube_face_normals_are_unit_axis_aligned_and_outward() {
+    let faces = outward_unit_faces(Primitive::Cube);
+    assert_eq!(faces.len(), 6);
+    for (normal, center, _) in &faces {
+        assert!((normal.length() - 1.0).abs() < 1e-6, "{normal}");
+        assert!(normal.abs().max_element() > 0.999, "{normal}");
+        assert!(normal.dot(*center) > 0.0, "{normal} vs {center}");
+    }
+    let mut axes: Vec<_> = faces.iter().map(|(n, ..)| n.round().as_ivec3()).collect();
+    axes.sort_by_key(|n| n.to_array());
+    axes.dedup();
+    assert_eq!(axes.len(), 6);
+}
+
+#[test]
+fn sphere_pole_triangle_normal_points_up_and_every_face_is_outward() {
+    let faces = outward_unit_faces(Primitive::Sphere);
+    let triangles: Vec<_> = faces.iter().filter(|face| face.2 == 3).collect();
+    assert!(!triangles.is_empty());
+    for (normal, center, _) in &faces {
+        assert!((normal.length() - 1.0).abs() < 1e-5, "{normal}");
+        assert!(normal.dot(center.normalize()) > 0.5, "{normal} vs {center}");
+    }
+    let top = triangles
+        .iter()
+        .max_by(|a, b| a.1.y.total_cmp(&b.1.y))
+        .unwrap();
+    assert!(top.0.y > 0.9, "{}", top.0);
+}
+
+#[test]
+fn twenty_gon_cap_normal_follows_the_winding() {
+    let (view, _, _) = ngon_view(ngon_points(20, 1.0)).unwrap();
+    assert!(
+        view.instances()[0].faces()[0]
+            .normal()
+            .abs_diff_eq(Vec3::Z, 1e-6)
+    );
+    let reversed = (0..20).rev().collect();
+    let (native, _) = test_fixtures::polygon_shape(ngon_points(20, 1.0), &[reversed]);
+    let view = ViewScene::from_native(&native, VIEW_BUDGET).unwrap();
+    assert!(
+        view.instances()[0].faces()[0]
+            .normal()
+            .abs_diff_eq(-Vec3::Z, 1e-6)
+    );
+}
+
+#[test]
+fn degenerate_faces_get_a_zero_normal_not_nan() {
+    let collinear = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]];
+    let (view, ..) = ngon_view(collinear).unwrap();
+    assert_eq!(view.instances()[0].faces()[0].normal(), Vec3::ZERO);
+    let coincident = vec![[1.0, 2.0, 3.0]; 3];
+    let (view, ..) = ngon_view(coincident).unwrap();
+    assert_eq!(view.instances()[0].faces()[0].normal(), Vec3::ZERO);
+    // Largest coordinates the f32 world accepts: the f64 Newell sum stays finite, so the
+    // normal is a valid unit vector. The f64 overflow branch in `flat_normal` is unreachable
+    // through ViewScene (1e200 is refused as NonFiniteWorld first).
+    let huge = vec![[0.0; 3], [1e30, 0.0, 0.0], [0.0, 1e30, 0.0]];
+    let (view, ..) = ngon_view(huge).unwrap();
+    assert!(
+        view.instances()[0].faces()[0]
+            .normal()
+            .abs_diff_eq(Vec3::Z, 1e-6)
+    );
+    assert_eq!(
+        ngon_view(vec![[0.0; 3], [1e200, 0.0, 0.0], [0.0, 1e200, 0.0]]).unwrap_err(),
+        ViewError::NonFiniteWorld
+    );
 }

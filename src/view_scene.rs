@@ -80,10 +80,12 @@ enum ViewCorners {
     Polygon(Box<[usize]>),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ViewFace {
     source_index: usize,
     corners: ViewCorners,
+    /// Unit flat normal in the shape's local space; zero when the face has no usable normal.
+    normal: Vec3,
 }
 
 impl ViewScene {
@@ -271,6 +273,11 @@ impl ViewFace {
     pub fn source_index(&self) -> usize {
         self.source_index
     }
+    /// Unit Newell normal of the winding in local space, or zero for a degenerate or
+    /// non-finite face. Not yet transformed to world space.
+    pub fn normal(&self) -> Vec3 {
+        self.normal
+    }
     pub fn corners(&self) -> &[usize] {
         match &self.corners {
             ViewCorners::Triangle(indices) => indices,
@@ -379,6 +386,7 @@ fn view_faces(mesh: &NativeMesh) -> Result<Vec<ViewFace>, ViewError> {
         if previous_end != Some(first) {
             return Err(ViewError::InvalidGeometry);
         }
+        let normal = flat_normal(mesh, if length > 4 { &large } else { &small[..length] })?;
         let corners = match length {
             3 => ViewCorners::Triangle([small[0], small[1], small[2]]),
             4 => ViewCorners::Quad(small),
@@ -390,13 +398,15 @@ fn view_faces(mesh: &NativeMesh) -> Result<Vec<ViewFace>, ViewError> {
         result.push(ViewFace {
             source_index,
             corners,
+            normal,
         });
     }
     Ok(result)
 }
 
-/// Accepts only simple, strictly convex, once-wound polygons; judged in f64 on the local points.
-fn check_convex_polygon(mesh: &NativeMesh, corners: &[usize]) -> Result<(), ViewError> {
+/// Newell normal relative to the first corner, in f64 on the local points; its length is twice
+/// the face area and it may be zero or non-finite.
+fn newell_normal(mesh: &NativeMesh, corners: &[usize]) -> Result<DVec3, ViewError> {
     let point = |index: usize| {
         mesh.effective_point_cm(index)
             .map(DVec3::from_array)
@@ -410,6 +420,29 @@ fn check_convex_polygon(mesh: &NativeMesh, corners: &[usize]) -> Result<(), View
         normal += previous.cross(current);
         previous = current;
     }
+    Ok(normal)
+}
+
+/// Unit f32 flat normal, or zero when the winding is degenerate or the value is not finite.
+fn flat_normal(mesh: &NativeMesh, corners: &[usize]) -> Result<Vec3, ViewError> {
+    let normal = newell_normal(mesh, corners)?;
+    let length = normal.length();
+    let unit = (normal / length).as_vec3();
+    Ok(if length > 0.0 && length.is_finite() && unit.is_finite() {
+        unit
+    } else {
+        Vec3::ZERO
+    })
+}
+
+/// Accepts only simple, strictly convex, once-wound polygons; judged in f64 on the local points.
+fn check_convex_polygon(mesh: &NativeMesh, corners: &[usize]) -> Result<(), ViewError> {
+    let point = |index: usize| {
+        mesh.effective_point_cm(index)
+            .map(DVec3::from_array)
+            .map_err(ViewError::Native)
+    };
+    let normal = newell_normal(mesh, corners)?;
     if !normal.is_finite() {
         return Err(ViewError::NonFiniteWorld);
     }

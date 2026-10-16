@@ -1,6 +1,7 @@
 use azteccraft::{
     native_scene::{FaceTarget, NativeId},
     scene::NodeId,
+    shading::SURFACE_BASE_RGB,
     view_scene::{FACE_CENTER_MARKER_PIXELS, ViewFace, ViewInstance, ViewScene},
     viewport::{Camera, InvalidCameraInput},
 };
@@ -310,7 +311,8 @@ impl Submission {
                 let fill = if selection.selected(instance, face) {
                     Color32::from_rgb(95, 110, 120)
                 } else {
-                    Color32::from_gray(83)
+                    let [red, green, blue] = SURFACE_BASE_RGB;
+                    Color32::from_rgb(red, green, blue)
                 };
                 for triangle in face.triangles() {
                     for index in triangle {
