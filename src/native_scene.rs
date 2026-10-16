@@ -523,7 +523,7 @@ impl InternalTransform {
                 DVec3::from_array(self.scale),
                 DVec3::from_array(self.rotate_pivot_cm),
                 DVec3::from_array(self.scale_pivot_cm),
-            );
+            )?;
             return matrix.is_finite().then_some(matrix);
         }
         let translate = DVec3::from_array(self.translation_cm);

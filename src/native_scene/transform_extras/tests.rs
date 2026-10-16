@@ -128,7 +128,7 @@ fn internal(c: &Case) -> InternalTransform {
 }
 
 /// Documented row-vector chain: SP^-1 * S * SH * SP * ST * RP^-1 * RA * R * RP * RT * T.
-fn reference(c: &Case) -> Row {
+fn reference_matrix(c: &Case) -> Row {
     let chain = [
         translation(neg(c.sp)),
         scaling(c.s),
@@ -156,7 +156,7 @@ fn apply_row(m: &Row, p: [f64; 3]) -> [f64; 3] {
 
 fn assert_matches(c: &Case) {
     let column = internal(c).matrix().unwrap();
-    let row = reference(c);
+    let row = reference_matrix(c);
     for p in [[1.0, 2.0, 3.0], [-0.5, 0.25, 4.0], [0.0, 0.0, 0.0]] {
         let want = apply_row(&row, p);
         let got = column.transform_point3(DVec3::from_array(p)).to_array();
@@ -363,4 +363,78 @@ fn legacy_supported_view_refuses_non_default_extras_but_edit_checks_do_not() {
         ..TransformExtras::default()
     };
     assert!(scene.supported_view().is_ok());
+}
+
+#[test]
+fn rotate_order_alone_survives_the_scene_path_and_matches_the_reference() {
+    for order in 1..=5u8 {
+        let (mut scene, id) = cube();
+        let index = scene.nodes.iter().position(|n| n.id == id).unwrap();
+        scene.units.angular = AngularUnit::Radian;
+        scene.nodes[index].channels =
+            [0.0, 0.0, 0.0, 0.3, -0.7, 1.1, 1.0, 1.0, 1.0].map(Scalar::new);
+        scene.nodes[index].extras = TransformExtras {
+            rotate_order: Some(order),
+            ..TransformExtras::default()
+        };
+        let internal = scene.internal_transform(id).unwrap();
+        assert!(
+            internal.extras.is_some(),
+            "order {order} must not be default"
+        );
+        let reference = Case {
+            t: [0.0; 3],
+            r: [0.3, -0.7, 1.1],
+            s: [1.0; 3],
+            rp: [0.0; 3],
+            sp: [0.0; 3],
+            order,
+            ra: [0.0; 3],
+            sh: [0.0; 3],
+            rpt: [0.0; 3],
+            spt: [0.0; 3],
+        };
+        let want = reference_matrix(&reference);
+        let got = internal.matrix().unwrap();
+        for p in [[1.0, 2.0, 3.0], [-0.5, 0.25, 4.0]] {
+            let w = apply_row(&want, p);
+            let g = got.transform_point3(DVec3::from_array(p)).to_array();
+            for i in 0..3 {
+                assert!((w[i] - g[i]).abs() < 1e-12, "order {order}: {w:?} vs {g:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn shear_is_unitless_in_a_degree_scene() {
+    let (mut scene, id) = cube();
+    let index = scene.nodes.iter().position(|n| n.id == id).unwrap();
+    assert_eq!(scene.units.angular, AngularUnit::Degree);
+    scene.nodes[index].extras = TransformExtras {
+        shear: Some([0.5, 0.25, -0.75]),
+        ..TransformExtras::default()
+    };
+    let e = scene.internal_transform(id).unwrap().extras.unwrap();
+    assert_eq!(e.shear, [0.5, 0.25, -0.75]);
+}
+
+#[test]
+fn out_of_range_rotate_order_has_no_matrix() {
+    let extras = InternalExtras {
+        rotate_order: 6,
+        rotate_axis_radians: [0.0; 3],
+        shear: [0.0; 3],
+        rotate_pivot_translate_cm: [0.0; 3],
+        scale_pivot_translate_cm: [0.0; 3],
+    };
+    let t = InternalTransform {
+        translation_cm: [0.0; 3],
+        rotation_radians: [0.1; 3],
+        scale: [1.0; 3],
+        rotate_pivot_cm: [0.0; 3],
+        scale_pivot_cm: [0.0; 3],
+        extras: Some(extras),
+    };
+    assert!(t.matrix().is_none());
 }

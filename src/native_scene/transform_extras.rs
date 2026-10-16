@@ -84,15 +84,18 @@ pub struct InternalExtras {
     pub scale_pivot_translate_cm: [f64; 3],
 }
 
-/// Axis indices applied first to last for each rotateOrder value.
-const ORDER_AXES: [[usize; 3]; 6] = [
-    [0, 1, 2],
-    [1, 2, 0],
-    [2, 0, 1],
-    [0, 2, 1],
-    [1, 0, 2],
-    [2, 1, 0],
-];
+/// Axis indices applied first to last for each rotateOrder value; `None` outside 0 to 5.
+fn order_axes(order: u8) -> Option<[usize; 3]> {
+    Some(match order {
+        0 => [0, 1, 2],
+        1 => [1, 2, 0],
+        2 => [2, 0, 1],
+        3 => [0, 2, 1],
+        4 => [1, 0, 2],
+        5 => [2, 1, 0],
+        _ => return None,
+    })
+}
 
 fn axis_rotation(axis: usize, radians: f64) -> DMat4 {
     match axis {
@@ -103,16 +106,19 @@ fn axis_rotation(axis: usize, radians: f64) -> DMat4 {
 }
 
 /// Euler rotation for `order`: the first axis in the order is applied first (rightmost column factor).
-pub(crate) fn rotation_matrix(order: u8, radians: [f64; 3]) -> DMat4 {
-    let axes = ORDER_AXES[usize::from(order.min(5))];
-    axis_rotation(axes[2], radians[axes[2]])
-        * axis_rotation(axes[1], radians[axes[1]])
-        * axis_rotation(axes[0], radians[axes[0]])
+/// `None` for an order validation would have rejected, so callers refuse instead of clamping.
+pub(crate) fn rotation_matrix(order: u8, radians: [f64; 3]) -> Option<DMat4> {
+    let axes = order_axes(order)?;
+    Some(
+        axis_rotation(axes[2], radians[axes[2]])
+            * axis_rotation(axes[1], radians[axes[1]])
+            * axis_rotation(axes[0], radians[axes[0]]),
+    )
 }
 
-/// PROVISIONAL sign convention: x' = x + xy*y + xz*z, y' = y + yz*z. In Maya's row-vector
-/// layout that is [1][0]=xy, [2][0]=xz, [2][1]=yz; the column form built here is its
-/// transpose (upper triangular). Unconfirmed against a Maya reference scene.
+/// The 2026 transform page documents the matrix layout (row-vector [1][0]=xy, [2][0]=xz,
+/// [2][1]=yz; the column form built here is its transpose). PROVISIONAL: only the
+/// attribute's [xy, xz, yz] component order is unconfirmed against a Maya reference scene.
 fn shear_matrix(shear: [f64; 3]) -> DMat4 {
     let [xy, xz, yz] = shear;
     DMat4::from_cols_array(&[
@@ -132,21 +138,25 @@ impl InternalExtras {
         scale: DVec3,
         rp: DVec3,
         sp: DVec3,
-    ) -> DMat4 {
+    ) -> Option<DMat4> {
         let [ax, ay, az] = self.rotate_axis_radians;
-        DMat4::from_translation(translate)
-            * DMat4::from_translation(DVec3::from_array(self.rotate_pivot_translate_cm))
-            * DMat4::from_translation(rp)
-            * rotation_matrix(self.rotate_order, rotation)
-            * DMat4::from_rotation_z(az)
-            * DMat4::from_rotation_y(ay)
-            * DMat4::from_rotation_x(ax)
-            * DMat4::from_translation(-rp)
-            * DMat4::from_translation(DVec3::from_array(self.scale_pivot_translate_cm))
-            * DMat4::from_translation(sp)
-            * shear_matrix(self.shear)
-            * DMat4::from_scale(scale)
-            * DMat4::from_translation(-sp)
+        // PROVISIONAL: RA is composed as xyz Euler, but the 2026 transform page says
+        // rotateAxis is stored as a quaternion; unconfirmed against a Maya reference scene.
+        Some(
+            DMat4::from_translation(translate)
+                * DMat4::from_translation(DVec3::from_array(self.rotate_pivot_translate_cm))
+                * DMat4::from_translation(rp)
+                * rotation_matrix(self.rotate_order, rotation)?
+                * DMat4::from_rotation_z(az)
+                * DMat4::from_rotation_y(ay)
+                * DMat4::from_rotation_x(ax)
+                * DMat4::from_translation(-rp)
+                * DMat4::from_translation(DVec3::from_array(self.scale_pivot_translate_cm))
+                * DMat4::from_translation(sp)
+                * shear_matrix(self.shear)
+                * DMat4::from_scale(scale)
+                * DMat4::from_translation(-sp),
+        )
     }
 }
 
