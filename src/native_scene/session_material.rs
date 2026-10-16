@@ -8,8 +8,9 @@ use super::{NativeError, NativeId, NativeMeshShape, NativeScene};
 use crate::shading::SURFACE_BASE_RGB;
 use std::collections::{BTreeMap, HashSet};
 
-/// Arbitrary bound on materials per scene, chosen to keep validation and snapshots cheap.
-pub const MAX_SESSION_MATERIALS: usize = 4096;
+/// Bound on materials per scene. Kept far below what `inspect_scene` can list (see the
+/// inspection budget test) so a full table never makes inspection `too_large`.
+pub const MAX_SESSION_MATERIALS: usize = 512;
 
 /// An index into the current table. It is valid only at the current history position: undoing a
 /// create frees its index for the next create, so callers must take ids from operation outcomes
@@ -175,12 +176,18 @@ impl NativeScene {
     /// whose appearance the session table does not own. Taking the shape itself means an unknown
     /// id cannot be asked about; the lookup is one `BTreeMap` probe, O(log n) in assignments.
     pub fn session_material(&self, shape: &NativeMeshShape) -> Option<&Lambert> {
+        let id = self.session_material_id(shape)?;
+        self.session_materials.materials.get(id.0)
+    }
+
+    /// The id behind [`Self::session_material`]; valid only at the current history position.
+    pub fn session_material_id(&self, shape: &NativeMeshShape) -> Option<SessionMaterialId> {
         if self.source.is_some() {
             return None;
         }
         let group = self.session_materials.assignments.get(&shape.id).copied();
         let group = self.session_materials.groups.get(group.unwrap_or(0))?;
-        self.session_materials.materials.get(group.material.0)
+        Some(group.material)
     }
 
     pub fn create_session_material(

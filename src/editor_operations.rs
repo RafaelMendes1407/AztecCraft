@@ -131,6 +131,21 @@ pub enum Operation {
         shape: NativeId,
         value: f64,
     },
+    /// Ids returned by these three are valid only at the current history position.
+    #[cfg(any(test, feature = "mcp"))]
+    CreateSessionMaterial {
+        color: [f64; 3],
+    },
+    #[cfg(any(test, feature = "mcp"))]
+    AssignSessionMaterial {
+        shape: NativeId,
+        material: azteccraft::native_scene::MaterialChoice,
+    },
+    #[cfg(any(test, feature = "mcp"))]
+    SetSessionMaterialColor {
+        material: azteccraft::native_scene::SessionMaterialId,
+        color: [f64; 3],
+    },
     #[cfg(any(test, feature = "mcp"))]
     Inspect,
     Create {
@@ -220,6 +235,11 @@ pub enum OperationReply {
     MoveStarted {
         move_id: String,
     },
+    /// Created or assigned session material; the id is valid only at this history position.
+    #[cfg(any(test, feature = "mcp"))]
+    SessionMaterial {
+        material_id: String,
+    },
     Changed,
     Unchanged,
     DocumentApplied {
@@ -261,6 +281,9 @@ pub struct SceneInspection {
     pub move_tool: MoveInspection,
     pub nodes: Vec<NodeInspection>,
     pub shapes: Vec<ShapeInspection>,
+    /// Session-only lambert table, empty on sourced scenes. Ids are valid only at the current
+    /// history position.
+    pub session_materials: Vec<SessionMaterialInspection>,
     pub curves: Vec<CurveInspection>,
     pub retained_source_bytes: usize,
     pub retained_source_records: usize,
@@ -419,6 +442,17 @@ pub struct ShapeInspection {
     pub smoothing_known: bool,
     pub source_appearance: azteccraft::native_scene::AppearanceSummary,
     pub material: Option<MaterialInspection>,
+    /// Session material id every instance of this shape shows; null on sourced scenes.
+    pub session_material: Option<String>,
+}
+#[derive(Debug, Serialize)]
+#[cfg(any(test, feature = "mcp"))]
+pub struct SessionMaterialInspection {
+    pub id: String,
+    pub name: String,
+    pub shading_group: String,
+    pub color: [f64; 3],
+    pub editable: bool,
 }
 #[derive(Debug, Serialize)]
 #[cfg(any(test, feature = "mcp"))]
@@ -468,6 +502,9 @@ pub enum OperationError {
     StaleScene,
     #[cfg(any(test, feature = "mcp"))]
     TooLarge,
+    /// A session-material operation failed in the core; the MCP layer reports a typed code.
+    #[cfg(any(test, feature = "mcp"))]
+    SessionMaterial(NativeError),
     NoSelection,
     InvalidInput(String),
     Scene(NativeError),
@@ -499,6 +536,8 @@ impl fmt::Display for OperationError {
             Self::StaleScene => f.write_str("Scene token is stale; inspect the current document"),
             #[cfg(any(test, feature = "mcp"))]
             Self::TooLarge => f.write_str("Scene inspection exceeds the prototype response limit"),
+            #[cfg(any(test, feature = "mcp"))]
+            Self::SessionMaterial(error) => error.fmt(f),
             Self::NoSelection => f.write_str("Select an object or face before framing"),
             Self::InvalidInput(message) => f.write_str(message),
             Self::Scene(error) => error.fmt(f),
@@ -529,6 +568,9 @@ const APPEARANCE_SUMMARY_MAX_BYTES: usize = 1024;
 const NODE_VISIBLE_FIELD_MAX_BYTES: usize = "\"visible\":false,".len();
 #[cfg(any(test, feature = "mcp"))]
 const MOVE_INSPECTION_MAX_BYTES: usize = 32 * 1024;
+
+#[cfg(any(test, feature = "mcp"))]
+const SESSION_MATERIAL_INSPECTION_MAX_BYTES: usize = 192;
 
 #[cfg(any(test, feature = "mcp"))]
 pub fn check_inspection_size(
@@ -564,6 +606,12 @@ pub fn check_inspection_size(
             return Err(OperationError::TooLarge);
         }
     }
+    estimated_bytes = estimated_bytes.saturating_add(
+        scene
+            .session_materials()
+            .len()
+            .saturating_mul(SESSION_MATERIAL_INSPECTION_MAX_BYTES),
+    );
     estimated_bytes = estimated_bytes.saturating_add(scene.dag_edges().len().saturating_mul(24));
     if estimated_bytes > limit {
         return Err(OperationError::TooLarge);
@@ -574,6 +622,22 @@ pub fn check_inspection_size(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_full_session_material_table_stays_well_inside_the_inspection_budget() {
+        let materials = azteccraft::native_scene::MAX_SESSION_MATERIALS;
+        assert!(materials * SESSION_MATERIAL_INSPECTION_MAX_BYTES * 2 <= MAX_RESULT_BYTES / 2);
+        let widest = SessionMaterialInspection {
+            id: (materials - 1).to_string(),
+            name: format!("sessionLambert{}", materials - 1),
+            shading_group: format!("sessionLambert{}SG", materials - 1),
+            color: [-1.2345678901234567e-308; 3],
+            editable: true,
+        };
+        assert!(
+            serde_json::to_vec(&widest).unwrap().len() <= SESSION_MATERIAL_INSPECTION_MAX_BYTES
+        );
+    }
     use azteccraft::{native_scene::NativeScene, scene::Scene};
 
     #[test]

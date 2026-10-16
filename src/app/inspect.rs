@@ -2,6 +2,30 @@ use super::*;
 
 impl Editor {
     #[cfg(any(test, feature = "mcp"))]
+    fn inspect_session_materials(
+        &self,
+    ) -> Vec<crate::editor_operations::SessionMaterialInspection> {
+        let scene = self.history.scene();
+        if scene.appearance_incomplete() {
+            return Vec::new();
+        }
+        scene
+            .session_materials()
+            .iter()
+            .zip(scene.session_shading_groups())
+            .enumerate()
+            .map(
+                |(index, (material, group))| crate::editor_operations::SessionMaterialInspection {
+                    id: index.to_string(),
+                    name: material.name().into(),
+                    shading_group: group.name().into(),
+                    color: material.color(),
+                    editable: index != 0,
+                },
+            )
+            .collect()
+    }
+    #[cfg(any(test, feature = "mcp"))]
     pub(super) fn current_viewport_error(&self) -> Option<crate::viewport_renderer::ViewportError> {
         use crate::viewport_renderer::ViewportError;
         match &self.renderer {
@@ -167,6 +191,11 @@ impl Editor {
                             .scene()
                             .shape_appearance_readiness(shape.id())
                             .map_err(OperationError::Scene)?,
+                        session_material: self
+                            .history
+                            .scene()
+                            .session_material_id(shape)
+                            .map(|id| id.index().to_string()),
                         material: match self.history.scene().material_for_shape(shape.id()) {
                             Ok(value) => Some(crate::editor_operations::MaterialInspection {
                                 shader: match value.shader {
@@ -183,6 +212,7 @@ impl Editor {
                     })
                 })
                 .collect::<Result<Vec<_>, OperationError>>()?,
+            session_materials: self.inspect_session_materials(),
             units: UnitsInspection {
                 linear: linear.into(),
                 angular: angular.into(),

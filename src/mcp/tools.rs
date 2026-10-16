@@ -69,6 +69,18 @@ fn tool_reply(reply: Result<OperationReply, OperationError>) -> CallToolResult {
                 },
                 OperationError::StaleScene => "stale_scene",
                 OperationError::TooLarge => "too_large",
+                OperationError::SessionMaterial(error) => match error {
+                    NativeError::UnknownSessionMaterial(_) => "unknown_session_material",
+                    NativeError::SessionColorOutOfRange | NativeError::NonFinite => {
+                        "invalid_session_color"
+                    }
+                    NativeError::InitialSessionMaterialLocked => "initial_session_material_locked",
+                    NativeError::UnsupportedEdit => "unsupported_edit",
+                    NativeError::ReadOnlyFormat => "read_only_format",
+                    NativeError::MissingShape(_) => "unknown_shape",
+                    NativeError::ResourceLimit => "session_material_limit",
+                    _ => "scene_error",
+                },
                 OperationError::NoSelection => "no_selection",
                 OperationError::InvalidInput(_) => "invalid_input",
                 OperationError::Scene(NativeError::AbsentChannelLeaf { .. }) => {
@@ -334,6 +346,15 @@ mod tests {
                 "rename_node" => json!({"scene_token":token,"node_id":"1","name":"cube"}),
                 "edit_node" => json!({"scene_token":token,"node_id":"1"}),
                 "set_material_diffuse" => json!({"scene_token":token,"shape_id":"2","value":1.25}),
+                "create_session_material" => {
+                    json!({"scene_token":token,"color":[1.0,0.0,0.0]})
+                }
+                "assign_session_material" => {
+                    json!({"scene_token":token,"shape_id":"2","material_id":"1"})
+                }
+                "set_session_material_color" => {
+                    json!({"scene_token":token,"material_id":"1","color":[0.0,1.0,0.0]})
+                }
                 "extrude_face" => {
                     json!({"scene_token":token,"node_id":"1","shape_id":"2","instance_path":["1","2"],"face_index":0,"distance":1})
                 }
@@ -363,6 +384,70 @@ mod tests {
     }
 
     #[test]
+    fn session_material_arguments_are_strict_and_assign_takes_exactly_one_source() {
+        let token = Uuid::new_v4().to_string();
+        let bad = [
+            (
+                "assign_session_material",
+                json!({"scene_token":token,"shape_id":"2"}),
+            ),
+            (
+                "assign_session_material",
+                json!({"scene_token":token,"shape_id":"2","material_id":"1","color":[0,0,0]}),
+            ),
+            (
+                "assign_session_material",
+                json!({"scene_token":token,"shape_id":"2","material_id":"-1"}),
+            ),
+            (
+                "set_session_material_color",
+                json!({"scene_token":token,"material_id":"1","color":[0.0,1.0]}),
+            ),
+            (
+                "set_session_material_color",
+                json!({"scene_token":token,"material_id":"01x","color":[0,0,0]}),
+            ),
+            (
+                "set_session_material_color",
+                json!({"scene_token":token,"material_id":"007","color":[0,0,0]}),
+            ),
+            (
+                "assign_session_material",
+                json!({"scene_token":token,"shape_id":"2","material_id":"+1"}),
+            ),
+            (
+                "create_session_material",
+                json!({"scene_token":token,"color":[0,0,0],"extra":1}),
+            ),
+            (
+                "create_session_material",
+                json!({"scene_token":token,"color":["a",0,0]}),
+            ),
+        ];
+        for (name, args) in bad {
+            assert!(
+                parse_request(name, args.as_object().unwrap().clone()).is_err(),
+                "{name} {args}"
+            );
+        }
+        let request = parse_request(
+            "assign_session_material",
+            json!({"scene_token":token,"shape_id":"2","color":[1,0,0]})
+                .as_object()
+                .unwrap()
+                .clone(),
+        )
+        .unwrap();
+        assert!(matches!(
+            request.operation,
+            Operation::AssignSessionMaterial {
+                material: azteccraft::native_scene::MaterialChoice::New { .. },
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn only_absolute_state_setters_are_annotated_idempotent() {
         for tool in catalog() {
             let expected = matches!(
@@ -375,6 +460,7 @@ mod tests {
                     | "select_node"
                     | "set_selection_mode"
                     | "select_face"
+                    | "set_session_material_color"
             );
             assert_eq!(
                 tool.annotations.unwrap().idempotent_hint == Some(true),

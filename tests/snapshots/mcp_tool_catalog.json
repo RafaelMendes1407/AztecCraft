@@ -616,6 +616,124 @@
     }
   },
   {
+    "name": "create_session_material",
+    "description": "Create a session-only lambert material (not saved; Untitled scenes only, sourced and Maya ASCII scenes refuse) with a linear RGB colour, as its own undo step. Replies with its material_id. Material ids are decimal table indices valid only at the current history position: undo or redo can free and reuse them, so never cache one across edits",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "description": "Linear RGB, each channel 0 through 1.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        },
+        "scene_token": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "scene_token",
+        "color"
+      ],
+      "title": "CreateSessionMaterialArgs",
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "assign_session_material",
+    "description": "Assign a session material to a whole authored shape; every instance of the shape changes. Give material_id (existing) or color (creates a lambert in the same undo step). Replies with the material_id, or unchanged. Not saved; sourced and Maya ASCII scenes refuse. Material ids are decimal table indices valid only at the current history position: undo or redo can free and reuse them, so never cache one across edits",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "description": "Creates a new lambert with this colour in the same undo step. Give this or `material_id`.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "material_id": {
+          "description": "An existing material id from inspection or a create reply. Give this or `color`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scene_token": {
+          "type": "string"
+        },
+        "shape_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "scene_token",
+        "shape_id"
+      ],
+      "title": "AssignSessionMaterialArgs",
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "set_session_material_color",
+    "description": "Set the linear RGB colour of a session material created in this session; the initial material 0 is locked. Not saved; unrelated to the saved Phong set_material_diffuse. Material ids are decimal table indices valid only at the current history position: undo or redo can free and reuse them, so never cache one across edits",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        },
+        "material_id": {
+          "type": "string"
+        },
+        "scene_token": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "scene_token",
+        "material_id",
+        "color"
+      ],
+      "title": "SetSessionMaterialColorArgs",
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
     "name": "delete_node",
     "description": "Delete an object through editor undo history",
     "inputSchema": {

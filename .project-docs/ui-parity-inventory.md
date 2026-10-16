@@ -181,6 +181,7 @@ The Outliner is a fixed left panel at src/app.rs:1632 drawing Editor::outliner a
 | Render Setup filter | [outliner] | Missing | absent | none | P3 | S10 Outliner (#68) |
 | Search field | [outliner] | Missing | absent | none | P2 | S10 Outliner (#68) |
 | Groups | [outliner] | Missing | absent | none | P2 | S10 Outliner (#68) |
+| Session material assignment and base colour (#51) | [attr] | Missing | no native control; MCP supported, native UI missing, blocked on Attribute Editor B3 | `create_session_material`, `assign_session_material`, `set_session_material_color` | P2 | S4 Attribute Editor and Channel Box (#60) |
 | Materials | [outliner] | Missing | absent | none | P3 | S10 Outliner (#68) |
 | Hidden objects | [outliner] | Missing | absent | none | P2 | S10 Outliner (#68) |
 | Sets | [outliner] | Missing | absent | none | P3 | S10 Outliner (#68) |
