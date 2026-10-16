@@ -101,6 +101,7 @@ mod official_client {
     }
 
     mod ascii;
+    mod attribute_editor;
     mod camera;
     mod cylinder_cone;
     mod extrude;

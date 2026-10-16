@@ -834,12 +834,13 @@
   },
   {
     "name": "set_sidebar_panel_visibility",
-    "description": "Set one sidebar panel's visibility explicitly. Session-only and idempotent; does not edit the scene. Only channel_box is implemented",
+    "description": "Set one sidebar panel's visibility explicitly. Session-only and idempotent; does not edit the scene. The dock shows one panel: showing attribute_editor hides channel_box and the reverse",
     "inputSchema": {
       "$defs": {
         "PanelInput": {
           "enum": [
-            "channel_box"
+            "channel_box",
+            "attribute_editor"
           ],
           "type": "string"
         }
@@ -863,6 +864,60 @@
         "visible"
       ],
       "title": "SidebarPanelArgs",
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "select_attribute_editor_tab",
+    "description": "Select the Attribute Editor tab for the selected node: transform, a direct shape, or the material of a direct shape. Session-only and idempotent; does not edit the scene. Refused unless attribute_editor is the active sidebar panel or when the tab does not resolve for the current selection",
+    "inputSchema": {
+      "$defs": {
+        "TabInput": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "description": "Decimal id: the selected node for `transform`, a direct shape for `shape` and `material`.",
+              "type": "string"
+            },
+            "kind": {
+              "$ref": "#/$defs/TabKind"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        "TabKind": {
+          "enum": [
+            "transform",
+            "shape",
+            "material"
+          ],
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "scene_token": {
+          "type": "string"
+        },
+        "tab": {
+          "$ref": "#/$defs/TabInput"
+        }
+      },
+      "required": [
+        "scene_token",
+        "tab"
+      ],
+      "title": "AttributeEditorTabArgs",
       "type": "object"
     },
     "annotations": {
