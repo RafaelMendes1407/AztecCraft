@@ -159,7 +159,9 @@ view-depth tolerance, so occluders within about 1e-4 of the center's view depth
 (z-fighting range, e.g. stacked planes 1e-3 apart at distance 50) do not hide it;
 unobstructed finite degenerate centers can be selected.
 Other component masks, multiple-face gestures, marquee, hover and marking menus
-are unsupported. Native Extrude remains disabled until a real history and
+are unsupported. The same holds in Vertex and Edge modes: a Shift or Ctrl click is refused
+with ModifiedClick and leaves the selection unchanged. Maya supports modified clicks to add
+to or toggle the component selection; AztecCraft selects one vertex, edge or face only. Native Extrude remains disabled until a real history and
 manipulator workflow exists.
 
 Ambiguous coalesced primary releases are refused with an actionable single-click
@@ -176,8 +178,11 @@ remain separate verification requirements. See [selection policy](.project-docs/
 **Severity:** low
 **Area:** component input and viewport
 
-`Camera::pick_vertex` and `pick_edge` exist, and the viewport can draw vertex markers
-and Edge-mode edges, but no native control reaches them yet (#29; MCP selects them).
+F9, F10, the Select > Components entries and a plain click reach `Camera::pick_vertex`
+and `pick_edge` (#29; Status Line buttons are pending). F8 leaves Vertex and Edge for
+Object and enters Face from Object and Hierarchy; Maya's F8 return target is
+UNCONFIRMED, so this is provisional. A click on empty space clears the active type's
+pick, also UNCONFIRMED for Maya.
 The 10 px vertex click box, the 6 px edge click distance, the 5 px vertex marker, the
 3 px selected-edge strip and the depth tolerance below are original provisional values,
 not verified Maya defaults; Maya's click tolerance and preselection defaults are
@@ -187,6 +192,12 @@ original RGB values. Candidates are ranked by pointer distance, then depth, then
 source order, which is also an application policy. In Vertex and Edge modes component
 feedback replaces Object feedback, so the selected object's faces are not tinted and
 selected curves are not highlighted.
+
+Test limits for this slice: the `sync_fields` owner-path test fakes `selected_path`
+because no real instanced scene can be built from the bin crate, so it proves the
+clearing rule, not a live instance. The `remembered_face` term in the MCP test
+`baseline()` (`src/mcp_tests/official_client/vertex_edge.rs`) is defensive; no SDK test
+can currently fail on it, so it is not claimed as tested.
 
 The vertex and edge depth tolerance is the flat constant `VERTEX_MARKER_DEPTH_TOLERANCE`
 = 6e-3. Its unit is a relative fraction of the linear view depth, the distance along the
@@ -199,7 +210,9 @@ cube at the origin, near 0.01, far 10000, yaw 0.6, pitch 0.4, 1024 px square, 45
 fov): every corner with a front-facing face showed all 25 marker pixels and no hidden
 corner drew at the default distance 8 and at 120 for tolerances 6e-3 through 8e-3; 5e-3
 left one silhouette corner at 20/25, and 2e-2 let a hidden corner show at 120, so the
-margin is thin. Those numbers come from the Apple M1 Pro Metal adapter only. CI's
+margin is thin. The 5e-3 and 2e-2 bracket comes from manual readbacks with the constant
+temporarily edited; no committed test reproduces it (the ignored readbacks pin only the
+6e-3 outcome). Those numbers come from the Apple M1 Pro Metal adapter only. CI's
 software Vulkan job runs the GPU tests, but it was not used to choose or bracket this
 value; other adapters were not run. Limits: the tolerance is relative to distance, so
 plates thinner than about 0.05 units at the default distance 8 (6e-3 times 8) can show,
@@ -214,18 +227,6 @@ and every edge through surfaces. When that check is over budget `vertex_markers_
 (Vertex mode) or `face_centres_hidden` (Face mode) is true. The renderer draws every
 `ViewInstance` edge; the bin crate has no loose-edge fixture, so the face-less case is
 covered by the carried edge list and the picker tests, not pixels.
-
-## Inspection budget for remembered component paths lacks a regression test
-
-**Severity:** low
-**Area:** MCP inspection
-
-`Editor::inspect` adds the `remembered_face`, `remembered_vertex` and
-`remembered_edge` path bytes to the path total before comparing against the
-inspection limit. The per-pick path cap (`MAX_TRANSFORM_DEPTH + 1`) is tested
-for the vertex and the edge. The aggregate sum term is not tested for any type
-(pre-existing for the face, now also for the vertex and the edge), so dropping
-it fails no test.
 
 ## Static ASCII curves have bounded read-only coverage
 
@@ -362,9 +363,9 @@ cluster therefore follows the last drawn group.
 - Hierarchy supports the Root sub-mask only; Leaf and Template are unsupported.
 - Grouped hierarchy exists only in opened `.ma`/`.mb` files. Delete on a group is refused there, because
   structural edits are refused for source-bound scenes. On flat scenes Hierarchy selects what Object selects.
-- F8 from Hierarchy goes to Face (PROVISIONAL; the 2026 docs only document Object/Component).
+- F8 from Hierarchy goes to Face and from Vertex or Edge to Object (PROVISIONAL; the 2026 docs only document Object/Component).
 - The selection mode menu (presets) is disabled and stateless until masks exist (#29).
-- Mode intents in one frame (buttons, F8, F11) apply before Delete, so Delete sees the new mode.
+- Mode intents in one frame (buttons, F8, F9, F10, F11) apply before Delete, so Delete sees the new mode.
 - `select_node` stays exact and is not limited by the selection mode.
 - Nothing was compared against a pinned Maya 2026 install.
 

@@ -2,7 +2,7 @@ use crate::editor_operations::Operation;
 use crate::viewport_renderer::{RenderError, SelectionFeedback, ViewportRenderer};
 use azteccraft::{
     move_handles::{HandleError, ViewportCapture},
-    native_scene::{FaceTarget, NativeId},
+    native_scene::{EdgeTarget, FaceTarget, NativeId, VertexTarget},
     scene::NodeId,
     view_scene::{ViewError, ViewScene},
     viewport::{Camera, InvalidCameraInput},
@@ -229,6 +229,44 @@ impl ViewportInput {
         self.click_points
             .map(|point| {
                 camera.pick_face_center(
+                    scene,
+                    active,
+                    point,
+                    self.physical_size,
+                    self.pixels_per_point,
+                )
+            })
+            .transpose()
+            .map(Option::flatten)
+    }
+    pub fn pick_vertex(
+        &self,
+        camera: &Camera,
+        scene: &ViewScene,
+        active: Option<(NodeId, &[NativeId])>,
+    ) -> Result<Option<VertexTarget>, ViewError> {
+        self.click_points
+            .map(|point| {
+                camera.pick_vertex(
+                    scene,
+                    active,
+                    point,
+                    self.physical_size,
+                    self.pixels_per_point,
+                )
+            })
+            .transpose()
+            .map(Option::flatten)
+    }
+    pub fn pick_edge(
+        &self,
+        camera: &Camera,
+        scene: &ViewScene,
+        active: Option<(NodeId, &[NativeId])>,
+    ) -> Result<Option<EdgeTarget>, ViewError> {
+        self.click_points
+            .map(|point| {
+                camera.pick_edge(
                     scene,
                     active,
                     point,

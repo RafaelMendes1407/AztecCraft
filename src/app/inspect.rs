@@ -36,8 +36,36 @@ impl Editor {
             Some(_) => self.viewport_error,
         }
     }
+    /// Reported size of the remembered face, vertex and edge paths, in that order.
+    #[cfg(any(test, feature = "mcp"))]
+    fn remembered_path_bytes(&self) -> Result<[usize; 3], OperationError> {
+        let bytes = |path_len: Option<usize>| {
+            path_len
+                .map_or(Some(0), |len| {
+                    if len > azteccraft::native_scene::MAX_TRANSFORM_DEPTH + 1 {
+                        return None;
+                    }
+                    len.checked_mul(24)?.checked_add(128)
+                })
+                .ok_or(OperationError::TooLarge)
+        };
+        Ok([
+            bytes(self.remembered_face.as_ref().map(|t| t.path.len()))?,
+            bytes(self.remembered_vertex.as_ref().map(|t| t.path.len()))?,
+            bytes(self.remembered_edge.as_ref().map(|t| t.path.len()))?,
+        ])
+    }
     #[cfg(any(test, feature = "mcp"))]
     pub(super) fn inspect(&self, text_focused: bool) -> Result<SceneInspection, OperationError> {
+        self.inspect_within(text_focused, crate::editor_operations::MAX_RESULT_BYTES / 2)
+    }
+    /// `path_limit` exists so tests can reach the budget sum through the real call site.
+    #[cfg(any(test, feature = "mcp"))]
+    fn inspect_within(
+        &self,
+        text_focused: bool,
+        path_limit: usize,
+    ) -> Result<SceneInspection, OperationError> {
         crate::editor_operations::check_inspection_size(self.history.scene())?;
         let paths = self
             .history
@@ -51,25 +79,8 @@ impl Editor {
                     .and_then(|sum| sum.checked_add(64))
             })
             .ok_or(OperationError::TooLarge)?;
-        let remembered_bytes = |path_len: Option<usize>| {
-            path_len
-                .map_or(Some(0), |len| {
-                    if len > azteccraft::native_scene::MAX_TRANSFORM_DEPTH + 1 {
-                        return None;
-                    }
-                    len.checked_mul(24)?.checked_add(128)
-                })
-                .ok_or(OperationError::TooLarge)
-        };
-        let face_bytes = remembered_bytes(self.remembered_face.as_ref().map(|t| t.path.len()))?;
-        let vertex_bytes = remembered_bytes(self.remembered_vertex.as_ref().map(|t| t.path.len()))?;
-        let edge_bytes = remembered_bytes(self.remembered_edge.as_ref().map(|t| t.path.len()))?;
-        if path_bytes
-            .checked_add(face_bytes)
-            .and_then(|bytes| bytes.checked_add(vertex_bytes))
-            .and_then(|bytes| bytes.checked_add(edge_bytes))
-            .is_none_or(|bytes| bytes > crate::editor_operations::MAX_RESULT_BYTES / 2)
-        {
+        let remembered = self.remembered_path_bytes()?;
+        if !inspection_paths_fit(path_bytes, remembered, path_limit) {
             return Err(OperationError::TooLarge);
         }
         let units = self.history.scene().units();
@@ -322,5 +333,116 @@ pub(in crate::app) fn angular_unit_name(unit: &AngularUnit) -> &str {
         AngularUnit::Degree => "deg",
         AngularUnit::Radian => "rad",
         AngularUnit::Unsupported(value) => value,
+    }
+}
+
+#[cfg(any(test, feature = "mcp"))]
+/// The node paths plus every remembered component path must fit `limit`.
+fn inspection_paths_fit(path_bytes: usize, remembered: [usize; 3], limit: usize) -> bool {
+    remembered
+        .into_iter()
+        .try_fold(path_bytes, usize::checked_add)
+        .is_some_and(|bytes| bytes <= limit)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::inspection_paths_fit;
+    use crate::editor_operations::MAX_RESULT_BYTES;
+
+    #[test]
+    fn each_remembered_term_counts_toward_the_inspection_limit() {
+        let limit = MAX_RESULT_BYTES / 2;
+        assert!(inspection_paths_fit(limit, [0; 3], limit));
+        assert!(inspection_paths_fit(limit - 3, [1; 3], limit));
+        for term in 0..3 {
+            let mut remembered = [0; 3];
+            remembered[term] = 1;
+            assert!(
+                !inspection_paths_fit(limit, remembered, limit),
+                "term {term}"
+            );
+        }
+        assert!(!inspection_paths_fit(usize::MAX, [1, 0, 0], limit));
+    }
+
+    #[test]
+    fn inspection_charges_the_face_vertex_and_edge_paths_in_that_order() {
+        let mut editor = crate::app::Editor::default();
+        editor.create(azteccraft::scene::Primitive::Cube);
+        assert_eq!(editor.remembered_path_bytes().unwrap(), [0; 3]);
+        let id = editor.selected.unwrap();
+        let path = editor.selected_path.clone();
+        let shape = path[0];
+        let mut owned = path.clone();
+        owned.push(shape);
+        editor.remembered_face = Some(azteccraft::native_scene::FaceTarget {
+            transform: id,
+            shape,
+            path: owned.clone(),
+            face_index: 0,
+        });
+        assert_eq!(
+            editor.remembered_path_bytes().unwrap(),
+            [128 + 24 * 2, 0, 0]
+        );
+        owned.push(shape);
+        editor.remembered_vertex = Some(azteccraft::native_scene::VertexTarget {
+            transform: id,
+            shape,
+            path: owned.clone(),
+            vertex_index: 0,
+        });
+        owned.push(shape);
+        editor.remembered_edge = Some(azteccraft::native_scene::EdgeTarget {
+            transform: id,
+            shape,
+            path: owned,
+            edge_index: 0,
+        });
+        assert_eq!(
+            editor.remembered_path_bytes().unwrap(),
+            [128 + 24 * 2, 128 + 24 * 3, 128 + 24 * 4]
+        );
+    }
+
+    #[test]
+    fn inspect_sums_node_and_remembered_paths_against_its_limit() {
+        let mut editor = crate::app::Editor::default();
+        editor.create(azteccraft::scene::Primitive::Cube);
+        let id = editor.selected.unwrap();
+        let shape = editor.selected_path[0];
+        editor.remembered_face = Some(azteccraft::native_scene::FaceTarget {
+            transform: id,
+            shape,
+            path: vec![shape; 2],
+            face_index: 0,
+        });
+        editor.remembered_vertex = Some(azteccraft::native_scene::VertexTarget {
+            transform: id,
+            shape,
+            path: vec![shape; 3],
+            vertex_index: 0,
+        });
+        editor.remembered_edge = Some(azteccraft::native_scene::EdgeTarget {
+            transform: id,
+            shape,
+            path: vec![shape; 4],
+            edge_index: 0,
+        });
+        let node_bytes: usize = editor
+            .history
+            .scene()
+            .transform_paths()
+            .unwrap()
+            .iter()
+            .map(|target| target.path.len() * 24 + 64)
+            .sum();
+        let total = node_bytes + 3 * 128 + 24 * (2 + 3 + 4);
+        assert!(editor.inspect_within(false, total).is_ok());
+        assert!(matches!(
+            editor.inspect_within(false, total - 1),
+            Err(crate::editor_operations::OperationError::TooLarge)
+        ));
     }
 }

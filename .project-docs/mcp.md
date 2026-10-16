@@ -121,9 +121,10 @@ outside Edge mode, revalidated and charged against the size budget like the vert
 Each component type keeps its own remembered pick: selecting an edge leaves the
 remembered vertex untouched and it becomes active again in Vertex mode.
 
-Native Vertex and Edge modes are not reachable yet (no hotkey, menu, Status Line
-control, marker or edge drawing, or click picking; native controls land in a later
-change); until then Vertex and Edge selection are driven only through these tools.
+Natively, Vertex and Edge modes are reached with F9 and F10, the Select >
+Components menu and a plain viewport click (`pick_vertex`/`pick_edge` then the same
+`SelectVertex`/`SelectEdge` operations and guards these tools use); Status Line
+component buttons are not implemented yet.
 
 Inspection reports `selection_mode`, the complete `remembered_face` target or
 null, and fixed `face_selection_policy: "visible_centers_only"`. A remembered
@@ -410,7 +411,7 @@ Nine verified tools establish the initial server foundation, not catch-up with e
 | Native Save/Save As | Provisional `save_scene`/`save_scene_as` and matching pending Save; source-bound Unix binary only, current integration/native Save QA remains pending |
 | Core OBJ export | No tool; file authority and create-new/no-clobber behavior need a dedicated slice |
 | Polygon cylinder and cone creation | `create_primitive` with `cylinder` or `cone` dispatches the same `Operation::Create` as Create > Polygon cylinder/cone; the new node, its inspected counts, and face view, pick, select (including the true 20-gon caps through the same ViewScene n-gon path) and refused cap extrusion are covered by actual Editor protocol tests; provisional topology |
-| Native Hierarchy/Face/Center selection | `set_selection_mode` (`object`, `face`, `vertex`, `edge`, `hierarchy`), `select_face`, `select_vertex`, `select_edge` and selection inspection (`remembered_face`, `remembered_vertex`, `remembered_edge`) share authoritative typed state; `select_node` stays exact and is not mode-limited. Native Vertex and Edge modes have no user surface yet, so `select_vertex` and `select_edge` are MCP-only for now; UV and Vertex Face masks and multi-component gestures are unsupported |
+| Native Hierarchy/Face/Center selection | `set_selection_mode` (`object`, `face`, `vertex`, `edge`, `hierarchy`), `select_face`, `select_vertex`, `select_edge` and selection inspection (`remembered_face`, `remembered_vertex`, `remembered_edge`) share authoritative typed state; `select_node` stays exact and is not mode-limited. Native Vertex and Edge modes are reached with F9, F10, the Select > Components menu and a plain click, which dispatch the same operations as `select_vertex` and `select_edge`; Status Line buttons are pending; UV and Vertex Face masks and multi-component gestures are unsupported |
 | Core mesh extrusion | `extrude_face` exposes the checked single-quad History command with an explicit current face target; native face-extrusion UI remains unsupported |
 | Native Select/Move tool and World-axis object translation | `begin_manipulation` (`kind` `move`), `update_manipulation` (`distance`) and `finish_manipulation` share the native transaction and guards; bounded tool/active preview/capture state is inspectable. Candidate native/SDK verification remains pending |
 | Native Tool Box Select, Move, Rotate and Scale buttons | The icon-only Select (Q), Move (W), Rotate (E) and Scale (R) buttons dispatch `Operation::SetActiveTool`, the same typed operation as `set_active_tool` (`select`, `move`, `rotate` or `scale`), with the same closing and modal guards |
