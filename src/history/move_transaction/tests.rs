@@ -1,6 +1,6 @@
 use super::*;
 use crate::native_scene::{
-    NativeTransform, RotateUnsupported, ScaleUnsupported, binary, test_fixtures,
+    NativeTransform, RotateSpace, RotateUnsupported, ScaleUnsupported, binary, test_fixtures,
 };
 use crate::scene::Primitive;
 
@@ -678,6 +678,7 @@ fn start_rotate(history: &mut History, axis: RotateAxis, token: Uuid) -> Manipul
         .begin_rotate(
             &target(history),
             axis,
+            RotateSpace::Object,
             token,
             ManipulationProvenance::Native,
             BUDGET,
@@ -704,7 +705,8 @@ fn rotate_previews_make_exactly_one_undo_and_leave_other_channels_alone() {
     assert_eq!(
         active.kind,
         ManipulationKindState::Rotate {
-            axis: RotateAxis::Z
+            axis: RotateAxis::Z,
+            space: RotateSpace::Object
         }
     );
     assert_eq!((active.parameter, active.move_axis()), (0.0, None));
@@ -744,6 +746,7 @@ fn rotate_shares_token_owner_stale_and_busy_guards_and_cancels_exactly() {
     let again = history.begin_rotate(
         &target(&history),
         RotateAxis::Y,
+        RotateSpace::Object,
         token,
         ManipulationProvenance::Native,
         BUDGET,
@@ -834,6 +837,7 @@ fn refused_rotate_begin_consumes_no_id_and_leaves_no_transaction() {
     let result = history.begin_rotate(
         &target(&history),
         RotateAxis::X,
+        RotateSpace::Object,
         Uuid::new_v4(),
         ManipulationProvenance::Native,
         BUDGET,

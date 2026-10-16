@@ -28,8 +28,20 @@ impl RotateAxis {
     }
 }
 
+/// Whether a ring turns about the node's own axes or about the world axes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RotateSpace {
+    Object,
+    World,
+}
+
+// Parent linear maps may deviate from rotation x uniform scale by this relative amount.
+const PARENT_TOLERANCE: f64 = 1e-9;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RotateUnsupported {
+    ParentTransform,
+    NonPositiveScale,
     SelectedPivot,
     Gimbal,
     NumericalAngle,
@@ -38,6 +50,10 @@ pub enum RotateUnsupported {
 impl fmt::Display for RotateUnsupported {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
+            Self::ParentTransform => {
+                "world rotation needs parents that are a rotation times a uniform positive scale"
+            }
+            Self::NonPositiveScale => "world rotation needs positive scale on the selected node",
             Self::SelectedPivot => "the selected rotate pivot must be zero",
             Self::Gimbal => "rotation is too close to gimbal lock",
             Self::NumericalAngle => "rotation cannot be represented accurately",
@@ -47,17 +63,34 @@ impl fmt::Display for RotateUnsupported {
 
 /// Baseline rotation of one node, as declared channel values and internal radians.
 #[derive(Clone)]
-pub struct ObjectRotateFrame {
+pub struct RotateFrame {
+    space: RotateSpace,
+    parent_linear: DMat3,
     declared: [f64; 3],
     radians: [f64; 3],
     absent_leaf: [bool; 3],
     units: Units,
 }
 
-impl fmt::Debug for ObjectRotateFrame {
+impl fmt::Debug for RotateFrame {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ObjectRotateFrame").finish_non_exhaustive()
+        f.debug_struct("RotateFrame").finish_non_exhaustive()
     }
+}
+
+// True when `linear` is a rotation times one positive scale, within `PARENT_TOLERANCE`.
+fn rotation_times_uniform_scale(linear: DMat3) -> bool {
+    let columns = [linear.x_axis, linear.y_axis, linear.z_axis];
+    let scale = columns.iter().map(|column| column.length()).sum::<f64>() / 3.0;
+    if !linear.is_finite() || !scale.is_normal() || linear.determinant() <= 0.0 {
+        return false;
+    }
+    let tolerance = PARENT_TOLERANCE * scale;
+    columns
+        .iter()
+        .all(|column| (column.length() - scale).abs() <= tolerance)
+        && (0..3)
+            .all(|i| ((i + 1)..3).all(|j| columns[i].dot(columns[j]).abs() <= tolerance * scale))
 }
 
 fn rotation_matrix([x, y, z]: [f64; 3]) -> DMat3 {
@@ -69,11 +102,16 @@ fn unwrap_toward(value: f64, base: f64) -> f64 {
     value + TAU * ((base - value) / TAU).round()
 }
 
-impl ObjectRotateFrame {
+impl RotateFrame {
     // Maya binary files omit default (zero) rotate leaves and the encoder cannot insert them.
     // An X ring changes rotateX only; Y and Z rings can change all three channels.
+    // A world ring can change all three channels, whichever axis it turns about.
     pub fn require_leaves(&self, axis: RotateAxis) -> Result<(), NativeError> {
-        let needed = if axis == RotateAxis::X { 0..1 } else { 0..3 };
+        let needed = if axis == RotateAxis::X && self.space == RotateSpace::Object {
+            0..1
+        } else {
+            0..3
+        };
         for component in needed {
             if self.absent_leaf[component] {
                 return Err(NativeError::AbsentChannelLeaf {
@@ -85,7 +123,12 @@ impl ObjectRotateFrame {
         Ok(())
     }
 
-    /// Declared rotate channel values after turning about the node's own `axis` by `degrees`.
+    pub fn space(&self) -> RotateSpace {
+        self.space
+    }
+
+    /// Declared rotate channel values after turning by `degrees` about `axis`, the node's own
+    /// axis in object space or the world axis in world space.
     pub fn rotation(&self, axis: RotateAxis, degrees: f64) -> Result<[f64; 3], NativeError> {
         if !degrees.is_finite() {
             return Err(NativeError::NonFinite);
@@ -98,14 +141,42 @@ impl ObjectRotateFrame {
         if !delta.is_finite() || delta.abs() > MAX_ANGLE_RADIANS {
             return Err(refused);
         }
-        let mut radians = if axis == RotateAxis::X {
-            let mut radians = self.radians;
-            radians[0] += delta;
-            radians
-        } else {
-            self.compose(axis, delta)?
+        let mut radians = match (self.space, axis) {
+            (RotateSpace::Object, RotateAxis::X) => {
+                let mut radians = self.radians;
+                radians[0] += delta;
+                radians
+            }
+            (RotateSpace::Object, _) => self.decompose(
+                rotation_matrix(self.radians)
+                    * match axis {
+                        RotateAxis::Y => DMat3::from_rotation_y(delta),
+                        _ => DMat3::from_rotation_z(delta),
+                    },
+            )?,
+            (RotateSpace::World, _) => {
+                // P = s * Rp, so Rp^T e_axis is the normalized `axis` row of P. Turning the world
+                // by d about e_axis equals turning the parent-local frame by d about that row.
+                let row = DVec3::new(
+                    self.parent_linear.x_axis[axis.index()],
+                    self.parent_linear.y_axis[axis.index()],
+                    self.parent_linear.z_axis[axis.index()],
+                );
+                let step = DMat3::from_axis_angle(row.normalize(), delta);
+                self.decompose(step * rotation_matrix(self.radians))?
+            }
         };
-        let intended = axis.index();
+        // Heuristic: the channel that moves most is taken as intended; a genuine change below
+        // SNAP_TOLERANCE on any other channel is snapped away (see known-issues.md).
+        let intended = match self.space {
+            RotateSpace::Object => axis.index(),
+            RotateSpace::World => (0..3)
+                .max_by(|a, b| {
+                    let moved = |i: usize| (radians[i] - self.radians[i]).abs();
+                    moved(*a).total_cmp(&moved(*b))
+                })
+                .unwrap_or(0),
+        };
         let mut resolution: f64 = 0.0;
         for (component, (value, &base)) in radians.iter_mut().zip(&self.radians).enumerate() {
             if component != intended && (*value - base).abs() <= SNAP_TOLERANCE * (base.abs() + 1.0)
@@ -130,14 +201,9 @@ impl ObjectRotateFrame {
         Ok(declared)
     }
 
-    // R_new = R_old * R_axis(delta) decomposed back to Maya xyz Euler angles (R = Rz Ry Rx),
-    // choosing the representation nearest the baseline channels.
-    fn compose(&self, axis: RotateAxis, delta: f64) -> Result<[f64; 3], NativeError> {
-        let step = match axis {
-            RotateAxis::Y => DMat3::from_rotation_y(delta),
-            _ => DMat3::from_rotation_z(delta),
-        };
-        let target = rotation_matrix(self.radians) * step;
+    // Decomposes `target` to Maya xyz Euler angles (R = Rz Ry Rx), choosing the representation
+    // nearest the baseline channels.
+    fn decompose(&self, target: DMat3) -> Result<[f64; 3], NativeError> {
         let pitch = (-target.x_axis.z).clamp(-1.0, 1.0).asin();
         if !target.is_finite() || pitch.cos().abs() < MIN_COS_PITCH {
             return Err(NativeError::UnsupportedRotate(RotateUnsupported::Gimbal));
@@ -169,11 +235,12 @@ impl ObjectRotateFrame {
 }
 
 impl NativeScene {
-    pub(crate) fn begin_object_rotation(
+    pub(crate) fn begin_rotation(
         &self,
         target: &TransformTarget,
         axis: RotateAxis,
-    ) -> Result<(ObjectRotateFrame, ChannelBaseline), NativeError> {
+        space: RotateSpace,
+    ) -> Result<(RotateFrame, ChannelBaseline), NativeError> {
         if target.path.len() > MAX_TRANSFORM_DEPTH {
             return Err(NativeError::ResourceLimit);
         }
@@ -213,7 +280,13 @@ impl NativeScene {
                 )?;
             }
         }
-        let frame = ObjectRotateFrame {
+        let parent_linear = match space {
+            RotateSpace::Object => DMat3::IDENTITY,
+            RotateSpace::World => self.parent_linear(target, transform.scale)?,
+        };
+        let frame = RotateFrame {
+            space,
+            parent_linear,
             declared: std::array::from_fn(|component| selected.channels[3 + component].value),
             radians: transform.rotation_radians,
             absent_leaf,
@@ -224,6 +297,41 @@ impl NativeScene {
             frame,
             self.channel_baseline(selected, TransformField::Rotation),
         ))
+    }
+
+    // Product of the ancestors' local linear maps (the path excluding the selected node). World
+    // rotation also requires positive scale on the selected node: a policy choice consistent with
+    // Move, not a mathematical need (the node's scale sits to the right of its rotation).
+    fn parent_linear(
+        &self,
+        target: &TransformTarget,
+        scale: [f64; 3],
+    ) -> Result<DMat3, NativeError> {
+        let refused = NativeError::UnsupportedRotate(RotateUnsupported::ParentTransform);
+        if scale.iter().any(|value| value.is_nan() || *value <= 0.0) {
+            return Err(NativeError::UnsupportedRotate(
+                RotateUnsupported::NonPositiveScale,
+            ));
+        }
+        let mut parent_world = DMat4::IDENTITY;
+        for id in target.path.iter().take(target.path.len().saturating_sub(1)) {
+            let node = self
+                .nodes
+                .iter()
+                .find(|node| node.transform_id == *id)
+                .ok_or(NativeError::InvalidInstancePath)?;
+            let local = self
+                .internal_transform(node.id)?
+                .matrix()
+                .ok_or(refused.clone())?;
+            parent_world *= local;
+        }
+        let linear = DMat3::from_mat4(parent_world);
+        if rotation_times_uniform_scale(linear) {
+            Ok(linear)
+        } else {
+            Err(refused)
+        }
     }
 }
 

@@ -24,12 +24,14 @@ fn rotated(rotation: [f64; 3]) -> (NativeScene, NodeId) {
     (scene, node)
 }
 
-fn frame(scene: &NativeScene, node: NodeId, axis: RotateAxis) -> ObjectRotateFrame {
+fn frame(scene: &NativeScene, node: NodeId, axis: RotateAxis) -> RotateFrame {
     scene
-        .begin_object_rotation(&target(scene, node), axis)
+        .begin_rotation(&target(scene, node), axis, RotateSpace::Object)
         .unwrap()
         .0
 }
+
+mod world;
 
 fn matrix_deg(degrees: [f64; 3]) -> DMat3 {
     rotation_matrix(degrees.map(f64::to_radians))
@@ -112,7 +114,7 @@ fn out_and_back_is_bit_exact_through_the_scene() {
     let before = scene.clone();
     for axis in [RotateAxis::X, RotateAxis::Y, RotateAxis::Z] {
         let (frame, baseline) = scene
-            .begin_object_rotation(&target(&scene, node), axis)
+            .begin_rotation(&target(&scene, node), axis, RotateSpace::Object)
             .unwrap();
         let out = frame.rotation(axis, 37.5).unwrap();
         assert_ne!(bits(out), bits(frame.declared));
@@ -238,7 +240,7 @@ fn angular_unit_radians_stores_radian_channels() {
     scene.units.angular = AngularUnit::Unsupported("grad".into());
     assert!(
         scene
-            .begin_object_rotation(&target(&scene, node), RotateAxis::Y)
+            .begin_rotation(&target(&scene, node), RotateAxis::Y, RotateSpace::Object)
             .is_err()
     );
 }
@@ -252,7 +254,7 @@ fn refusals_leave_the_scene_untouched() {
     let mut pivot = scene.clone();
     pivot.nodes[0].rotate_pivot[1] = Scalar::new(0.25);
     assert!(matches!(
-        pivot.begin_object_rotation(&selected, RotateAxis::X),
+        pivot.begin_rotation(&selected, RotateAxis::X, RotateSpace::Object),
         Err(NativeError::UnsupportedRotate(
             RotateUnsupported::SelectedPivot
         ))
@@ -267,7 +269,7 @@ fn refusals_leave_the_scene_untouched() {
         let mut effects = scene.clone();
         effects.nodes[0].unsupported_transform.push(effect.into());
         assert!(matches!(
-            effects.begin_object_rotation(&selected, RotateAxis::X),
+            effects.begin_rotation(&selected, RotateAxis::X, RotateSpace::Object),
             Err(NativeError::UnsupportedEdit)
         ));
     }
@@ -281,13 +283,17 @@ fn refusals_leave_the_scene_untouched() {
         appearance: None,
     });
     assert!(matches!(
-        ascii.begin_object_rotation(&selected, RotateAxis::X),
+        ascii.begin_rotation(&selected, RotateAxis::X, RotateSpace::Object),
         Err(NativeError::ReadOnlyFormat)
     ));
 
     for path in [vec![], vec![selected.path[0], selected.path[0]]] {
         let bad = TransformTarget { node, path };
-        assert!(scene.begin_object_rotation(&bad, RotateAxis::X).is_err());
+        assert!(
+            scene
+                .begin_rotation(&bad, RotateAxis::X, RotateSpace::Object)
+                .is_err()
+        );
     }
     assert_eq!(scene, before);
 }
@@ -296,7 +302,7 @@ fn refusals_leave_the_scene_untouched() {
 fn leaf_rules_follow_the_ring() {
     let (scene, node) = rotated([10.0, 20.0, 30.0]);
     let base = frame(&scene, node, RotateAxis::X);
-    let only_x = ObjectRotateFrame {
+    let only_x = RotateFrame {
         absent_leaf: [false, true, true],
         ..base.clone()
     };
@@ -310,7 +316,7 @@ fn leaf_rules_follow_the_ring() {
             })
         ));
     }
-    let no_x = ObjectRotateFrame {
+    let no_x = RotateFrame {
         absent_leaf: [true, false, false],
         ..base.clone()
     };
@@ -335,7 +341,7 @@ fn binary_source_without_rotate_leaves_is_refused_on_every_ring() {
     let before = scene.clone();
     for axis in [RotateAxis::X, RotateAxis::Y, RotateAxis::Z] {
         assert!(matches!(
-            scene.begin_object_rotation(&selected, axis),
+            scene.begin_rotation(&selected, axis, RotateSpace::Object),
             Err(NativeError::AbsentChannelLeaf {
                 channel: ChannelLeaf::Rotate,
                 component: 0
@@ -363,7 +369,7 @@ fn binary_source_with_rotate_leaves_previews_and_restores_exactly() {
     let before = scene.clone();
     for axis in [RotateAxis::X, RotateAxis::Y, RotateAxis::Z] {
         let (frame, baseline) = scene
-            .begin_object_rotation(&target(&scene, node), axis)
+            .begin_rotation(&target(&scene, node), axis, RotateSpace::Object)
             .unwrap();
         let (_, changed) = scene
             .preview_channels(&baseline, frame.rotation(axis, 15.0).unwrap())
@@ -387,7 +393,7 @@ fn source_free_scene_with_default_leaves_is_not_refused() {
     assert!(scene.source.is_none());
     for axis in [RotateAxis::X, RotateAxis::Y, RotateAxis::Z] {
         scene
-            .begin_object_rotation(&target(&scene, node), axis)
+            .begin_rotation(&target(&scene, node), axis, RotateSpace::Object)
             .unwrap();
     }
 }

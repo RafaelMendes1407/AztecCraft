@@ -401,3 +401,24 @@ fn ascii_reports_local_visibility_for_transform_and_curve_shape() {
     assert_eq!(scene.nodes()[0].local_visibility(), Some(true));
     assert_eq!(scene.curves()[0].local_visibility(), Some(false));
 }
+
+#[test]
+fn transform_attributes_outside_the_modeled_channels_are_refused_at_open() {
+    for attribute in [
+        "setAttr \".it\" no;",
+        "setAttr \".it\" yes;",
+        "setAttr \".ro\" 2;",
+        "setAttr \".ra\" -type \"double3\" 10 0 0;",
+        "setAttr \".sh\" -type \"double3\" 0.5 0 0;",
+        "setAttr \".opm\" -type \"matrix\" 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1;",
+    ] {
+        let body = format!(
+            "createNode transform -n \"curve1\"; {attribute} createNode nurbsCurve -n \"curveShape1\" -p \"curve1\"; {CC}"
+        );
+        assert_eq!(
+            decode(input(&body)).unwrap_err().kind(),
+            ErrorKind::Unsupported,
+            "{attribute}"
+        );
+    }
+}
