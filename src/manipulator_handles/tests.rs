@@ -563,3 +563,83 @@ fn a_plane_behind_the_eye_returns_behind_ray() {
         Some(HandleError::BehindRay)
     );
 }
+
+#[test]
+fn frames_with_a_non_finite_axis_length_are_refused() {
+    // 1e200 is finite but its length overflows when squared.
+    let huge = DVec3::new(1e200, 0.0, 0.0);
+    assert_eq!(
+        HandleFrame::new(DVec3::ZERO, [huge, DVec3::Y, DVec3::Z]).err(),
+        Some(HandleError::InvalidProjection)
+    );
+    assert_eq!(
+        HandleFrame::new(
+            DVec3::ZERO,
+            [DVec3::X, DVec3::Y, DVec3::new(0.0, 0.0, f64::MAX)]
+        )
+        .err(),
+        Some(HandleError::InvalidProjection)
+    );
+}
+
+#[test]
+fn mirrored_and_skewed_frames_are_refused() {
+    // A negative-scale ancestor makes the axes left-handed, which would flip every ring drag.
+    assert_eq!(
+        HandleFrame::new(DVec3::ZERO, [-DVec3::X, DVec3::Y, DVec3::Z]).err(),
+        Some(HandleError::MirroredFrame)
+    );
+    assert_eq!(
+        HandleFrame::new(DVec3::ZERO, [DVec3::X, DVec3::Y, -DVec3::Z * 2.0]).err(),
+        Some(HandleError::MirroredFrame)
+    );
+    assert_eq!(
+        HandleFrame::new(DVec3::ZERO, [DVec3::X, DVec3::X + DVec3::Y, DVec3::Z]).err(),
+        Some(HandleError::SkewedFrame)
+    );
+    // Rotated, unevenly scaled but perpendicular right-handed axes remain valid.
+    let tilt = glam::DMat3::from_rotation_z(0.7) * glam::DMat3::from_rotation_x(-0.3);
+    assert!(
+        HandleFrame::new(
+            DVec3::ZERO,
+            [tilt.x_axis * 2.0, tilt.y_axis * 0.5, tilt.z_axis * 3.0]
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn pointers_outside_the_viewport_hit_no_handle_enabled_or_disabled() {
+    let camera = front_camera();
+    // A pivot 20 px from the left edge: the 72 px rings and the disabled circles cross the edge,
+    // so their clipped segments end on it and sit within the pick radius of a pixel just outside.
+    let origin = DVec3::new(-380.0 / 30.0, 0.0, 0.0);
+    assert!(near_f(pixel_of(&camera, origin).x, 20.0));
+    let frame = HandleFrame::world(origin).unwrap();
+    let rotate = RotateHandles::new(&capture(&camera), &frame).unwrap();
+    let scale = ScaleHandles::new(&capture(&camera), &frame).unwrap();
+    // The view ring (86.4 px) leaves the left edge 84 px below the pivot, clear of every enabled
+    // ring. Its clipped segment ends there, so a pixel on the edge is reported and one just
+    // outside is not.
+    let crossing = 300.0 + ((ARROW_LENGTH * VIEW_RING_FACTOR).powi(2) - 400.0).sqrt();
+    let on_edge = DVec2::new(0.0, crossing);
+    let outside = DVec2::new(-2.0, crossing);
+    let beyond = DVec2::new(802.0, 300.0);
+    assert_eq!(rotate.hit_test(on_edge), None);
+    assert_eq!(rotate.hit_disabled(on_edge), Some(DisabledKind::ViewRing));
+    for pixel in [
+        outside,
+        beyond,
+        DVec2::new(400.0, -2.0),
+        DVec2::new(400.0, 602.0),
+    ] {
+        assert_eq!(rotate.hit_test(pixel), None, "{pixel}");
+        assert_eq!(rotate.hit_disabled(pixel), None, "{pixel}");
+        assert_eq!(scale.hit_test(pixel), None, "{pixel}");
+        assert_eq!(scale.hit_disabled(pixel), None, "{pixel}");
+    }
+}
+
+fn near_f(actual: f64, expected: f64) -> bool {
+    (actual - expected).abs() < 0.5
+}
