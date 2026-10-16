@@ -1,16 +1,62 @@
 use super::*;
 
 impl Editor {
+    /// Rejects component selection outside its mode, and unbounded target paths, before any mutation.
+    fn require_component_selection(
+        &self,
+        mode: SelectionMode,
+        path_len: Option<usize>,
+    ) -> Result<(), OperationError> {
+        let Some(noun) = mode.component_noun() else {
+            return Err(OperationError::InvalidInput(
+                "Selection mode has no component selection".into(),
+            ));
+        };
+        if self.selection_mode != mode {
+            return Err(OperationError::InvalidInput(format!(
+                "{noun} selection requires {noun} mode"
+            )));
+        }
+        if let Some(len) = path_len
+            && !(2..=azteccraft::native_scene::MAX_TRANSFORM_DEPTH + 1).contains(&len)
+        {
+            return Err(OperationError::InvalidInput(format!(
+                "{noun} selection requires a bounded full shape path"
+            )));
+        }
+        Ok(())
+    }
+    /// Selects the instance that owns a validated component target (path ends with the shape).
+    fn select_component_owner(
+        &mut self,
+        transform: NodeId,
+        target_path: &[NativeId],
+    ) -> Result<(), OperationError> {
+        let owner = target_path.split_last().map_or(&[][..], |(_, owner)| owner);
+        let mut path = Vec::new();
+        path.try_reserve_exact(owner.len()).map_err(|_| {
+            OperationError::Scene(azteccraft::native_scene::NativeError::ResourceLimit)
+        })?;
+        path.extend_from_slice(owner);
+        self.selected = Some(transform);
+        self.selected_path = path;
+        self.sync_fields();
+        Ok(())
+    }
     pub(super) fn native_operation(&mut self, operation: Operation) {
-        if self.selection_mode == SelectionMode::Face && matches!(operation, Operation::Delete(_)) {
+        if let Some(noun) = self.selection_mode.component_noun()
+            && matches!(operation, Operation::Delete(_))
+        {
             self.status =
-                "Face deletion is unsupported; switch to Object or Hierarchy selection".into();
+                format!("{noun} deletion is unsupported; switch to Object or Hierarchy selection");
             self.error = true;
             return;
         }
         let status = match operation {
             Operation::Select { .. }
             | Operation::SelectFace { .. }
+            | Operation::SelectVertex { .. }
+            | Operation::SelectEdge { .. }
             | Operation::SetSelectionMode(_)
             | Operation::FrameSelected
             | Operation::SetActiveTool(_)
@@ -209,25 +255,44 @@ impl Editor {
             }
             _ => None,
         };
-        if let Operation::SelectFace { target } = &operation {
-            if self.selection_mode != SelectionMode::Face {
-                return Err(OperationError::InvalidInput(
-                    "Face selection requires Face mode".into(),
-                ));
-            }
-            if let Some(target) = target {
-                if !(2..=azteccraft::native_scene::MAX_TRANSFORM_DEPTH + 1)
-                    .contains(&target.path.len())
-                {
-                    return Err(OperationError::InvalidInput(
-                        "Face selection requires a bounded full shape path".into(),
-                    ));
+        match &operation {
+            Operation::SelectFace { target } => {
+                self.require_component_selection(
+                    SelectionMode::Face,
+                    target.as_ref().map(|target| target.path.len()),
+                )?;
+                if let Some(target) = target {
+                    self.history
+                        .scene()
+                        .resolve_face_target(target)
+                        .map_err(OperationError::Scene)?;
                 }
-                self.history
-                    .scene()
-                    .resolve_face_target(target)
-                    .map_err(OperationError::Scene)?;
             }
+            Operation::SelectVertex { target } => {
+                self.require_component_selection(
+                    SelectionMode::Vertex,
+                    target.as_ref().map(|target| target.path.len()),
+                )?;
+                if let Some(target) = target {
+                    self.history
+                        .scene()
+                        .resolve_vertex_target(target)
+                        .map_err(OperationError::Scene)?;
+                }
+            }
+            Operation::SelectEdge { target } => {
+                self.require_component_selection(
+                    SelectionMode::Edge,
+                    target.as_ref().map(|target| target.path.len()),
+                )?;
+                if let Some(target) = target {
+                    self.history
+                        .scene()
+                        .resolve_edge_target(target)
+                        .map_err(OperationError::Scene)?;
+                }
+            }
+            _ => {}
         }
         if !matches!(
             operation,
@@ -423,16 +488,33 @@ impl Editor {
             Operation::SelectFace { target } => {
                 let changed = self.remembered_face != target;
                 if let Some(target) = &target {
-                    let mut path = Vec::new();
-                    path.try_reserve_exact(target.path.len() - 1).map_err(|_| {
-                        OperationError::Scene(azteccraft::native_scene::NativeError::ResourceLimit)
-                    })?;
-                    path.extend_from_slice(&target.path[..target.path.len() - 1]);
-                    self.selected = Some(target.transform);
-                    self.selected_path = path;
-                    self.sync_fields();
+                    self.select_component_owner(target.transform, &target.path)?;
                 }
                 self.remembered_face = target;
+                return Ok(if changed {
+                    OperationReply::Changed
+                } else {
+                    OperationReply::Unchanged
+                });
+            }
+            Operation::SelectVertex { target } => {
+                let changed = self.remembered_vertex != target;
+                if let Some(target) = &target {
+                    self.select_component_owner(target.transform, &target.path)?;
+                }
+                self.remembered_vertex = target;
+                return Ok(if changed {
+                    OperationReply::Changed
+                } else {
+                    OperationReply::Unchanged
+                });
+            }
+            Operation::SelectEdge { target } => {
+                let changed = self.remembered_edge != target;
+                if let Some(target) = &target {
+                    self.select_component_owner(target.transform, &target.path)?;
+                }
+                self.remembered_edge = target;
                 return Ok(if changed {
                     OperationReply::Changed
                 } else {
@@ -443,7 +525,7 @@ impl Editor {
                 let path = selected_path.unwrap_or_default();
                 let changed = self.selected != node || self.selected_path != path;
                 if changed {
-                    self.remembered_face = None;
+                    self.clear_remembered_components();
                 }
                 self.selected = node;
                 self.selected_path = path;
@@ -479,22 +561,37 @@ impl Editor {
                 });
             }
             Operation::FrameSelected => {
-                let path = if self.selection_mode != SelectionMode::Face {
+                let component = matches!(
+                    self.selection_mode,
+                    SelectionMode::Face | SelectionMode::Vertex | SelectionMode::Edge
+                );
+                if component {
+                    let scene = self.history.scene();
+                    match self.selection_mode {
+                        SelectionMode::Face => self
+                            .remembered_face
+                            .as_ref()
+                            .map(|target| scene.resolve_face_target(target)),
+                        SelectionMode::Vertex => self
+                            .remembered_vertex
+                            .as_ref()
+                            .map(|target| scene.resolve_vertex_target(target)),
+                        _ => self
+                            .remembered_edge
+                            .as_ref()
+                            .map(|target| scene.resolve_edge_target(target)),
+                    }
+                    .ok_or(OperationError::NoSelection)?
+                    .map_err(OperationError::Scene)?;
+                }
+                let path = if component {
+                    None
+                } else {
                     let id = self.selected.ok_or(OperationError::NoSelection)?;
                     Some(self.selection_path(
                         id,
                         (!self.selected_path.is_empty()).then(|| self.selected_path.clone()),
                     )?)
-                } else {
-                    let target = self
-                        .remembered_face
-                        .as_ref()
-                        .ok_or(OperationError::NoSelection)?;
-                    self.history
-                        .scene()
-                        .resolve_face_target(target)
-                        .map_err(OperationError::Scene)?;
-                    None
                 };
                 let view = ViewScene::from_native(self.history.scene(), 256 * 1024 * 1024)
                     .map_err(|error| OperationError::File(error.to_string()))?;
@@ -502,13 +599,21 @@ impl Editor {
                 if let Some(path) = path {
                     self.camera.frame_view(&view, Some(&path), self.aspect)
                 } else {
-                    self.camera.frame_face(
-                        &view,
-                        self.remembered_face
+                    match self.selection_mode {
+                        SelectionMode::Face => self
+                            .remembered_face
                             .as_ref()
-                            .ok_or(OperationError::NoSelection)?,
-                        self.aspect,
-                    )
+                            .map(|target| self.camera.frame_face(&view, target, self.aspect)),
+                        SelectionMode::Vertex => self
+                            .remembered_vertex
+                            .as_ref()
+                            .map(|target| self.camera.frame_vertex(&view, target, self.aspect)),
+                        _ => self
+                            .remembered_edge
+                            .as_ref()
+                            .map(|target| self.camera.frame_edge(&view, target, self.aspect)),
+                    }
+                    .ok_or(OperationError::NoSelection)?
                 }
                 .map_err(OperationError::Camera)?;
                 return Ok(if self.camera == before {
@@ -566,7 +671,7 @@ impl Editor {
             OperationError::from_history(error)
         })?;
         if let EditOutcome::Created(id) = outcome {
-            self.remembered_face = None;
+            self.clear_remembered_components();
             self.selected = Some(id);
             self.selected_path = vec![
                 self.history

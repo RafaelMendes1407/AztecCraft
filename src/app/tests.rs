@@ -2572,6 +2572,33 @@ fn face_native_closing_editor_refuses_mode_intents_without_selection_changes() {
 }
 
 #[test]
+fn vertex_and_edge_modes_refuse_native_delete_and_frame_without_a_component() {
+    for (mode, noun) in [
+        (SelectionMode::Vertex, "Vertex"),
+        (SelectionMode::Edge, "Edge"),
+    ] {
+        let mut editor = Editor::default();
+        editor.create(Primitive::Cube);
+        editor.selection_mode = mode;
+        let (before, token) = (editor.history.scene().clone(), editor.scene_token);
+        editor.native_operation(Operation::Delete(editor.selected.unwrap()));
+        assert_eq!(editor.history.scene(), &before);
+        assert_eq!(editor.scene_token, token);
+        assert!(editor.error);
+        assert_eq!(
+            editor.status,
+            format!("{noun} deletion is unsupported; switch to Object or Hierarchy selection")
+        );
+        let camera = editor.camera.clone();
+        assert!(matches!(
+            editor.apply_operation(Operation::FrameSelected),
+            Err(OperationError::NoSelection)
+        ));
+        assert_eq!(editor.camera, camera);
+    }
+}
+
+#[test]
 fn face_native_pending_mode_prevents_keyboard_and_channel_object_delete() {
     for button in [false, true] {
         let mut editor = Editor::default();
@@ -3988,8 +4015,13 @@ fn button_disabled(output: &egui::FullOutput, label: &str) -> bool {
 }
 
 #[test]
-fn delete_controls_are_enabled_in_hierarchy_mode_and_disabled_in_face_mode() {
-    for mode in [SelectionMode::Hierarchy, SelectionMode::Face] {
+fn delete_controls_are_enabled_in_hierarchy_mode_and_disabled_in_component_modes() {
+    for mode in [
+        SelectionMode::Hierarchy,
+        SelectionMode::Face,
+        SelectionMode::Vertex,
+        SelectionMode::Edge,
+    ] {
         let mut editor = Editor::default();
         editor.create(Primitive::Cube);
         editor.native_operation(Operation::SetSelectionMode(mode));
@@ -3997,7 +4029,7 @@ fn delete_controls_are_enabled_in_hierarchy_mode_and_disabled_in_face_mode() {
         let ctx = egui::Context::default();
         ctx.enable_accesskit();
         let output = frame(&mut editor, &ctx, vec![]);
-        let expect_disabled = mode == SelectionMode::Face;
+        let expect_disabled = mode.is_component();
         assert_eq!(
             button_disabled(&output, "Delete selected"),
             expect_disabled,
@@ -4184,4 +4216,712 @@ fn hierarchy_click_with_an_invalid_draft_refuses_and_keeps_the_selection() {
     assert_eq!(editor.history.scene(), &before);
     assert_eq!(editor.channels[0], "nan");
     assert!(editor.error);
+}
+
+fn selected_vertex(editor: &Editor, vertex_index: usize) -> VertexTarget {
+    let face = selected_face(editor, 0);
+    VertexTarget {
+        transform: face.transform,
+        shape: face.shape,
+        path: face.path,
+        vertex_index,
+    }
+}
+
+fn selected_edge(editor: &Editor, edge_index: usize) -> EdgeTarget {
+    let face = selected_face(editor, 0);
+    EdgeTarget {
+        transform: face.transform,
+        shape: face.shape,
+        path: face.path,
+        edge_index,
+    }
+}
+
+fn pick_vertex(editor: &mut Editor, index: usize) {
+    let target = Some(selected_vertex(editor, index));
+    remote(editor, Operation::SelectVertex { target }).unwrap();
+}
+
+fn pick_edge(editor: &mut Editor, index: usize) {
+    let target = Some(selected_edge(editor, index));
+    remote(editor, Operation::SelectEdge { target }).unwrap();
+}
+
+fn set_mode(editor: &mut Editor, mode: SelectionMode) {
+    remote(editor, Operation::SetSelectionMode(mode)).unwrap();
+}
+
+fn counts(editor: &Editor) -> (usize, usize) {
+    let shape = selected_face(editor, 0).shape;
+    let mesh = editor.history.scene().shape(shape).unwrap().mesh();
+    (mesh.point_count(), mesh.edges().len())
+}
+
+#[test]
+fn vertex_and_edge_selection_replace_clear_and_report_unchanged() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let vertex = selected_vertex(&editor, 3);
+    let edge = selected_edge(&editor, 5);
+    set_mode(&mut editor, SelectionMode::Vertex);
+    for (target, expect_changed) in [
+        (Some(vertex.clone()), true),
+        (Some(vertex.clone()), false),
+        (Some(selected_vertex(&editor, 4)), true),
+        (None, true),
+        (None, false),
+    ] {
+        let reply = remote(&mut editor, Operation::SelectVertex { target }).unwrap();
+        assert_eq!(matches!(reply, OperationReply::Changed), expect_changed);
+    }
+    set_mode(&mut editor, SelectionMode::Edge);
+    for (target, expect_changed) in [
+        (Some(edge.clone()), true),
+        (Some(edge.clone()), false),
+        (None, true),
+        (None, false),
+    ] {
+        let reply = remote(&mut editor, Operation::SelectEdge { target }).unwrap();
+        assert_eq!(matches!(reply, OperationReply::Changed), expect_changed);
+    }
+}
+
+#[test]
+fn vertex_and_edge_picks_are_kept_per_type_and_cleared_by_selection_changes() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let vertex = selected_vertex(&editor, 3);
+    let edge = selected_edge(&editor, 5);
+    let face = selected_face(&editor, 1);
+    for (mode, op) in [
+        (
+            SelectionMode::Vertex,
+            Operation::SelectVertex {
+                target: Some(vertex.clone()),
+            },
+        ),
+        (
+            SelectionMode::Edge,
+            Operation::SelectEdge {
+                target: Some(edge.clone()),
+            },
+        ),
+        (
+            SelectionMode::Face,
+            Operation::SelectFace {
+                target: Some(face.clone()),
+            },
+        ),
+    ] {
+        set_mode(&mut editor, mode);
+        remote(&mut editor, op).unwrap();
+    }
+    set_mode(&mut editor, SelectionMode::Object);
+    assert_eq!(editor.remembered_vertex.as_ref(), Some(&vertex));
+    assert_eq!(editor.remembered_edge.as_ref(), Some(&edge));
+    assert_eq!(editor.remembered_face.as_ref(), Some(&face));
+    let id = editor.selected.unwrap();
+    // Re-selecting the same object is unchanged and keeps the picks; another object clears all.
+    remote(
+        &mut editor,
+        Operation::Select {
+            node: Some(id),
+            instance_path: None,
+        },
+    )
+    .unwrap();
+    assert!(editor.remembered_vertex.is_some() && editor.remembered_edge.is_some());
+    editor.create(Primitive::Plane);
+    assert_eq!(
+        (
+            &editor.remembered_vertex,
+            &editor.remembered_edge,
+            &editor.remembered_face
+        ),
+        (&None, &None, &None)
+    );
+    for pick in [0, 1] {
+        remote(
+            &mut editor,
+            Operation::Select {
+                node: Some(id),
+                instance_path: None,
+            },
+        )
+        .unwrap();
+        set_mode(&mut editor, SelectionMode::Vertex);
+        pick_vertex(&mut editor, 3);
+        set_mode(&mut editor, SelectionMode::Edge);
+        pick_edge(&mut editor, 5);
+        if pick == 0 {
+            remote(
+                &mut editor,
+                Operation::Select {
+                    node: None,
+                    instance_path: None,
+                },
+            )
+            .unwrap();
+        } else {
+            editor.create(Primitive::Cone);
+        }
+        assert_eq!(
+            (&editor.remembered_vertex, &editor.remembered_edge),
+            (&None, &None)
+        );
+    }
+}
+
+#[test]
+fn invalid_vertex_and_edge_requests_preserve_the_baseline() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let first = editor.selected.unwrap();
+    editor.create(Primitive::Plane);
+    let (points, edges) = counts(&editor);
+    let state = |editor: &Editor| {
+        (
+            editor.history.scene().clone(),
+            editor.selected,
+            editor.selected_path.clone(),
+            editor.selection_mode,
+            editor.remembered_vertex.clone(),
+            editor.remembered_edge.clone(),
+            editor.remembered_face.clone(),
+            editor.scene_token,
+            editor.history.can_undo(),
+        )
+    };
+    let vertex = selected_vertex(&editor, 1);
+    let edge = selected_edge(&editor, 1);
+    // Object mode: both the target and the null clear are refused.
+    for op in [
+        Operation::SelectVertex {
+            target: Some(vertex.clone()),
+        },
+        Operation::SelectVertex { target: None },
+        Operation::SelectEdge {
+            target: Some(edge.clone()),
+        },
+        Operation::SelectEdge { target: None },
+    ] {
+        let before = state(&editor);
+        assert!(matches!(
+            remote(&mut editor, op),
+            Err(OperationError::InvalidInput(_))
+        ));
+        assert_eq!(state(&editor), before);
+    }
+    set_mode(&mut editor, SelectionMode::Vertex);
+    remote(
+        &mut editor,
+        Operation::SelectVertex {
+            target: Some(vertex.clone()),
+        },
+    )
+    .unwrap();
+    let mut short = vertex.clone();
+    short.path.remove(0);
+    let mut wrong_shape = vertex.clone();
+    wrong_shape.shape = editor
+        .history
+        .scene()
+        .shapes()
+        .iter()
+        .map(|shape| shape.id())
+        .find(|id| *id != vertex.shape)
+        .unwrap();
+    let mut wrong_node = vertex.clone();
+    wrong_node.transform = first;
+    for bad in [
+        VertexTarget {
+            vertex_index: points,
+            ..vertex.clone()
+        },
+        VertexTarget {
+            vertex_index: usize::MAX,
+            ..vertex.clone()
+        },
+        short,
+        wrong_shape,
+        wrong_node,
+    ] {
+        let before = state(&editor);
+        assert!(remote(&mut editor, Operation::SelectVertex { target: Some(bad) }).is_err());
+        assert_eq!(state(&editor), before);
+    }
+    // Wrong mode for the operation, including null.
+    for op in [
+        Operation::SelectEdge {
+            target: Some(edge.clone()),
+        },
+        Operation::SelectEdge { target: None },
+    ] {
+        let before = state(&editor);
+        assert!(remote(&mut editor, op).is_err());
+        assert_eq!(state(&editor), before);
+    }
+    set_mode(&mut editor, SelectionMode::Edge);
+    for op in [
+        Operation::SelectVertex {
+            target: Some(vertex),
+        },
+        Operation::SelectVertex { target: None },
+        Operation::SelectEdge {
+            target: Some(EdgeTarget {
+                edge_index: edges,
+                ..edge
+            }),
+        },
+    ] {
+        let before = state(&editor);
+        assert!(remote(&mut editor, op).is_err());
+        assert_eq!(state(&editor), before);
+    }
+}
+
+#[test]
+fn undoing_the_creation_clears_vertex_and_edge_picks() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    set_mode(&mut editor, SelectionMode::Vertex);
+    pick_vertex(&mut editor, 2);
+    remote(&mut editor, Operation::Undo).unwrap();
+    assert_eq!(editor.remembered_vertex, None);
+    remote(&mut editor, Operation::Redo).unwrap();
+    assert_eq!(editor.remembered_vertex, None);
+    editor.selected = Some(editor.history.scene().nodes()[0].id());
+    editor.sync_fields();
+    set_mode(&mut editor, SelectionMode::Edge);
+    pick_edge(&mut editor, 2);
+    remote(&mut editor, Operation::Undo).unwrap();
+    assert_eq!(editor.remembered_edge, None);
+}
+
+#[test]
+fn undoing_an_extrusion_clears_new_vertex_and_edge_picks_and_redo_does_not_restore_them() {
+    for edge_mode in [false, true] {
+        let mut editor = Editor::default();
+        editor.create(Primitive::Cube);
+        let (old_points, old_edges) = counts(&editor);
+        let cap = selected_face(&editor, 0);
+        remote(
+            &mut editor,
+            Operation::ExtrudeFace {
+                target: cap,
+                distance: 0.25,
+            },
+        )
+        .unwrap();
+        let (points, edges) = counts(&editor);
+        assert!(points > old_points && edges > old_edges);
+        if edge_mode {
+            set_mode(&mut editor, SelectionMode::Edge);
+            pick_edge(&mut editor, edges - 1);
+            assert!(editor.remembered_edge.is_some());
+        } else {
+            set_mode(&mut editor, SelectionMode::Vertex);
+            pick_vertex(&mut editor, points - 1);
+            assert!(editor.remembered_vertex.is_some());
+        }
+        remote(&mut editor, Operation::Undo).unwrap();
+        assert_eq!(counts(&editor), (old_points, old_edges));
+        assert_eq!(editor.remembered_vertex, None);
+        assert_eq!(editor.remembered_edge, None);
+        remote(&mut editor, Operation::Redo).unwrap();
+        assert_eq!(counts(&editor), (points, edges));
+        assert_eq!(editor.remembered_vertex, None);
+        assert_eq!(editor.remembered_edge, None);
+    }
+}
+
+#[test]
+fn a_still_valid_vertex_pick_survives_undo_of_an_unrelated_edit() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    editor.channels[0] = "2".into();
+    editor.native_operation(Operation::FrameSelected);
+    set_mode(&mut editor, SelectionMode::Vertex);
+    let vertex = selected_vertex(&editor, 3);
+    remote(
+        &mut editor,
+        Operation::SelectVertex {
+            target: Some(vertex.clone()),
+        },
+    )
+    .unwrap();
+    editor.name = "renamed".into();
+    editor.commit_pending();
+    remote(&mut editor, Operation::Undo).unwrap();
+    assert_eq!(editor.remembered_vertex.as_ref(), Some(&vertex));
+}
+
+#[test]
+fn new_scene_keeps_the_mode_and_clears_vertex_and_edge_picks() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    set_mode(&mut editor, SelectionMode::Vertex);
+    pick_vertex(&mut editor, 1);
+    editor.remembered_edge = Some(selected_edge(&editor, 1));
+    // The scene is dirty after Create, so New asks first; discard to replace it.
+    editor.native_operation(Operation::NewScene);
+    if let Some(pending) = editor.files.pending_inspection() {
+        remote(
+            &mut editor,
+            Operation::ResolveFileAction {
+                pending_id: Uuid::parse_str(&pending.id).unwrap(),
+                decision: crate::editor_operations::FileDecision::Discard,
+            },
+        )
+        .unwrap();
+    }
+    assert_eq!(editor.selection_mode, SelectionMode::Vertex);
+    assert_eq!(
+        (&editor.remembered_vertex, &editor.remembered_edge),
+        (&None, &None)
+    );
+}
+
+#[test]
+fn selecting_another_object_clears_vertex_and_edge_picks() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let first = editor.selected.unwrap();
+    editor.create(Primitive::Plane);
+    let second = editor.selected.unwrap();
+    for node in [first, second] {
+        remote(
+            &mut editor,
+            Operation::Select {
+                node: Some(node),
+                instance_path: None,
+            },
+        )
+        .unwrap();
+        set_mode(&mut editor, SelectionMode::Vertex);
+        pick_vertex(&mut editor, 1);
+        set_mode(&mut editor, SelectionMode::Edge);
+        pick_edge(&mut editor, 1);
+        let other = if node == first { second } else { first };
+        remote(
+            &mut editor,
+            Operation::Select {
+                node: Some(other),
+                instance_path: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            (&editor.remembered_vertex, &editor.remembered_edge),
+            (&None, &None)
+        );
+    }
+}
+
+#[test]
+fn native_vertex_and_edge_selection_leave_the_status_untouched() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    for mode in [SelectionMode::Vertex, SelectionMode::Edge] {
+        editor.selection_mode = mode;
+        editor.status = "marker".into();
+        let operation = if mode == SelectionMode::Vertex {
+            Operation::SelectVertex {
+                target: Some(selected_vertex(&editor, 1)),
+            }
+        } else {
+            Operation::SelectEdge {
+                target: Some(selected_edge(&editor, 1)),
+            }
+        };
+        editor.native_operation(operation);
+        assert!(!editor.error);
+        assert_eq!(editor.status, "marker");
+        assert!(editor.remembered_vertex.is_some() || editor.remembered_edge.is_some());
+    }
+}
+
+#[test]
+fn selecting_a_vertex_on_another_node_replaces_it_and_clears_other_picks() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let edge_on_first = selected_edge(&editor, 1);
+    let face_on_first = selected_face(&editor, 1);
+    let vertex_on_first = selected_vertex(&editor, 1);
+    editor.create(Primitive::Plane);
+    // Install picks that still resolve on the first node, so only the owner check can clear them.
+    editor.remembered_edge = Some(edge_on_first);
+    editor.remembered_face = Some(face_on_first);
+    editor.remembered_vertex = Some(vertex_on_first);
+    set_mode(&mut editor, SelectionMode::Vertex);
+    let on_second = selected_vertex(&editor, 2);
+    remote(
+        &mut editor,
+        Operation::SelectVertex {
+            target: Some(on_second.clone()),
+        },
+    )
+    .unwrap();
+    assert_eq!(editor.remembered_vertex.as_ref(), Some(&on_second));
+    assert_eq!(editor.remembered_edge, None);
+    assert_eq!(editor.remembered_face, None);
+}
+
+#[test]
+fn overlong_vertex_and_edge_paths_are_rejected_without_mutation() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let before = (editor.selected, editor.selected_path.clone());
+    let mut vertex = selected_vertex(&editor, 0);
+    let mut edge = selected_edge(&editor, 0);
+    set_mode(&mut editor, SelectionMode::Vertex);
+    vertex.path.push(vertex.shape);
+    assert!(matches!(
+        remote(
+            &mut editor,
+            Operation::SelectVertex {
+                target: Some(vertex.clone())
+            }
+        ),
+        Err(OperationError::Scene(
+            azteccraft::native_scene::NativeError::InvalidInstancePath
+        ))
+    ));
+    vertex.path = vec![vertex.shape; azteccraft::native_scene::MAX_TRANSFORM_DEPTH + 2];
+    assert!(matches!(
+        remote(
+            &mut editor,
+            Operation::SelectVertex {
+                target: Some(vertex)
+            }
+        ),
+        Err(OperationError::InvalidInput(_))
+    ));
+    set_mode(&mut editor, SelectionMode::Edge);
+    edge.path.push(edge.shape);
+    assert!(matches!(
+        remote(
+            &mut editor,
+            Operation::SelectEdge {
+                target: Some(edge.clone())
+            }
+        ),
+        Err(OperationError::Scene(
+            azteccraft::native_scene::NativeError::InvalidInstancePath
+        ))
+    ));
+    edge.path = vec![edge.shape; azteccraft::native_scene::MAX_TRANSFORM_DEPTH + 2];
+    assert!(matches!(
+        remote(&mut editor, Operation::SelectEdge { target: Some(edge) }),
+        Err(OperationError::InvalidInput(_))
+    ));
+    assert_eq!((editor.selected, editor.selected_path.clone()), before);
+    assert_eq!(
+        (&editor.remembered_vertex, &editor.remembered_edge),
+        (&None, &None)
+    );
+}
+
+#[test]
+fn undo_clears_only_the_stale_pick_and_keeps_valid_ones() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let cap = selected_face(&editor, 0);
+    remote(
+        &mut editor,
+        Operation::ExtrudeFace {
+            target: cap,
+            distance: 0.25,
+        },
+    )
+    .unwrap();
+    let (_, edges) = counts(&editor);
+    set_mode(&mut editor, SelectionMode::Vertex);
+    pick_vertex(&mut editor, 0);
+    set_mode(&mut editor, SelectionMode::Edge);
+    pick_edge(&mut editor, edges - 1);
+    remote(&mut editor, Operation::Undo).unwrap();
+    assert_eq!(editor.remembered_edge, None);
+    assert_eq!(editor.remembered_vertex.as_ref().unwrap().vertex_index, 0);
+}
+
+#[test]
+fn delete_hover_text_names_the_component_only_in_component_modes() {
+    let mut editor = Editor::default();
+    for (mode, menu, button) in [
+        (
+            SelectionMode::Face,
+            "Object or Hierarchy selection required; face deletion is unsupported",
+            "Face deletion is unsupported; switch to Object or Hierarchy selection",
+        ),
+        (
+            SelectionMode::Vertex,
+            "Object or Hierarchy selection required; vertex deletion is unsupported",
+            "Vertex deletion is unsupported; switch to Object or Hierarchy selection",
+        ),
+        (
+            SelectionMode::Edge,
+            "Object or Hierarchy selection required; edge deletion is unsupported",
+            "Edge deletion is unsupported; switch to Object or Hierarchy selection",
+        ),
+    ] {
+        editor.selection_mode = mode;
+        assert_eq!(editor.delete_disabled_hover(Some("read only"), true), menu);
+        assert_eq!(editor.delete_disabled_hover(None, false), button);
+    }
+    for mode in [SelectionMode::Object, SelectionMode::Hierarchy] {
+        editor.selection_mode = mode;
+        assert_eq!(
+            editor.delete_disabled_hover(None, true),
+            "Select an object to delete"
+        );
+        assert_eq!(
+            editor.delete_disabled_hover(Some("read only"), true),
+            "read only"
+        );
+        assert_eq!(
+            editor.delete_disabled_hover(Some("read only"), false),
+            "read only"
+        );
+    }
+}
+
+#[test]
+fn undo_making_only_the_face_pick_stale_keeps_vertex_and_edge_picks() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let cap = selected_face(&editor, 0);
+    remote(
+        &mut editor,
+        Operation::ExtrudeFace {
+            target: cap,
+            distance: 0.25,
+        },
+    )
+    .unwrap();
+    set_mode(&mut editor, SelectionMode::Vertex);
+    pick_vertex(&mut editor, 0);
+    set_mode(&mut editor, SelectionMode::Edge);
+    pick_edge(&mut editor, 0);
+    set_mode(&mut editor, SelectionMode::Face);
+    let side = selected_face(&editor, 6);
+    remote(&mut editor, Operation::SelectFace { target: Some(side) }).unwrap();
+    remote(&mut editor, Operation::Undo).unwrap();
+    assert_eq!(editor.remembered_face, None);
+    assert_eq!(editor.remembered_vertex.as_ref().unwrap().vertex_index, 0);
+    assert_eq!(editor.remembered_edge.as_ref().unwrap().edge_index, 0);
+}
+
+fn translated_cube_editor() -> Editor {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    editor.channels[0] = "2".into();
+    editor.commit_pending();
+    editor
+}
+
+fn world_points(editor: &Editor, indices: &[usize]) -> Vec<glam::Vec3> {
+    let view = ViewScene::from_native(editor.history.scene(), 256 * 1024 * 1024).unwrap();
+    let instance = &view.instances()[0];
+    indices
+        .iter()
+        .map(|&index| instance.world_vertices()[index])
+        .collect()
+}
+
+#[test]
+fn frame_selected_frames_the_remembered_vertex_in_world_space() {
+    let mut editor = translated_cube_editor();
+    set_mode(&mut editor, SelectionMode::Vertex);
+    pick_vertex(&mut editor, 3);
+    let points = world_points(&editor, &[3]);
+    let mut expected = editor.camera.clone();
+    expected.frame_points(&points, editor.aspect).unwrap();
+    assert!(expected.target().x > 1.0, "world, not local, coordinates");
+    let scene = editor.history.scene().clone();
+    let token = editor.scene_token;
+    remote(&mut editor, Operation::FrameSelected).unwrap();
+    assert_eq!(editor.camera, expected);
+    assert_eq!(editor.camera.target(), points[0]);
+    assert_eq!(editor.history.scene(), &scene);
+    assert_eq!(editor.scene_token, token);
+    assert!(matches!(
+        remote(&mut editor, Operation::FrameSelected),
+        Ok(OperationReply::Unchanged)
+    ));
+}
+
+#[test]
+fn frame_selected_frames_both_endpoints_of_the_remembered_edge() {
+    let mut editor = translated_cube_editor();
+    set_mode(&mut editor, SelectionMode::Edge);
+    pick_edge(&mut editor, 5);
+    let shape = selected_face(&editor, 0).shape;
+    let [a, b] = editor.history.scene().shape(shape).unwrap().mesh().edges()[5].endpoints();
+    let points = world_points(&editor, &[a, b]);
+    assert_ne!(points[0], points[1]);
+    let mut expected = editor.camera.clone();
+    expected.frame_points(&points, editor.aspect).unwrap();
+    remote(&mut editor, Operation::FrameSelected).unwrap();
+    assert_eq!(editor.camera, expected);
+    assert!(
+        editor
+            .camera
+            .target()
+            .abs_diff_eq((points[0] + points[1]) * 0.5, 1e-5)
+    );
+    let mut single = editor.camera.clone();
+    single.frame_points(&points[..1], editor.aspect).unwrap();
+    assert!(editor.camera.distance() > single.distance());
+}
+
+#[test]
+fn frame_selected_without_a_pick_or_with_a_stale_pick_keeps_the_camera() {
+    for mode in [SelectionMode::Vertex, SelectionMode::Edge] {
+        let mut editor = Editor::default();
+        editor.create(Primitive::Cube);
+        set_mode(&mut editor, mode);
+        let camera = editor.camera.clone();
+        assert!(matches!(
+            remote(&mut editor, Operation::FrameSelected),
+            Err(OperationError::NoSelection)
+        ));
+        // A remembered pick that no longer resolves is a typed scene error.
+        editor.remembered_vertex = Some(selected_vertex(&editor, 9999));
+        editor.remembered_edge = Some(selected_edge(&editor, 9999));
+        assert!(matches!(
+            remote(&mut editor, Operation::FrameSelected),
+            Err(OperationError::Scene(_))
+        ));
+        assert_eq!(editor.camera, camera);
+    }
+}
+
+#[test]
+fn frame_selected_after_undo_of_the_picked_object_is_no_selection() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    set_mode(&mut editor, SelectionMode::Vertex);
+    pick_vertex(&mut editor, 2);
+    remote(&mut editor, Operation::Undo).unwrap();
+    let camera = editor.camera.clone();
+    assert!(matches!(
+        remote(&mut editor, Operation::FrameSelected),
+        Err(OperationError::NoSelection)
+    ));
+    assert_eq!(editor.camera, camera);
+}
+
+#[test]
+fn frame_selected_in_object_mode_ignores_vertex_and_edge_picks() {
+    let mut editor = translated_cube_editor();
+    set_mode(&mut editor, SelectionMode::Vertex);
+    pick_vertex(&mut editor, 3);
+    set_mode(&mut editor, SelectionMode::Object);
+    let mut expected = editor.camera.clone();
+    let view = ViewScene::from_native(editor.history.scene(), 256 * 1024 * 1024).unwrap();
+    expected.frame_view(&view, None, editor.aspect).unwrap();
+    remote(&mut editor, Operation::FrameSelected).unwrap();
+    assert_eq!(editor.camera, expected);
 }

@@ -2,7 +2,9 @@
 use azteccraft::native_scene::NativeTransform;
 use azteccraft::{
     history::{ManipulationError, ManipulationFinish, ManipulationId},
-    native_scene::{FaceTarget, NativeError, NativeId, TransformTarget, WorldAxis},
+    native_scene::{
+        EdgeTarget, FaceTarget, NativeError, NativeId, TransformTarget, VertexTarget, WorldAxis,
+    },
     scene::{NodeId, Primitive},
     viewport::InvalidCameraInput,
 };
@@ -71,14 +73,29 @@ pub enum DocumentOrigin {
     LegacyAztec,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SelectionMode {
     #[default]
     Object,
     Face,
     Hierarchy,
+    Vertex,
+    Edge,
+}
+
+impl SelectionMode {
+    pub fn is_component(self) -> bool {
+        matches!(self, Self::Vertex | Self::Edge | Self::Face)
+    }
+    pub fn component_noun(self) -> Option<&'static str> {
+        match self {
+            Self::Vertex => Some("Vertex"),
+            Self::Edge => Some("Edge"),
+            Self::Face => Some("Face"),
+            Self::Object | Self::Hierarchy => None,
+        }
+    }
 }
 /// Session-only viewport shading, like grid visibility; never saved or dirtying.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -159,6 +176,26 @@ pub enum Operation {
     SetSelectionMode(SelectionMode),
     SelectFace {
         target: Option<FaceTarget>,
+    },
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "no user surface selects vertices until MCP and the viewport click land"
+        )
+    )]
+    SelectVertex {
+        target: Option<VertexTarget>,
+    },
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "no user surface selects edges until MCP and the viewport click land"
+        )
+    )]
+    SelectEdge {
+        target: Option<EdgeTarget>,
     },
     NewScene,
     RequestClose,

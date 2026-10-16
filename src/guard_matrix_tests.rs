@@ -158,6 +158,8 @@ impl State {
 enum Pre {
     None,
     FaceMode,
+    VertexMode,
+    EdgeMode,
     /// Adds a second node with different channels, reselects the first and enters Face mode.
     SecondNodeFaceMode,
     /// Makes the Attribute Editor the active dock panel, the only state that accepts a tab.
@@ -223,6 +225,28 @@ impl Targets {
             shape,
             path,
             face_index: 0,
+        }
+    }
+
+    fn vertex(&self) -> VertexTarget {
+        let mut path = self.path.clone();
+        path.push(self.shape);
+        VertexTarget {
+            transform: self.node,
+            shape: self.shape,
+            path,
+            vertex_index: 0,
+        }
+    }
+
+    fn edge(&self) -> EdgeTarget {
+        let mut path = self.path.clone();
+        path.push(self.shape);
+        EdgeTarget {
+            transform: self.node,
+            shape: self.shape,
+            path,
+            edge_index: 0,
         }
     }
 
@@ -501,6 +525,12 @@ fn seeds(t: &Targets) -> Vec<Operation> {
         Operation::SelectFace {
             target: Some(t.face()),
         },
+        Operation::SelectVertex {
+            target: Some(t.vertex()),
+        },
+        Operation::SelectEdge {
+            target: Some(t.edge()),
+        },
         Operation::NewScene,
         Operation::RequestClose,
         Operation::OpenScene {
@@ -741,6 +771,72 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
                 )
             },
         ],
+        Operation::SelectVertex { .. } => vec![
+            sample(
+                "select_vertex(object_mode)",
+                Operation::SelectVertex {
+                    target: Some(t.vertex()),
+                },
+            ),
+            Sample {
+                pre: Pre::VertexMode,
+                ..sample(
+                    "select_vertex(vertex_mode)",
+                    Operation::SelectVertex {
+                        target: Some(t.vertex()),
+                    },
+                )
+            },
+            Sample {
+                pre: Pre::VertexMode,
+                ..sample(
+                    "select_vertex(vertex_mode_clear)",
+                    Operation::SelectVertex { target: None },
+                )
+            },
+            Sample {
+                pre: Pre::FaceMode,
+                ..sample(
+                    "select_vertex(face_mode)",
+                    Operation::SelectVertex {
+                        target: Some(t.vertex()),
+                    },
+                )
+            },
+        ],
+        Operation::SelectEdge { .. } => vec![
+            sample(
+                "select_edge(object_mode)",
+                Operation::SelectEdge {
+                    target: Some(t.edge()),
+                },
+            ),
+            Sample {
+                pre: Pre::EdgeMode,
+                ..sample(
+                    "select_edge(edge_mode)",
+                    Operation::SelectEdge {
+                        target: Some(t.edge()),
+                    },
+                )
+            },
+            Sample {
+                pre: Pre::EdgeMode,
+                ..sample(
+                    "select_edge(edge_mode_clear)",
+                    Operation::SelectEdge { target: None },
+                )
+            },
+            Sample {
+                pre: Pre::VertexMode,
+                ..sample(
+                    "select_edge(vertex_mode)",
+                    Operation::SelectEdge {
+                        target: Some(t.edge()),
+                    },
+                )
+            },
+        ],
         Operation::NewScene => vec![sample("new_scene", Operation::NewScene)],
         Operation::RequestClose => vec![sample("request_close", Operation::RequestClose)],
         Operation::OpenScene { .. } => vec![
@@ -859,6 +955,14 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
                 pre: Pre::FaceMode,
                 ..sample("delete(face_mode)", Operation::Delete(t.node))
             },
+            Sample {
+                pre: Pre::VertexMode,
+                ..sample("delete(vertex_mode)", Operation::Delete(t.node))
+            },
+            Sample {
+                pre: Pre::EdgeMode,
+                ..sample("delete(edge_mode)", Operation::Delete(t.node))
+            },
         ],
         Operation::Undo => vec![sample("undo", Operation::Undo)],
         Operation::Redo => vec![sample("redo", Operation::Redo)],
@@ -964,6 +1068,14 @@ fn observe(editor: &Editor, roots: &[&std::path::Path]) -> Observed {
         (
             "face_remembered",
             editor.remembered_face.is_some().to_string(),
+        ),
+        (
+            "vertex_remembered",
+            editor.remembered_vertex.is_some().to_string(),
+        ),
+        (
+            "edge_remembered",
+            editor.remembered_edge.is_some().to_string(),
         ),
         ("active_tool", format!("{:?}", editor.active_tool)),
         ("grid", editor.grid_visible.to_string()),
@@ -1102,6 +1214,8 @@ fn run_cell(state: State, pipeline: Pipeline, index: usize) -> (String, String) 
                 color: [1.0, 0.0, 0.0],
             });
         }
+        Pre::VertexMode => rig.editor.selection_mode = SelectionMode::Vertex,
+        Pre::EdgeMode => rig.editor.selection_mode = SelectionMode::Edge,
         Pre::AttributeEditorDock => {
             rig.editor.sidebar_dock = Some(crate::editor_operations::SidebarPanel::AttributeEditor)
         }

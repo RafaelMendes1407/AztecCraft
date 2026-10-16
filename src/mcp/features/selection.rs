@@ -1,5 +1,7 @@
 use crate::{
-    editor_operations::{FaceSelectionTarget, Operation, RemoteRequest, SelectionMode},
+    editor_operations::{
+        FaceSelectionTarget, Operation, RemoteRequest, SelectionMode as EditorMode,
+    },
     mcp::{
         args::{decode, native_id, node_id, schema, scoped, token},
         registry::ToolSpec,
@@ -38,6 +40,15 @@ struct SelectArgs {
     node_id: Option<String>,
     #[schemars(length(max = 256))]
     instance_path: Option<Vec<String>>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(rename = "SelectionMode")]
+enum SelectionMode {
+    Object,
+    Face,
+    Hierarchy,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -105,9 +116,14 @@ fn parse_select_node(arguments: JsonObject) -> Result<RemoteRequest, ErrorData> 
 
 fn parse_set_selection_mode(arguments: JsonObject) -> Result<RemoteRequest, ErrorData> {
     let args: SelectionModeArgs = decode(arguments)?;
+    let mode = match args.mode {
+        SelectionMode::Object => EditorMode::Object,
+        SelectionMode::Face => EditorMode::Face,
+        SelectionMode::Hierarchy => EditorMode::Hierarchy,
+    };
     Ok(scoped(
         token(&args.scene_token)?,
-        Operation::SetSelectionMode(args.mode),
+        Operation::SetSelectionMode(mode),
     ))
 }
 
