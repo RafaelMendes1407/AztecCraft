@@ -7,8 +7,9 @@ order, placement and broad colour conventions. This is a process rule; it does n
 never saw Maya icons.
 
 Authorship: AztecCraft contributors, AI-assisted (Claude). The copyright position of AI-assisted
-work is unresolved. Original icons use the project license, MIT OR Apache-2.0, selected on 2026-10-16. The root
-LICENSE-MIT, LICENSE-APACHE and NOTICE files land in a separate license change.
+work is unresolved. Original icons use the project license, MIT OR Apache-2.0, as set out in the
+root [LICENSE-MIT](../LICENSE-MIT), [LICENSE-APACHE](../LICENSE-APACHE) and [NOTICE](../NOTICE)
+(added in commit 20eca0e). The Autodesk pages in the table were consulted on 2026-10-16.
 
 | icon | documented role and placement | Maya 2026 doc URL | what is emulated | differs from Maya by | geometry statement | author | license |
 | --- | --- | --- | --- | --- | --- | --- | --- |

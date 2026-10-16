@@ -69,7 +69,10 @@ fn main() -> eframe::Result {
     };
     eframe::run_native(
         "icon_sheet",
-        eframe::NativeOptions::default(),
+        eframe::NativeOptions {
+            viewport: eframe::egui::ViewportBuilder::default().with_inner_size([960.0, 900.0]),
+            ..Default::default()
+        },
         Box::new(move |_cc| Ok(Box::new(Sheet { disabled, zoom }))),
     )
 }
