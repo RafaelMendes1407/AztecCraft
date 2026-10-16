@@ -26,6 +26,16 @@ impl SessionMaterialId {
     }
 }
 
+/// Which material a whole-shape assignment uses.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum MaterialChoice {
+    Existing(SessionMaterialId),
+    /// Creates a lambert with this colour inside the same edit.
+    New {
+        color: [f64; 3],
+    },
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Lambert {
     pub(super) name: String,
@@ -127,6 +137,30 @@ impl SessionMaterials {
         self.assignments
             .retain(|shape, _| shapes.iter().any(|candidate| candidate.id == *shape));
     }
+
+    pub(super) fn add(&mut self, color: [f64; 3]) -> Result<SessionMaterialId, NativeError> {
+        check_color(color)?;
+        if self.materials.len() >= MAX_SESSION_MATERIALS {
+            return Err(NativeError::ResourceLimit);
+        }
+        let id = SessionMaterialId(self.materials.len());
+        self.materials.push(Lambert {
+            name: format!("sessionLambert{}", id.0),
+            color,
+        });
+        self.groups.push(ShadingGroup {
+            name: format!("sessionLambert{}SG", id.0),
+            material: id,
+        });
+        Ok(id)
+    }
+
+    fn group_of(&self, material: SessionMaterialId) -> Result<usize, NativeError> {
+        self.groups
+            .iter()
+            .position(|group| group.material == material)
+            .ok_or(NativeError::UnknownSessionMaterial(material))
+    }
 }
 
 impl NativeScene {
@@ -146,6 +180,59 @@ impl NativeScene {
         let group = self.session_materials.assignments.get(&shape).copied();
         let group = self.session_materials.groups.get(group.unwrap_or(0))?;
         self.session_materials.materials.get(group.material.0)
+    }
+
+    pub fn create_session_material(
+        &mut self,
+        color: [f64; 3],
+    ) -> Result<SessionMaterialId, NativeError> {
+        self.structural_edit()?;
+        self.session_materials.add(color)
+    }
+
+    /// Assigns the whole shape, so every instance of it changes.
+    pub fn assign_session_material(
+        &mut self,
+        shape: NativeId,
+        choice: MaterialChoice,
+    ) -> Result<SessionMaterialId, NativeError> {
+        self.structural_edit()?;
+        if !self.shapes.iter().any(|candidate| candidate.id == shape) {
+            return Err(NativeError::MissingShape(shape));
+        }
+        let materials = &mut self.session_materials;
+        let (material, group) = match choice {
+            MaterialChoice::Existing(material) => (material, materials.group_of(material)?),
+            MaterialChoice::New { color } => {
+                check_color(color)?;
+                let material = materials.add(color)?;
+                (material, materials.groups.len() - 1)
+            }
+        };
+        if group == 0 {
+            materials.assignments.remove(&shape);
+        } else {
+            materials.assignments.insert(shape, group);
+        }
+        Ok(material)
+    }
+
+    pub fn set_session_material_color(
+        &mut self,
+        material: SessionMaterialId,
+        color: [f64; 3],
+    ) -> Result<(), NativeError> {
+        self.structural_edit()?;
+        check_color(color)?;
+        if material.0 == 0 {
+            return Err(NativeError::InitialSessionMaterialLocked);
+        }
+        self.session_materials
+            .materials
+            .get_mut(material.0)
+            .ok_or(NativeError::UnknownSessionMaterial(material))?
+            .color = color;
+        Ok(())
     }
 }
 

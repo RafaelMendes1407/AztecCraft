@@ -950,3 +950,36 @@ fn unavailable_membership_cannot_hide_later_known_malformed_framing() {
     );
     unavailable(missing, AppearanceIssue::MissingMembership);
 }
+
+#[test]
+fn session_material_edits_refuse_sourced_scenes_and_keep_phong_diffuse_editable() {
+    use crate::native_scene::{MaterialChoice, NativeError, SessionMaterialId};
+    let bytes: Arc<[u8]> = wire_fixture::appearance_specimen_with_users(2).into();
+    let mut scene = decode(bytes).unwrap();
+    let shape = scene.shapes[0].id;
+    let before = scene.clone();
+    assert_eq!(
+        scene.create_session_material([1.0, 0.0, 0.0]),
+        Err(NativeError::UnsupportedEdit)
+    );
+    assert_eq!(
+        scene.assign_session_material(shape, MaterialChoice::New { color: [1.0; 3] }),
+        Err(NativeError::UnsupportedEdit)
+    );
+    assert_eq!(
+        scene.assign_session_material(
+            shape,
+            MaterialChoice::Existing(SessionMaterialId::from_index(0))
+        ),
+        Err(NativeError::UnsupportedEdit)
+    );
+    assert_eq!(
+        scene.set_session_material_color(SessionMaterialId::from_index(0), [0.0; 3]),
+        Err(NativeError::UnsupportedEdit)
+    );
+    assert_eq!(scene, before);
+    assert!(scene.session_material(shape).is_none());
+    scene.set_material_diffuse(shape, 0.25).unwrap();
+    assert_ne!(scene, before);
+    assert!(crate::native_scene::binary::encode(&scene).is_ok());
+}

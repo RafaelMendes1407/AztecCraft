@@ -21,7 +21,9 @@ pub use move_translation::{ChannelLeaf, WorldAxis, WorldMoveFrame, WorldMoveUnsu
 pub use rotate_frame::{RotateAxis, RotateFrame, RotateSpace, RotateUnsupported};
 pub use scale_frame::{ScaleFrame, ScaleHandle, ScaleSpace, ScaleUnsupported};
 use session_material::SessionMaterials;
-pub use session_material::{Lambert, MAX_SESSION_MATERIALS, SessionMaterialId, ShadingGroup};
+pub use session_material::{
+    Lambert, MAX_SESSION_MATERIALS, MaterialChoice, SessionMaterialId, ShadingGroup,
+};
 use source::{ScalarOrigin, SourceFormat, SourceRetention, TransformField};
 pub use transform_extras::{InternalExtras, TransformExtras};
 
@@ -1428,7 +1430,9 @@ pub enum NativeError {
     NameCollision,
     UnsupportedEdit,
     ReadOnlyFormat,
+    UnknownSessionMaterial(SessionMaterialId),
     SessionColorOutOfRange,
+    InitialSessionMaterialLocked,
     InvalidSessionMaterials,
     UnsupportedMove(WorldMoveUnsupported),
     UnsupportedRotate(RotateUnsupported),
@@ -1475,6 +1479,12 @@ impl fmt::Display for NativeError {
                 f.write_str("native ownership or edit effects are unsupported")
             }
             Self::ReadOnlyFormat => f.write_str("Maya ASCII scenes are read-only in this version"),
+            Self::UnknownSessionMaterial(id) => {
+                write!(f, "session material {} does not exist", id.index())
+            }
+            Self::InitialSessionMaterialLocked => {
+                f.write_str("the initial session material keeps the viewport base fill")
+            }
             Self::SessionColorOutOfRange => {
                 f.write_str("session material colour channels must be within 0 through 1")
             }

@@ -1,5 +1,7 @@
 use crate::{
-    native_scene::{NativeError, NativeId, NativeScene, NativeTransform},
+    native_scene::{
+        MaterialChoice, NativeError, NativeId, NativeScene, NativeTransform, SessionMaterialId,
+    },
     scene::{NodeId, Primitive},
 };
 mod move_transaction;
@@ -33,6 +35,17 @@ pub enum Command {
         shape: NativeId,
         value: f64,
     },
+    CreateSessionMaterial {
+        color: [f64; 3],
+    },
+    AssignSessionMaterial {
+        shape: NativeId,
+        material: MaterialChoice,
+    },
+    SetSessionMaterialColor {
+        material: SessionMaterialId,
+        color: [f64; 3],
+    },
     ExtrudeFace {
         shape: NativeId,
         face_index: usize,
@@ -43,6 +56,7 @@ pub enum Command {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EditOutcome {
     Created(NodeId),
+    SessionMaterial(SessionMaterialId),
     Changed,
     Unchanged,
 }
@@ -104,6 +118,16 @@ impl History {
             }
             Command::SetMaterialDiffuse { shape, value } => {
                 candidate.set_material_diffuse(shape, value)?;
+                EditOutcome::Changed
+            }
+            Command::CreateSessionMaterial { color } => {
+                EditOutcome::SessionMaterial(candidate.create_session_material(color)?)
+            }
+            Command::AssignSessionMaterial { shape, material } => {
+                EditOutcome::SessionMaterial(candidate.assign_session_material(shape, material)?)
+            }
+            Command::SetSessionMaterialColor { material, color } => {
+                candidate.set_session_material_color(material, color)?;
                 EditOutcome::Changed
             }
             Command::ExtrudeFace {

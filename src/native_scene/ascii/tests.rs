@@ -502,3 +502,23 @@ fn malformed_or_unsupported_extras_are_typed_refusals() {
         );
     }
 }
+
+#[test]
+fn session_material_edits_are_read_only_on_ascii_scenes() {
+    use crate::native_scene::{MaterialChoice, SessionMaterialId};
+    let mut scene = decode(input(&specimen())).unwrap();
+    let before = scene.clone();
+    let shape = NativeId::from_decimal("1").unwrap();
+    let zero = SessionMaterialId::from_index(0);
+    let errors = [
+        scene.create_session_material([0.5; 3]).map(drop),
+        scene
+            .assign_session_material(shape, MaterialChoice::Existing(zero))
+            .map(drop),
+        scene.set_session_material_color(zero, [0.5; 3]),
+    ];
+    for error in errors {
+        assert_eq!(error, Err(NativeError::ReadOnlyFormat));
+    }
+    assert_eq!(scene, before);
+}

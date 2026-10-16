@@ -37,7 +37,9 @@ fn axis_name(axis: WorldAxis) -> &'static str {
 
 fn edit_reply(outcome: EditOutcome) -> OperationReply {
     match outcome {
-        EditOutcome::Changed | EditOutcome::Created(_) => OperationReply::Changed,
+        EditOutcome::Changed | EditOutcome::Created(_) | EditOutcome::SessionMaterial(_) => {
+            OperationReply::Changed
+        }
         EditOutcome::Unchanged => OperationReply::Unchanged,
     }
 }
