@@ -290,6 +290,7 @@ The strip shows:
 - New, Open and Save buttons, which share the File menu's handlers and enable state;
 - Hierarchy (Root sub-mask only), Object and Component selection modes. Component means Face, the only
   implemented component mode;
+- a selection mode menu (presets), shown disabled with no state (visibly unsupported; real presets need masks);
 - five sidebar toggles, of which only Channel Box / Layer Editor works. The others are disabled.
 
 Groups without AztecCraft behavior are not drawn rather than shown as inert controls: selection masks,
