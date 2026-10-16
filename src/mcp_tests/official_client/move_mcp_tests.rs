@@ -1,3 +1,5 @@
+use super::*;
+
 #[tokio::test]
 async fn move_sdk_absolute_preview_cancel_commit_busy_and_tokens_share_one_history() {
     let context = egui::Context::default();
@@ -529,10 +531,7 @@ async fn move_sdk_refuses_begin_in_face_mode_and_reports_it_in_inspection() {
         json!({"scene_token":token,"node_id":node,"instance_path":path,"axis":"x"}),
     )
     .await;
-    assert_eq!(
-        begun.structured_content.unwrap()["outcome"],
-        "move_started"
-    );
+    assert_eq!(begun.structured_content.unwrap()["outcome"], "move_started");
     client.cancel().await.unwrap();
     drop(editor);
     server.await.unwrap();

@@ -1,0 +1,320 @@
+use super::*;
+
+impl Editor {
+    pub(super) fn render(&mut self, ui: &mut egui::Ui) {
+        let frame_token = self.scene_token;
+        let frame_admitted = !self.files.is_modal() && !self.files.is_closing();
+        let keyboard_admitted = frame_admitted && !egui::Popup::is_any_open(ui.ctx());
+        let (face, toggle, delete) = ui.input(|input| {
+            let pressed = |key| {
+                input.events.iter().any(|event| {
+                    matches!(event,
+                egui::Event::Key { key: event_key, pressed: true, modifiers, .. }
+                if *event_key == key && modifiers.is_none())
+                })
+            };
+            (pressed(Key::F11), pressed(Key::F8), pressed(Key::Delete))
+        });
+        let mut selection_intent = if !keyboard_admitted {
+            None
+        } else if face {
+            Some(SelectionModeIntent::Face)
+        } else if toggle {
+            Some(SelectionModeIntent::Toggle)
+        } else {
+            None
+        };
+        let mut delete_intent = keyboard_admitted && delete;
+        self.move_consumed_frame = false;
+        self.handle_close(ui.ctx());
+        if !self.files.is_modal() {
+            self.cancel_on_escape(ui.ctx());
+        }
+        let tool_intent = self.shortcuts(ui.ctx());
+        egui::Panel::top("menu_shelf").show(ui, |ui| {
+            self.menus(ui, &mut selection_intent, &mut delete_intent)
+        });
+        egui::Panel::bottom("timeline_status").show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Time slider");
+                for label in ["|<", "<", "Play", ">", ">|"] {
+                    unsupported(ui, label);
+                }
+                ui.weak("Animation not implemented");
+            });
+            ui.separator();
+            ui.colored_label(
+                if self.error {
+                    Color32::from_rgb(255, 160, 130)
+                } else {
+                    Color32::LIGHT_GRAY
+                },
+                &self.status,
+            );
+        });
+        egui::Panel::left("toolbox")
+            .exact_size(crate::tool_icons::toolbox_width(ui))
+            .resizable(false)
+            .show(ui, |ui| {
+                ui.label("Tools");
+                ui.separator();
+                for (label, icon, tool) in [
+                    (
+                        "Select",
+                        crate::tool_icons::Icon::Select,
+                        ActiveTool::Select,
+                    ),
+                    ("Move", crate::tool_icons::Icon::Move, ActiveTool::Move),
+                ] {
+                    if crate::tool_icons::tool_button(
+                        ui,
+                        label,
+                        icon,
+                        !self.files.is_closing() && !self.files.is_modal(),
+                        self.active_tool == tool,
+                    )
+                    .clicked()
+                    {
+                        self.native_operation(Operation::SetActiveTool(tool));
+                    }
+                }
+                for (label, icon) in [
+                    ("Rotate", crate::tool_icons::Icon::Rotate),
+                    ("Scale", crate::tool_icons::Icon::Scale),
+                ] {
+                    crate::tool_icons::button(ui, label, icon, false)
+                        .on_disabled_hover_text("Not implemented in this build");
+                }
+                unsupported(ui, "Snap");
+            });
+        egui::Panel::left("outliner")
+            .default_size(200.0)
+            .size_range(150.0..=350.0)
+            .show(ui, |ui| self.outliner(ui));
+        egui::Panel::right("channels")
+            .default_size(255.0)
+            .size_range(230.0..=400.0)
+            .show(ui, |ui| {
+                ui.add_enabled_ui(
+                    !self.files.is_closing()
+                        && !self.files.is_modal()
+                        && self.history.active_move().is_none(),
+                    |ui| self.channels(ui, &mut delete_intent),
+                );
+            });
+        egui::CentralPanel::default().show(ui, |ui| {
+            self.viewport(
+                ui,
+                frame_token,
+                selection_intent,
+                tool_intent,
+                delete_intent,
+                frame_admitted,
+            )
+        });
+        ui.ctx()
+            .send_viewport_cmd(egui::ViewportCommand::Title(self.document_title()));
+        self.native_input_pending = false;
+        #[cfg(feature = "mcp")]
+        self.process_mcp(ui.ctx());
+    }
+    pub(super) fn viewport(
+        &mut self,
+        ui: &mut egui::Ui,
+        frame_token: Uuid,
+        selection_intent: Option<SelectionModeIntent>,
+        tool_intent: Option<ActiveTool>,
+        delete_intent: bool,
+        frame_admitted: bool,
+    ) {
+        let mut grid_requested = false;
+        ui.horizontal(|ui| {
+            ui.label("persp");
+            ui.label(match self.selection_mode {
+                SelectionMode::Object => "Object selection",
+                SelectionMode::Face => "Face selection | visible centers only",
+            });
+            ui.separator();
+            grid_requested = ui
+                .add_enabled(
+                    !self.files.is_modal() && !self.files.is_closing(),
+                    egui::Button::new("Grid").selected(self.grid_visible),
+                )
+                .clicked();
+            ui.separator();
+            ui.weak("Alt + left: orbit | Middle: pan | Right / wheel: dolly");
+        });
+        let captured = crate::viewport_ui::capture(ui, &self.camera);
+        if !matches!(&captured, Ok(Some(_)))
+            && let Err(error) = self.missing_move_viewport()
+        {
+            self.status = error.to_string();
+            self.error = true;
+        }
+        if let Ok(Some(input)) = &captured {
+            self.aspect = input.aspect();
+        }
+        let admitted = frame_admitted && !self.files.is_modal() && !self.files.is_closing();
+        self.file_modal(ui.ctx());
+        if grid_requested && self.scene_token == frame_token {
+            self.native_operation(Operation::SetGridVisible {
+                visible: !self.grid_visible,
+            });
+        }
+        if let Some(tool) = tool_intent
+            && frame_token == self.scene_token
+            && !self.move_consumed_frame
+            && !self.files.is_modal()
+            && !self.files.is_closing()
+            && !ui.ctx().egui_wants_keyboard_input()
+            && !egui::Popup::is_any_open(ui.ctx())
+        {
+            self.native_operation(Operation::SetActiveTool(tool));
+        }
+        let result = (|| -> Result<(), OperationError> {
+            let Some(mut input) = captured.map_err(|error| {
+                self.viewport_error = Some(crate::viewport_renderer::ViewportError::CameraInput);
+                OperationError::Camera(error)
+            })?
+            else {
+                return Ok(());
+            };
+            let consumed = self.handle_move_input(&input, frame_token)?;
+            let navigation = input.take_navigation();
+            let current_document = self.scene_token == frame_token;
+            let can_select = admitted
+                && current_document
+                && !self.files.is_modal()
+                && !self.files.is_closing()
+                && !text_edit_focused(ui.ctx())
+                && !egui::Popup::is_any_open(ui.ctx());
+            let clickable = input.click_ndc().filter(|_| can_select && !consumed);
+            let selection_intent = selection_intent.filter(|_| can_select);
+            let delete_intent = delete_intent && can_select;
+            let selection_refusal = input.unsupported_selection().filter(|_| can_select);
+            let navigation = if current_document && !consumed {
+                navigation
+            } else {
+                Vec::new()
+            };
+            if selection_intent.is_some() && self.native_move.is_some() && self.cancel_move()? {
+                self.status = "Move cancelled: selection mode changed".into();
+                self.error = false;
+            }
+            if !self.files.is_modal()
+                && (!navigation.is_empty()
+                    || clickable.is_some()
+                    || selection_intent.is_some()
+                    || delete_intent)
+            {
+                if !self.commit_pending() {
+                    return Err(OperationError::InvalidInput(self.status.clone()));
+                }
+                for operation in navigation {
+                    self.apply_operation(operation)?;
+                }
+            }
+            if let Some(intent) = selection_intent {
+                let mode = match intent {
+                    SelectionModeIntent::Face => SelectionMode::Face,
+                    SelectionModeIntent::Toggle => match self.selection_mode {
+                        SelectionMode::Object => SelectionMode::Face,
+                        SelectionMode::Face => SelectionMode::Object,
+                    },
+                };
+                self.apply_operation(Operation::SetSelectionMode(mode))?;
+            }
+            if delete_intent && let Some(id) = self.selected {
+                self.native_operation(Operation::Delete(id));
+            }
+            if let Some(refusal) = selection_refusal {
+                return Err(OperationError::InvalidInput(refusal.message().into()));
+            }
+            let view =
+                ViewScene::from_native(self.history.scene(), 256 * 1024 * 1024).map_err(|e| {
+                    if matches!(e, azteccraft::view_scene::ViewError::ResourceLimit) {
+                        self.viewport_error =
+                            Some(crate::viewport_renderer::ViewportError::ResourceLimit);
+                    }
+                    OperationError::File(e.to_string())
+                })?;
+            if !self.files.is_modal()
+                && let Some(ndc) = clickable
+            {
+                match self.selection_mode {
+                    SelectionMode::Object => {
+                        let hit = self
+                            .camera
+                            .pick_view(&view, ndc, self.aspect)
+                            .map_err(|e| OperationError::File(e.to_string()))?;
+                        let (node, instance_path) = if let Some(hit) = hit {
+                            let mut prefix = hit.path;
+                            prefix.pop();
+                            (Some(hit.transform), Some(prefix))
+                        } else {
+                            (None, None)
+                        };
+                        self.apply_operation(Operation::Select {
+                            node,
+                            instance_path,
+                        })?;
+                    }
+                    SelectionMode::Face => {
+                        let target = input
+                            .pick_face_center(
+                                &self.camera,
+                                &view,
+                                self.selected
+                                    .map(|owner| (owner, self.selected_path.as_slice())),
+                            )
+                            .map_err(|e| OperationError::File(e.to_string()))?;
+                        self.apply_operation(Operation::SelectFace { target })?;
+                    }
+                }
+            }
+            let painted = input.paint(
+                self.renderer.as_ref(),
+                &self.camera,
+                &view,
+                match self.selection_mode {
+                    SelectionMode::Object => crate::viewport_renderer::SelectionFeedback::Object(
+                        self.selected.map(|_| self.selected_path.as_slice()),
+                    ),
+                    SelectionMode::Face => crate::viewport_renderer::SelectionFeedback::Face {
+                        active: self
+                            .selected
+                            .map(|owner| (owner, self.selected_path.as_slice())),
+                        selected: self.remembered_face.as_ref(),
+                    },
+                },
+                self.grid_visible,
+            );
+            self.viewport_error = painted.as_ref().err().map(|error| error.category());
+            self.paint_move(&input);
+            match painted {
+                Ok(()) | Err(crate::viewport_renderer::RenderError::Uninitialized) => Ok(()),
+                Err(error) => Err(OperationError::File(error.to_string())),
+            }
+        })();
+        if let Err(error) = result {
+            if matches!(error, OperationError::Camera(_)) {
+                self.viewport_error = Some(crate::viewport_renderer::ViewportError::CameraInput);
+            }
+            self.status = error.to_string();
+            self.error = true;
+            if self
+                .renderer
+                .as_ref()
+                .is_some_and(|r| r.terminal_error().is_some())
+            {
+                ui.painter().text(
+                    ui.max_rect().left_top() + egui::vec2(12.0, 32.0),
+                    egui::Align2::LEFT_TOP,
+                    "Viewport GPU failed: backend_failed",
+                    egui::FontId::proportional(12.0),
+                    Color32::from_rgb(255, 160, 130),
+                );
+            }
+        }
+    }
+}
