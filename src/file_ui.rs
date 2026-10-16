@@ -342,6 +342,7 @@ impl Editor {
         self.active_tool = crate::editor_operations::ActiveTool::Select;
         self.native_move = None;
         self.move_viewport = None;
+        self.clear_manipulation_hover();
         self.selected = None;
         self.selected_path.clear();
         self.clear_remembered_components();

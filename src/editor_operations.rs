@@ -3,7 +3,8 @@ use azteccraft::native_scene::NativeTransform;
 use azteccraft::{
     history::{ManipulationError, ManipulationFinish, ManipulationId},
     native_scene::{
-        EdgeTarget, FaceTarget, NativeError, NativeId, TransformTarget, VertexTarget, WorldAxis,
+        EdgeTarget, FaceTarget, NativeError, NativeId, RotateAxis, RotateSpace, ScaleHandle,
+        ScaleSpace, TransformTarget, VertexTarget, WorldAxis,
     },
     scene::{NodeId, Primitive},
     viewport::InvalidCameraInput,
@@ -121,6 +122,39 @@ pub enum ActiveTool {
     #[default]
     Select,
     Move,
+    Rotate,
+    Scale,
+}
+
+/// The space a Rotate or Scale handle works in. Gimbal, Parent, Normal, Custom and Component
+/// are unsupported and have no variant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ManipulationSpace {
+    Object,
+    World,
+}
+
+impl ManipulationSpace {
+    pub fn rotate(self) -> RotateSpace {
+        match self {
+            Self::Object => RotateSpace::Object,
+            Self::World => RotateSpace::World,
+        }
+    }
+
+    pub fn scale(self) -> ScaleSpace {
+        match self {
+            Self::Object => ScaleSpace::Object,
+            Self::World => ScaleSpace::World,
+        }
+    }
+}
+
+/// A Rotate angle in degrees or a Scale factor, as the history takes them.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ManipulationValue {
+    Degrees(f64),
+    Factor(f64),
 }
 
 pub enum MoveDistance {
@@ -138,6 +172,20 @@ pub enum Operation {
     UpdateMove {
         id: ManipulationId,
         distance: MoveDistance,
+    },
+    BeginRotate {
+        target: TransformTarget,
+        axis: RotateAxis,
+        space: ManipulationSpace,
+    },
+    BeginScale {
+        target: TransformTarget,
+        handle: ScaleHandle,
+        space: ManipulationSpace,
+    },
+    UpdateManipulation {
+        id: ManipulationId,
+        value: ManipulationValue,
     },
     FinishMove {
         id: ManipulationId,

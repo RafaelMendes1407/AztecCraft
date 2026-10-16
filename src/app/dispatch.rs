@@ -52,6 +52,15 @@ impl Editor {
             self.error = true;
             return;
         }
+        let activated = matches!(
+            operation,
+            Operation::SetActiveTool(ActiveTool::Rotate | ActiveTool::Scale)
+        );
+        let step_label = match operation {
+            Operation::Undo => self.history.undo_label(),
+            Operation::Redo => self.history.redo_label(),
+            _ => None,
+        };
         let status = match operation {
             Operation::Select { .. }
             | Operation::SelectFace { .. }
@@ -87,6 +96,13 @@ impl Editor {
                         _ => status,
                     }
                     .into();
+                    if let (OperationReply::Changed, Some(label)) = (&reply, step_label) {
+                        self.status = format!("{status} {label}");
+                    }
+                    self.error = false;
+                }
+                if activated {
+                    self.status = self.tool_help();
                     self.error = false;
                 }
             }
@@ -124,7 +140,9 @@ impl Editor {
             && (active.provenance != ManipulationProvenance::Remote
                 || !matches!(
                     request.operation,
-                    Operation::UpdateMove { .. } | Operation::FinishMove { .. }
+                    Operation::UpdateMove { .. }
+                        | Operation::UpdateManipulation { .. }
+                        | Operation::FinishMove { .. }
                 ))
         {
             return Err(OperationError::BusyManipulation);
@@ -234,7 +252,10 @@ impl Editor {
                 operation,
                 Operation::SetActiveTool(_)
                     | Operation::BeginMove { .. }
+                    | Operation::BeginRotate { .. }
+                    | Operation::BeginScale { .. }
                     | Operation::UpdateMove { .. }
+                    | Operation::UpdateManipulation { .. }
                     | Operation::FinishMove { .. }
             )
         {
@@ -296,7 +317,9 @@ impl Editor {
         }
         if !matches!(
             operation,
-            Operation::UpdateMove { .. } | Operation::FinishMove { .. }
+            Operation::UpdateMove { .. }
+                | Operation::UpdateManipulation { .. }
+                | Operation::FinishMove { .. }
         ) && !self.commit_pending()
         {
             return Err(OperationError::InvalidInput(self.status.clone()));
@@ -308,6 +331,23 @@ impl Editor {
             }
             Operation::UpdateMove { id, distance } => {
                 return self.update_editor_move(id, distance, provenance);
+            }
+            Operation::BeginRotate {
+                target,
+                axis,
+                space,
+            } => {
+                return self.begin_editor_rotate(&target, axis, space, provenance);
+            }
+            Operation::BeginScale {
+                target,
+                handle,
+                space,
+            } => {
+                return self.begin_editor_scale(&target, handle, space, provenance);
+            }
+            Operation::UpdateManipulation { id, value } => {
+                return self.update_editor_manipulation(id, value, provenance);
             }
             Operation::FinishMove { id, finish } => {
                 return self.finish_editor_move(id, finish, provenance);

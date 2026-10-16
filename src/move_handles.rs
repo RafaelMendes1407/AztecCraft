@@ -59,6 +59,17 @@ impl fmt::Display for HandleError {
     }
 }
 
+impl HandleError {
+    /// The message with the leading tool name replaced: the shared texts are written for Move.
+    pub fn describe_for(&self, tool: &str) -> String {
+        let text = self.to_string();
+        match text.strip_prefix("Move") {
+            Some(rest) => format!("{tool}{rest}"),
+            None => text,
+        }
+    }
+}
+
 impl std::error::Error for HandleError {}
 
 #[derive(Clone)]

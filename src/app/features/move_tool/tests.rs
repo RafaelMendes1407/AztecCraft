@@ -1,8 +1,16 @@
 use super::*;
 use crate::editor_operations::SidebarPanel;
+use azteccraft::native_scene::NativeError;
 use eframe::egui::{self, Event, Key, Modifiers, PointerButton, Pos2, Rect, Shape};
 
-fn raw(size: egui::Vec2, origin: Pos2, scale: f32, events: Vec<Event>) -> egui::RawInput {
+const FACE_MODE_REFUSAL: &str = "Move is unavailable in Face selection; switch to Object selection";
+
+pub(in crate::app) fn raw(
+    size: egui::Vec2,
+    origin: Pos2,
+    scale: f32,
+    events: Vec<Event>,
+) -> egui::RawInput {
     let mut input = egui::RawInput {
         screen_rect: Some(Rect::from_min_size(origin, size)),
         events,
@@ -15,7 +23,7 @@ fn raw(size: egui::Vec2, origin: Pos2, scale: f32, events: Vec<Event>) -> egui::
     input
 }
 
-fn frame(
+pub(in crate::app) fn frame(
     editor: &mut Editor,
     context: &egui::Context,
     mut input: egui::RawInput,
@@ -30,7 +38,7 @@ fn frame(
     output
 }
 
-fn key(key: Key) -> Event {
+pub(in crate::app) fn key(key: Key) -> Event {
     Event::Key {
         key,
         physical_key: None,
@@ -40,7 +48,7 @@ fn key(key: Key) -> Event {
     }
 }
 
-fn button(position: Pos2, pressed: bool) -> Vec<Event> {
+pub(in crate::app) fn button(position: Pos2, pressed: bool) -> Vec<Event> {
     vec![
         Event::PointerMoved(position),
         Event::PointerButton {
@@ -52,7 +60,7 @@ fn button(position: Pos2, pressed: bool) -> Vec<Event> {
     ]
 }
 
-fn viewport(output: &egui::FullOutput) -> Rect {
+pub(in crate::app) fn viewport(output: &egui::FullOutput) -> Rect {
     output
         .shapes
         .iter()
@@ -1212,6 +1220,7 @@ fn release_with_a_refused_final_sample_commits_the_last_valid_preview() {
     editor
         .finish_native_sample(
             id,
+            ActiveTool::Move,
             true,
             Err(OperationError::InvalidInput("final sample refused".into())),
         )

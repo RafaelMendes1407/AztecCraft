@@ -10,11 +10,14 @@
 //! The new arm must list the samples that exercise that variant.
 
 use super::*;
-use crate::editor_operations::{FileDecision, MoveDistance, RemoteRequest, TransformInput};
+use crate::editor_operations::{
+    FileDecision, ManipulationSpace, ManipulationValue, MoveDistance, RemoteRequest, TransformInput,
+};
 use azteccraft::history::Command;
 use azteccraft::history::{ManipulationFinish, ManipulationId};
 use azteccraft::native_scene::{
-    MaterialChoice, NativeScene, SessionMaterialId, TransformTarget, WorldAxis,
+    MaterialChoice, NativeScene, RotateAxis, ScaleHandle, SessionMaterialId, TransformTarget,
+    WorldAxis,
 };
 use std::fmt::Write as _;
 
@@ -491,6 +494,20 @@ fn seeds(t: &Targets) -> Vec<Operation> {
             id: t.move_id,
             distance: MoveDistance::Centimeters(1.0),
         },
+        Operation::BeginRotate {
+            target: t.transform_target(),
+            axis: RotateAxis::Y,
+            space: ManipulationSpace::Object,
+        },
+        Operation::BeginScale {
+            target: t.transform_target(),
+            handle: ScaleHandle::X,
+            space: ManipulationSpace::Object,
+        },
+        Operation::UpdateManipulation {
+            id: t.move_id,
+            value: ManipulationValue::Degrees(1.0),
+        },
         Operation::FinishMove {
             id: t.move_id,
             finish: ManipulationFinish::Commit,
@@ -629,6 +646,80 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
                 distance: MoveDistance::Centimeters(1.0),
             },
         )],
+        Operation::BeginRotate { .. } => vec![
+            sample(
+                "begin_rotate(object)",
+                Operation::BeginRotate {
+                    target: t.transform_target(),
+                    axis: RotateAxis::Y,
+                    space: ManipulationSpace::Object,
+                },
+            ),
+            sample(
+                "begin_rotate(world)",
+                Operation::BeginRotate {
+                    target: t.transform_target(),
+                    axis: RotateAxis::Y,
+                    space: ManipulationSpace::World,
+                },
+            ),
+            Sample {
+                pre: Pre::FaceMode,
+                ..sample(
+                    "begin_rotate(face_mode)",
+                    Operation::BeginRotate {
+                        target: t.transform_target(),
+                        axis: RotateAxis::Y,
+                        space: ManipulationSpace::Object,
+                    },
+                )
+            },
+        ],
+        Operation::BeginScale { .. } => vec![
+            sample(
+                "begin_scale(object)",
+                Operation::BeginScale {
+                    target: t.transform_target(),
+                    handle: ScaleHandle::X,
+                    space: ManipulationSpace::Object,
+                },
+            ),
+            sample(
+                "begin_scale(world)",
+                Operation::BeginScale {
+                    target: t.transform_target(),
+                    handle: ScaleHandle::Uniform,
+                    space: ManipulationSpace::World,
+                },
+            ),
+            Sample {
+                pre: Pre::FaceMode,
+                ..sample(
+                    "begin_scale(face_mode)",
+                    Operation::BeginScale {
+                        target: t.transform_target(),
+                        handle: ScaleHandle::X,
+                        space: ManipulationSpace::Object,
+                    },
+                )
+            },
+        ],
+        Operation::UpdateManipulation { .. } => vec![
+            sample(
+                "update_manipulation(degrees)",
+                Operation::UpdateManipulation {
+                    id: t.move_id,
+                    value: ManipulationValue::Degrees(1.0),
+                },
+            ),
+            sample(
+                "update_manipulation(factor)",
+                Operation::UpdateManipulation {
+                    id: t.move_id,
+                    value: ManipulationValue::Factor(2.0),
+                },
+            ),
+        ],
         Operation::FinishMove { .. } => vec![sample(
             "finish_move(commit)",
             Operation::FinishMove {

@@ -253,7 +253,7 @@ mod tests {
         for (name, args) in [
             (
                 "set_active_tool",
-                json!({"scene_token":token,"tool":"rotate"}),
+                json!({"scene_token":token,"tool":"lasso"}),
             ),
             (
                 "set_active_tool",

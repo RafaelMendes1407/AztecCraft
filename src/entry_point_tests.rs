@@ -212,6 +212,9 @@ fn native_operation_callers_are_the_known_ui_handlers() {
             "file_modal",
             "finish_native_sample",
             "handle_move_input",
+            "start_native_drag",
+            "begin_native_manipulation",
+            "run_numeric_manipulation",
         ],
     );
     expect(
@@ -246,7 +249,13 @@ fn history_mutators_live_only_in_the_dispatch_and_move_handlers() {
     expect("history undo", ".undo()", &["apply_operation_guarded"]);
     expect("history redo", ".redo()", &["apply_operation_guarded"]);
     expect("move begin", ".begin_move(", &["begin_editor_move"]);
-    expect("move update", ".update_move(", &["update_editor_move"]);
+    expect("rotate begin", ".begin_rotate(", &["begin_editor_rotate"]);
+    expect("scale begin", ".begin_scale(", &["begin_editor_scale"]);
+    expect(
+        "move update",
+        ".update_move(",
+        &["update_editor_move", "update_editor_manipulation"],
+    );
     expect("move finish", ".finish_move(", &["finish_editor_move"]);
     expect("move cancel", ".cancel_active_move(", &["cancel_move"]);
     expect("history replace", "self.history =", &["replace_scene"]);

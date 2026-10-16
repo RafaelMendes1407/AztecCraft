@@ -22,7 +22,9 @@
         "ActiveTool": {
           "enum": [
             "select",
-            "move"
+            "move",
+            "rotate",
+            "scale"
           ],
           "type": "string"
         }
