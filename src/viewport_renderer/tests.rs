@@ -237,6 +237,126 @@ fn headless_gpu_curve_hardware_near_clip_and_ancestor_visibility_are_real() {
     assert!(!image.as_chunks::<4>().0.contains(&[145, 145, 145, 255]));
 }
 
+#[allow(dead_code)]
+mod maya_binary {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/support/maya_binary.rs"
+    ));
+}
+
+// A synthetic Maya binary scene whose single mesh face has twenty corners.
+fn twenty_gon_scene() -> NativeScene {
+    use maya_binary::{chunk, counted, creation, group, scene, triple};
+    const N: u32 = 20;
+    let mut payload = b"o\0\x20".to_vec();
+    let positions: Vec<u32> = (0..N)
+        .flat_map(|i| {
+            let angle = std::f32::consts::TAU * i as f32 / N as f32;
+            [angle.cos().to_bits(), angle.sin().to_bits(), 0]
+        })
+        .collect();
+    counted(&mut payload, &positions);
+    let endpoints: Vec<u32> = (0..N)
+        .flat_map(|i| [i | if i == 0 { 0x8000_0000 } else { 0 }, (i + 1) % N])
+        .collect();
+    counted(&mut payload, &endpoints);
+    let corners: Vec<u32> = (0..N)
+        .map(|i| i | if i == N - 1 { 0x6000_0000 } else { 0 })
+        .collect();
+    counted(&mut payload, &corners);
+    counted(&mut payload, &[1e20f32.to_bits(), 0, 0]);
+    for word in [0u32, 1, 0] {
+        payload.extend(word.to_be_bytes());
+    }
+    payload.extend(b"uv\0");
+    counted(&mut payload, &vec![0; 2 * N as usize]);
+    counted(&mut payload, &(0..N).collect::<Vec<_>>());
+    payload.extend([0; 20]);
+    let bytes = scene(
+        &[
+            group(
+                b"XFRM",
+                &[creation(b"object", None), triple(b"t", [0.0; 3])].concat(),
+                4,
+            ),
+            group(
+                b"DMSH",
+                &[
+                    creation(b"shape", Some(b"object")),
+                    chunk(b"MESH", &payload, 8),
+                ]
+                .concat(),
+                4,
+            ),
+        ]
+        .concat(),
+    );
+    azteccraft::native_scene::binary::decode(bytes).unwrap()
+}
+
+#[test]
+fn twenty_gon_submission_counts_fan_triangles_and_every_outline_edge() {
+    let view = ViewScene::from_native(&twenty_gon_scene(), VIEW_BUDGET).unwrap();
+    let surface = 18 * 3;
+    let outline = 20 * 2;
+    let vertices = surface + outline;
+    let bytes = vertices * VERTEX_BYTES;
+    let submission = Submission::new(
+        &view,
+        &camera(0.01),
+        [SIZE; 2],
+        SelectionFeedback::Object(None),
+        false,
+        FORMAT,
+        bytes as u64,
+    )
+    .unwrap();
+    assert_eq!(submission.surfaces, 0..surface as u32);
+    assert_eq!(submission.lines, surface as u32..vertices as u32);
+    assert_eq!(submission.bytes.len(), bytes);
+    assert!(matches!(
+        Submission::new(
+            &view,
+            &camera(0.01),
+            [SIZE; 2],
+            SelectionFeedback::Object(None),
+            false,
+            FORMAT,
+            bytes as u64 - 1
+        ),
+        Err(RenderError::ResourceLimit)
+    ));
+}
+
+#[test]
+#[ignore = "requires a real headless GPU adapter"]
+fn headless_gpu_twenty_gon_fills_every_fan_triangle() {
+    let view = ViewScene::from_native(&twenty_gon_scene(), VIEW_BUDGET).unwrap();
+    let camera = camera(0.01);
+    let submission = Submission::new(
+        &view,
+        &camera,
+        [SIZE; 2],
+        SelectionFeedback::Object(None),
+        false,
+        FORMAT,
+        u64::MAX,
+    )
+    .unwrap();
+    let image = Offscreen::new().render(TestFrame::Geometry(submission));
+    let instance = &view.instances()[0];
+    for triangle in instance.faces()[0].triangles() {
+        let [a, b, c] = triangle.map(|index| instance.world_vertices()[index]);
+        assert!(region_has(
+            &image,
+            &camera,
+            (a + b + c) / 3.0,
+            [83, 83, 83, 255]
+        ));
+    }
+}
+
 #[test]
 #[ignore = "requires a real headless GPU adapter"]
 fn headless_gpu_curve_line_submission_obeys_actual_surface_depth() {

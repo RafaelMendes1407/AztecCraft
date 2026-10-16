@@ -140,13 +140,12 @@ impl ViewportInput {
                         depth,
                         points,
                         selected_prefix.is_some_and(|path| instance.path().starts_with(path)),
-                        face,
                     ));
                 }
             }
         }
         faces.sort_by(|a, b| b.0.total_cmp(&a.0));
-        for (_, points, is_selected, face) in faces {
+        for (_, points, is_selected) in faces {
             let fill = if is_selected {
                 Color32::from_rgb(95, 110, 120)
             } else {
@@ -161,14 +160,9 @@ impl ViewportInput {
             for point in &points {
                 mesh.colored_vertex(*point, fill);
             }
-            for triangle in face.triangles() {
-                let [a, b, c] = triangle.map(|index| {
-                    face.corners()
-                        .iter()
-                        .position(|corner| *corner == index)
-                        .expect("view triangles use source face corners") as u32
-                });
-                mesh.add_triangle(a, b, c);
+            // Points follow the corners, so the corner-0 fan is the view's triangulation.
+            for index in 1..points.len().saturating_sub(1) {
+                mesh.add_triangle(0, index as u32, index as u32 + 1);
             }
             painter.add(Shape::mesh(mesh));
             // Filled path miter/feather joins can explode on acute projected source faces.

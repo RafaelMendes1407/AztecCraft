@@ -118,6 +118,17 @@ vendor streams is JOIN; other unseen layouts and curve semantics remain pending.
 This framing coverage does not establish complete container parsing, scene Open,
 NURBS rendering, native writing or Euler behavior.
 
+## Convex n-gon display is best effort
+
+ViewScene shows faces with five or more corners when they are hole-free, strictly
+convex and wound once. Strongly skew (non-planar) n-gons may be accepted yet
+overlap in projection or visit a corner twice (a skew loop such as `[0,1,2,0,3,4]` can
+pass the convexity and winding checks; planar input cannot); display only, no safety
+impact. Concave and holed faces
+still refuse the whole view. Imported .mb convex n-gons now display, where before they
+made the whole view refuse. Polygons with extreme coordinates (about |c| >= 1e154 or
+<= 1e-200) are refused with NonFiniteWorld or UnsupportedPolygon, not displayed.
+
 ## Face Center selection is a provisional subset
 
 **Severity:** medium

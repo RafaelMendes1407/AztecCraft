@@ -81,6 +81,18 @@ pub(crate) fn triangle_double_shape() -> (NativeScene, NodeId) {
     (scene, id)
 }
 
+pub(crate) fn polygon_shape(points: Vec<[f64; 3]>, loops: &[Vec<usize>]) -> (NativeScene, NodeId) {
+    let (mut scene, id) = cube();
+    scene.shapes[0].mesh = NativeMesh::polygon_fixture(points, loops);
+    scene.validate().unwrap();
+    (scene, id)
+}
+
+pub(crate) fn add_hole_to_first_face(scene: &mut NativeScene, hole: &[usize]) {
+    scene.shapes[0].mesh.add_hole_fixture(hole);
+    scene.validate().unwrap();
+}
+
 pub(crate) fn offset_triangle_shape() -> (NativeScene, NodeId) {
     let (mut scene, id) = cube();
     scene.shapes[0].mesh = NativeMesh::offset_triangle_fixture();

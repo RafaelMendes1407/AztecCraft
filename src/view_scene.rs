@@ -1,6 +1,6 @@
 use crate::native_scene::{
-    InternalTransform, NativeCurveShape, NativeError, NativeId, NativeMesh, NativeMeshShape,
-    NativeScene, NativeTransformNode,
+    InternalTransform, NativeCurveShape, NativeError, NativeFace, NativeId, NativeMesh,
+    NativeMeshShape, NativeScene, NativeTransformNode,
 };
 use crate::scene::NodeId;
 use glam::{DMat4, DVec3, Vec3};
@@ -9,6 +9,10 @@ use std::mem::size_of;
 
 pub const FACE_CENTER_MARKER_PIXELS: f32 = 4.0;
 pub const FACE_CENTER_CLICK_PIXELS: f32 = 8.0;
+/// Allowed distance of a polygon's turning sum from a whole number of turns. A quarter turn
+/// separates integer windings; it is not a planarity check, so lifted vertices still display.
+/// Strongly skew (non-planar) n-gons may be accepted yet overlap in projection; display only.
+const WINDING_RESIDUAL: f64 = 0.25;
 
 mod curves;
 
@@ -68,13 +72,15 @@ pub struct ViewInstance {
     appearance_incomplete: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum ViewCorners {
     Triangle([usize; 3]),
     Quad([usize; 4]),
+    /// Five or more corners; display-only, fanned from corner 0.
+    Polygon(Box<[usize]>),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ViewFace {
     source_index: usize,
     corners: ViewCorners,
@@ -269,15 +275,17 @@ impl ViewFace {
         match &self.corners {
             ViewCorners::Triangle(indices) => indices,
             ViewCorners::Quad(indices) => indices,
+            ViewCorners::Polygon(indices) => indices,
         }
     }
-    pub fn triangles(&self) -> impl Iterator<Item = [usize; 3]> {
-        match self.corners {
-            ViewCorners::Triangle(indices) => [Some(indices), None],
-            ViewCorners::Quad([a, b, c, d]) => [Some([a, b, c]), Some([a, c, d])],
-        }
-        .into_iter()
-        .flatten()
+    /// Fans every face from its first corner; a quad yields `[0,1,2]` then `[0,2,3]`.
+    pub fn triangles(&self) -> impl Iterator<Item = [usize; 3]> + '_ {
+        let corners = self.corners();
+        corners
+            .iter()
+            .skip(1)
+            .zip(corners.iter().skip(2))
+            .map(|(&b, &c)| [corners[0], b, c])
     }
 }
 
@@ -303,7 +311,7 @@ impl fmt::Display for ViewError {
                 "derived view exceeds its resource budget or allocation capacity"
             }
             Self::InvalidGeometry => "native geometry or instance path is invalid",
-            Self::UnsupportedPolygon => "view requires triangle or quad faces without holes",
+            Self::UnsupportedPolygon => "view requires faces without holes; faces with five or more corners must also be simple and strictly convex",
             Self::UnsupportedTransform => "native transform or declared units are unsupported",
             Self::NonFiniteWorld => "world geometry cannot be represented by the viewport",
         })
@@ -327,14 +335,25 @@ fn world_point(world: DMat4, point: DVec3) -> Result<Vec3, ViewError> {
         .ok_or(ViewError::NonFiniteWorld)
 }
 
+/// Cheap structural test shared by the budget preflight and `view_faces`.
+fn face_is_viewable_shape(face: &NativeFace) -> bool {
+    face.holes().is_empty() && face.outer().len() >= 3
+}
+
 fn view_faces(mesh: &NativeMesh) -> Result<Vec<ViewFace>, ViewError> {
     let mut result = reserve(mesh.faces().len())?;
     let count = mesh.point_count();
     for (source_index, face) in mesh.faces().iter().enumerate() {
-        if !face.holes().is_empty() || !matches!(face.outer().len(), 3 | 4) {
+        if !face_is_viewable_shape(face) {
             return Err(ViewError::UnsupportedPolygon);
         }
-        let mut corners = [0; 4];
+        let length = face.outer().len();
+        let mut small = [0; 4];
+        let mut large: Vec<usize> = if length > 4 {
+            reserve(length)?
+        } else {
+            Vec::new()
+        };
         let mut previous_end = None;
         for (index, directed) in face.outer().iter().enumerate() {
             let edge = mesh
@@ -349,16 +368,24 @@ fn view_faces(mesh: &NativeMesh) -> Result<Vec<ViewFace>, ViewError> {
             {
                 return Err(ViewError::InvalidGeometry);
             }
-            corners[index] = start;
+            if length > 4 {
+                large.push(start);
+            } else {
+                small[index] = start;
+            }
             previous_end = Some(end);
         }
-        if previous_end != Some(corners[0]) {
+        let first = if length > 4 { large[0] } else { small[0] };
+        if previous_end != Some(first) {
             return Err(ViewError::InvalidGeometry);
         }
-        let corners = if face.outer().len() == 3 {
-            ViewCorners::Triangle([corners[0], corners[1], corners[2]])
-        } else {
-            ViewCorners::Quad(corners)
+        let corners = match length {
+            3 => ViewCorners::Triangle([small[0], small[1], small[2]]),
+            4 => ViewCorners::Quad(small),
+            _ => {
+                check_convex_polygon(mesh, &large)?;
+                ViewCorners::Polygon(large.into_boxed_slice())
+            }
         };
         result.push(ViewFace {
             source_index,
@@ -366,6 +393,52 @@ fn view_faces(mesh: &NativeMesh) -> Result<Vec<ViewFace>, ViewError> {
         });
     }
     Ok(result)
+}
+
+/// Accepts only simple, strictly convex, once-wound polygons; judged in f64 on the local points.
+fn check_convex_polygon(mesh: &NativeMesh, corners: &[usize]) -> Result<(), ViewError> {
+    let point = |index: usize| {
+        mesh.effective_point_cm(index)
+            .map(DVec3::from_array)
+            .map_err(ViewError::Native)
+    };
+    let origin = point(*corners.first().ok_or(ViewError::UnsupportedPolygon)?)?;
+    let mut normal = DVec3::ZERO;
+    let mut previous = DVec3::ZERO;
+    for &index in corners {
+        let current = point(index)? - origin;
+        normal += previous.cross(current);
+        previous = current;
+    }
+    if !normal.is_finite() {
+        return Err(ViewError::NonFiniteWorld);
+    }
+    let length = normal.length();
+    if !length.is_finite() {
+        return Err(ViewError::UnsupportedPolygon);
+    }
+    let unit = normal / length;
+    let mut turning = 0.0;
+    let mut before = point(corners[corners.len() - 2])?;
+    let mut current = point(corners[corners.len() - 1])?;
+    for &index in corners {
+        let after = point(index)?;
+        let incoming = current - before;
+        let outgoing = after - current;
+        let cross = incoming.cross(outgoing);
+        if !cross.is_finite() || cross.dot(normal) <= 0.0 {
+            return Err(ViewError::UnsupportedPolygon);
+        }
+        turning += cross.dot(unit).atan2(incoming.dot(outgoing));
+        before = current;
+        current = after;
+    }
+    let turns = turning / std::f64::consts::TAU;
+    let winding = turns.round();
+    if !turns.is_finite() || winding.abs() != 1.0 || (turns - winding).abs() > WINDING_RESIDUAL {
+        return Err(ViewError::UnsupportedPolygon);
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -568,9 +641,16 @@ impl<'a> Graph<'a> {
             let per_instance = match record {
                 Record::Shape(shape) => {
                     let points = shape.mesh().point_count();
+                    let mut corner_bytes = 0;
                     for face in shape.mesh().faces() {
-                        if !face.holes().is_empty() || !matches!(face.outer().len(), 3 | 4) {
+                        if !face_is_viewable_shape(face) {
                             return Err(ViewError::UnsupportedPolygon);
+                        }
+                        if face.outer().len() > 4 {
+                            corner_bytes = checked_add(
+                                corner_bytes,
+                                buffer_bytes::<usize>(face.outer().len())?,
+                            )?;
                         }
                     }
                     requirements.instances = checked_add(requirements.instances, count.paths)?;
@@ -578,7 +658,10 @@ impl<'a> Graph<'a> {
                         size_of::<ViewInstance>(),
                         checked_add(
                             buffer_bytes::<Vec3>(points)?,
-                            buffer_bytes::<ViewFace>(shape.mesh().faces().len())?,
+                            checked_add(
+                                buffer_bytes::<ViewFace>(shape.mesh().faces().len())?,
+                                corner_bytes,
+                            )?,
                         )?,
                     )?
                 }
