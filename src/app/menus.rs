@@ -160,6 +160,20 @@ impl Editor {
                     self.create(Primitive::Sphere);
                     ui.close();
                 }
+                if ui
+                    .add_enabled(authoring, egui::Button::new("Polygon cylinder"))
+                    .clicked()
+                {
+                    self.create(Primitive::Cylinder);
+                    ui.close();
+                }
+                if ui
+                    .add_enabled(authoring, egui::Button::new("Polygon cone"))
+                    .clicked()
+                {
+                    self.create(Primitive::Cone);
+                    ui.close();
+                }
                 unsupported(ui, "Other primitives");
             });
             ui.menu_button("Select", |ui| {

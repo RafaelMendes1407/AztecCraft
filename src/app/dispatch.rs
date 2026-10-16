@@ -273,6 +273,8 @@ impl Editor {
                         Primitive::Cube => "pCube",
                         Primitive::Plane => "pPlane",
                         Primitive::Sphere => "pSphere",
+                        Primitive::Cylinder => "pCylinder",
+                        Primitive::Cone => "pCone",
                     };
                     let mut suffix = 1;
                     while self

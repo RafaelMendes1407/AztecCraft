@@ -19,6 +19,8 @@ enum PrimitiveInput {
     Cube,
     Plane,
     Sphere,
+    Cylinder,
+    Cone,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -58,6 +60,8 @@ fn parse_create_primitive(arguments: JsonObject) -> Result<RemoteRequest, ErrorD
         PrimitiveInput::Cube => Primitive::Cube,
         PrimitiveInput::Plane => Primitive::Plane,
         PrimitiveInput::Sphere => Primitive::Sphere,
+        PrimitiveInput::Cylinder => Primitive::Cylinder,
+        PrimitiveInput::Cone => Primitive::Cone,
     };
     Ok(scoped(
         token(&args.scene_token)?,
@@ -151,7 +155,7 @@ fn select_face_schema() -> JsonObject {
 pub(in crate::mcp) const TOOLS: &[ToolSpec] = &[
     ToolSpec {
         name: "create_primitive",
-        description: "Create a cube, plane or sphere in the live editor",
+        description: "Create a cube, plane, sphere, cylinder or cone in the live editor",
         schema: schema::<CreateArgs>,
         parse: parse_create_primitive,
         idempotent: false,
