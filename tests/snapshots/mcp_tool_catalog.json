@@ -830,6 +830,45 @@
     }
   },
   {
+    "name": "set_sidebar_panel_visibility",
+    "description": "Set one sidebar panel's visibility explicitly. Session-only and idempotent; does not edit the scene. Only channel_box is implemented",
+    "inputSchema": {
+      "$defs": {
+        "PanelInput": {
+          "enum": [
+            "channel_box"
+          ],
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "panel": {
+          "$ref": "#/$defs/PanelInput"
+        },
+        "scene_token": {
+          "type": "string"
+        },
+        "visible": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "scene_token",
+        "panel",
+        "visible"
+      ],
+      "title": "SidebarPanelArgs",
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
     "name": "open_scene",
     "description": "Open a Maya binary .mb, supported read-only static cubic Maya ASCII .ma, or legacy .aztec scene from a local UTF-8 path (1 to 4096 bytes, no NUL). ASCII scripts stay inert; unsupported commands/effects refuse the whole candidate. Dirty documents require confirmation. ASCII native writing is unavailable",
     "inputSchema": {

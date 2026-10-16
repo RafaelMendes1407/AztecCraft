@@ -74,6 +74,7 @@ Call `inspect_scene` first. Every other tool requires `scene_token`, a UUID stri
 | `redo` | None | Changed or unchanged history state |
 | `frame_selected` | None | Frames the selected object in Object mode or selected face corners in Face mode; no active face returns `no_selection` |
 | `set_grid_visibility` | `visible`: required boolean | Changed or unchanged grid visibility in this window's viewport |
+| `set_sidebar_panel_visibility` | `panel`: required, `"channel_box"` only; `visible`: required boolean | Changed or unchanged visibility of that sidebar panel in this window |
 | `orbit_camera` | `radians`: two finite numbers, yaw and pitch deltas | Changed or unchanged camera; pitch clamps near the poles |
 | `pan_camera` | `world_units`: two finite numbers, camera right and up displacement in scene world units | Changed or unchanged camera target and eye |
 | `dolly_camera` | `factor`: positive finite distance multiplier | Changed or unchanged camera distance; below one moves closer |
@@ -197,6 +198,18 @@ draft; remote setters reject drafts through the ordinary shared guards.
 The fixed XZ grid retains its existing extent, spacing and colors. Grid settings,
 global or additional panels, persistence and a default shortcut are unsupported.
 This scope does not establish Maya grid appearance or behavior parity.
+
+`set_sidebar_panel_visibility` requires the current scene token, a `panel` and an
+explicit JSON boolean `visible`. `panel` accepts only `channel_box`; any other
+value, and missing, null, string, numeric and unknown fields, are refused as
+`invalid_params` before dispatch, with no mutation and the token unchanged.
+`true` makes the panel the active sidebar dock panel; `false` hides the dock when
+that panel is active. Repeating a value returns unchanged. Inspection reports the
+authoritative state as `sidebar_panels.channel_box`. The setting is session-only,
+survives New/Open, and does not edit NativeScene, create an undo entry, mark the
+document dirty or change the token. It shares the native Status Line toggle's
+typed setter and guards: native clicks may first commit a valid human draft;
+remote calls reject drafts, modals and pending close.
 
 Example create arguments after inspection:
 
@@ -333,6 +346,7 @@ Nine verified tools establish the initial server foundation, not catch-up with e
 | Native Tool Box Lasso, Paint Selection, Rotate, Scale and Last Used | Visibly disabled and unsupported in the native UI ("not implemented yet" hover text); no operation and no MCP tool, and none is advertised. Last Used dynamic behaviour is also unsupported |
 | Interactive camera orbit/pan/dolly | Three navigation tools use the same typed operations as native captured gestures; live camera state is inspectable |
 | Viewport Grid visibility | `set_grid_visibility` shares the checkable native Grid button's typed setter; `grid_visible` exposes the authoritative session state. Fixed grid only; options, global/additional panels and persistence are unsupported |
+| Status Line sidebar and selection toggles | The Channel Box toggle is supported through `set_sidebar_panel_visibility` (state in `inspect_scene` `sidebar_panels`); the Object/Component selection modes use `set_selection_mode`. The menu-set selector and the other sidebar toggles are visibly unsupported and have no tool |
 | GPU geometry viewport | `inspect_scene` exposes live backend/error/depth/clipping/appearance state; camera and object selection share the native frame consumer. Materials and complete appearance remain unsupported |
 
 Initial catch-up remains incomplete while these implemented capabilities lack their reviewed MCP support. Full Maya parity remains a separate unmet objective.
@@ -364,7 +378,7 @@ directly, with one checked conversion for declared SDK distances.
 During a gesture, inspection reads the live authoritative preview. Unrelated
 remote mutations, Save, Undo/Redo and camera operations return
 `busy_manipulation`. Only matching remote-owned updates/finish are accepted;
-remote calls cannot finish a native drag. Viewport Grid visibility, selection mode and
+remote calls cannot finish a native drag. Viewport Grid visibility, sidebar panel visibility, selection mode and
 Face selection are likewise refused with `busy_manipulation` while any Move is
 active. Human Escape, tool/selection/selection-mode/lifecycle
 changes cancel a native drag before their existing native guard path. Move is
