@@ -202,6 +202,7 @@ impl Editor {
             viewport_error,
             grid_visible: self.grid_visible,
             shading: self.shading,
+            face_centres_hidden: self.face_centres_hidden,
             sidebar_panels: SidebarPanelsInspection {
                 channel_box: self.sidebar_panel_visible(SidebarPanel::ChannelBox),
                 attribute_editor: self.sidebar_panel_visible(SidebarPanel::AttributeEditor),

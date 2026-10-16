@@ -126,3 +126,60 @@ async fn sdk_shading_mode_is_idempotent_session_only_and_guarded() {
     drop(editor);
     server.await.unwrap();
 }
+
+#[tokio::test]
+async fn sdk_inspection_reports_face_centres_hidden_for_an_over_budget_wireframe_frame() {
+    let context = egui::Context::default();
+    let (mut editor, client, server) = start(&context).await;
+    editor.renderer = Some(crate::viewport_renderer::tests::renderer_handle());
+    editor.create(Primitive::Cube);
+    let shape = editor.history.scene().shapes()[0].id();
+    let node = editor.selected.unwrap();
+    let path = vec![
+        editor.history.scene().node(node).unwrap().transform_id(),
+        shape,
+    ];
+    for _ in 0..200 {
+        let target = azteccraft::native_scene::FaceTarget {
+            transform: node,
+            shape,
+            path: path.clone(),
+            face_index: 1,
+        };
+        editor
+            .apply_operation(Operation::ExtrudeFace {
+                target,
+                distance: 0.01,
+            })
+            .unwrap();
+    }
+    editor.selection_mode = SelectionMode::Face;
+    let hidden = |editor: &mut Editor| {
+        serde_json::to_value(editor.inspect(false).unwrap()).unwrap()["face_centres_hidden"].clone()
+    };
+    frame(&mut editor, &context, vec![]);
+    assert_eq!(hidden(&mut editor), false);
+    editor
+        .apply_operation(Operation::SetShadingMode(ShadingMode::Wireframe))
+        .unwrap();
+    frame(&mut editor, &context, vec![]);
+    assert_eq!(hidden(&mut editor), true);
+    let inspected = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "inspect_scene",
+        json!({}),
+    )
+    .await
+    .structured_content
+    .unwrap();
+    assert_eq!(inspected["inspection"]["face_centres_hidden"], true);
+    editor
+        .apply_operation(Operation::SetShadingMode(ShadingMode::SmoothShadeAll))
+        .unwrap();
+    frame(&mut editor, &context, vec![]);
+    assert_eq!(hidden(&mut editor), false);
+    drop(client);
+    let _ = server.await;
+}

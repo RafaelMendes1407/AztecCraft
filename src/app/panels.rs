@@ -385,9 +385,10 @@ impl Editor {
                 self.shading,
             );
             self.viewport_error = painted.as_ref().err().map(|error| error.category());
+            self.face_centres_hidden = matches!(painted, Ok(true));
             self.paint_move(&input);
             match painted {
-                Ok(()) | Err(crate::viewport_renderer::RenderError::Uninitialized) => Ok(()),
+                Ok(_) | Err(crate::viewport_renderer::RenderError::Uninitialized) => Ok(()),
                 Err(error) => Err(OperationError::File(error.to_string())),
             }
         })();

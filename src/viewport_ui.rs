@@ -251,7 +251,7 @@ impl ViewportInput {
         selection: SelectionFeedback<'_>,
         grid_visible: bool,
         shading: crate::editor_operations::ShadingMode,
-    ) -> Result<(), RenderError> {
+    ) -> Result<bool, RenderError> {
         let painter = &self.painter;
         let rect = self.rect;
         painter.rect_filled(rect, 0.0, Color32::from_gray(31));
@@ -295,7 +295,7 @@ impl ViewportInput {
             egui::FontId::proportional(12.0),
             Color32::GRAY,
         );
-        callback.map(|_| ())
+        callback.map(|(_, degraded)| degraded)
     }
 }
 

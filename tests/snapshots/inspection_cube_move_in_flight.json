@@ -23,6 +23,7 @@
     "depth_complete": false,
     "dirty": true,
     "document_origin": "untitled",
+    "face_centres_hidden": false,
     "face_selection_policy": "visible_centers_only",
     "grid_visible": false,
     "has_draft": false,

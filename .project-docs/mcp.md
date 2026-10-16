@@ -204,7 +204,9 @@ This scope does not establish Maya grid appearance or behavior parity.
 `set_shading_mode` requires the current scene token and an explicit `mode` of
 `wireframe` or `smooth_shade_all`; other strings (including `default_material`),
 null, numbers and unknown fields refuse. Repeating a mode returns unchanged.
-Inspection reports authoritative `shading` even without a GPU. The setting starts
+Inspection reports authoritative `shading` even without a GPU. `face_centres_hidden` is true when the last painted frame hid Wireframe
+Face-mode centre markers because the occlusion check exceeded its work budget (false without a
+GPU or before the first paint). The setting starts
 `smooth_shade_all`, survives New/Open and belongs to this viewport's session. It
 does not edit NativeScene, create an undo entry, mark the document dirty or change
 its token. It shares the Grid guards: stale token, differing draft, text focus,

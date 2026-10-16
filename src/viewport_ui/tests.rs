@@ -813,3 +813,50 @@ fn fractional_capture_click_handle_and_submission_share_the_same_physical_aspect
         }
     }
 }
+
+#[test]
+fn degraded_face_centres_reach_the_overlay_text() {
+    let mut native = NativeScene::default();
+    native.create(Primitive::Cube, "cube").unwrap();
+    let shape = native.shapes()[0].id();
+    for _ in 0..200 {
+        native.extrude_face(shape, 1, 0.01).unwrap();
+    }
+    let view = ViewScene::from_native(&native, 256 * 1024 * 1024).unwrap();
+    let instance = &view.instances()[0];
+    let active = (
+        instance.transform(),
+        &instance.path()[..instance.path().len() - 1],
+    );
+    let camera = camera();
+    let producer = renderer_handle();
+    let mut degraded = None;
+    let mut output = egui::Context::default().run_ui(raw(0.0, Modifiers::NONE, Vec::new()), |ui| {
+        degraded = Some(
+            capture(ui, &camera)
+                .unwrap()
+                .unwrap()
+                .paint(
+                    Some(&producer),
+                    &camera,
+                    &view,
+                    SelectionFeedback::Face {
+                        active: Some(active),
+                        selected: None,
+                    },
+                    true,
+                    crate::editor_operations::ShadingMode::Wireframe,
+                )
+                .unwrap(),
+        );
+    });
+    output.textures_delta.clear();
+    assert_eq!(degraded, Some(true));
+    assert!(
+        output
+            .shapes
+            .iter()
+            .any(|s| matches!(&s.shape, Shape::Text(t)
+        if t.galley.job.text.contains(super::FACE_CENTERS_HIDDEN)))
+    );
+}

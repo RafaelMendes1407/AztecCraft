@@ -276,6 +276,7 @@ pub struct SceneInspection {
     pub viewport_error: Option<crate::viewport_renderer::ViewportError>,
     pub grid_visible: bool,
     pub shading: ShadingMode,
+    pub face_centres_hidden: bool,
     pub sidebar_panels: SidebarPanelsInspection,
     pub attribute_editor_tab: Option<AttributeEditorTabInspection>,
     pub depth_complete: bool,

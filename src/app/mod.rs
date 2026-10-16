@@ -66,6 +66,8 @@ pub struct Editor {
     camera: Camera,
     grid_visible: bool,
     shading: ShadingMode,
+    /// Last painted frame hid Wireframe face centres (occlusion check over budget).
+    face_centres_hidden: bool,
     sidebar_dock: Option<SidebarPanel>,
     sidebar_panel_request: Option<(SidebarPanel, bool)>,
     attribute_editor_tab: Option<AttributeEditorTab>,
@@ -104,6 +106,7 @@ impl Default for Editor {
             camera: Camera::default(),
             grid_visible: true,
             shading: ShadingMode::default(),
+            face_centres_hidden: false,
             sidebar_dock: Some(SidebarPanel::ChannelBox),
             sidebar_panel_request: None,
             attribute_editor_tab: None,
