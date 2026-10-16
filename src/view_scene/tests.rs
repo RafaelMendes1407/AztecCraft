@@ -1841,3 +1841,33 @@ fn far_from_origin_polygon_is_judged_relative_to_its_first_corner() {
     let (view, _, _) = ngon_view(points).unwrap();
     assert_eq!(view.instances()[0].faces()[0].corners().len(), 5);
 }
+
+#[test]
+fn skew_convex_pentagon_with_residual_between_a_tenth_and_a_quarter_is_accepted() {
+    // Cross products all agree, but the projected turning sum is 1.2 turns: best-effort display.
+    let points = vec![
+        [0.8261, 0.0, 0.1856],
+        [0.2476, 1.0187, -0.2918],
+        [-0.7475, 0.6627, -0.0347],
+        [-0.7494, -0.5834, 0.3684],
+        [0.2543, -1.1318, -0.8588],
+    ];
+    let (view, _, _) = ngon_view(points).unwrap();
+    assert_eq!(view.instances()[0].faces()[0].corners().len(), 5);
+}
+
+#[test]
+fn skew_loop_with_a_repeated_corner_is_currently_accepted() {
+    // Documented limitation (known-issues.md): non-planar input can pass the convexity and
+    // winding checks while visiting corner 0 twice. Planar input cannot.
+    let points = vec![
+        [-0.00106, 0.90400, 0.22367],
+        [1.65935, -3.12242, 0.25331],
+        [0.69473, -0.28290, 1.19833],
+        [-0.62327, 0.64238, 0.30704],
+        [-1.02529, 0.98906, 0.40631],
+    ];
+    let (native, _) = test_fixtures::polygon_shape(points, &[vec![0, 1, 2, 0, 3, 4]]);
+    let view = ViewScene::from_native(&native, VIEW_BUDGET).unwrap();
+    assert_eq!(view.instances()[0].faces()[0].corners(), [0, 1, 2, 0, 3, 4]);
+}
