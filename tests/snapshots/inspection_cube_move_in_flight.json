@@ -1,0 +1,202 @@
+{
+  "inspection": {
+    "appearance_incomplete": false,
+    "camera": {
+      "distance": 8.0,
+      "eye": [
+        4.1605610847473145,
+        3.115346670150757,
+        6.081475257873535
+      ],
+      "target": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "can_redo": false,
+    "can_undo": true,
+    "clipping_complete": false,
+    "closing": false,
+    "curves": [],
+    "depth_complete": false,
+    "dirty": true,
+    "document_origin": "untitled",
+    "face_selection_policy": "visible_centers_only",
+    "grid_visible": false,
+    "has_draft": false,
+    "has_file": false,
+    "modal": false,
+    "move_tool": {
+      "active": {
+        "axis": "x",
+        "distance": 2.5,
+        "instance_path": [
+          "1"
+        ],
+        "move_id": "1",
+        "node_id": "1",
+        "provenance": "native"
+      },
+      "active_tool": "move",
+      "class": "object_translation",
+      "numeric_available": true,
+      "numeric_unavailable_reason": null,
+      "orientation": "world",
+      "viewport": {
+        "axes": [
+          {
+            "axis": "x",
+            "unavailable_reason": null,
+            "visible": true
+          },
+          {
+            "axis": "y",
+            "unavailable_reason": null,
+            "visible": true
+          },
+          {
+            "axis": "z",
+            "unavailable_reason": null,
+            "visible": true
+          }
+        ],
+        "pointer_available": false,
+        "pointer_hit": null,
+        "provenance": "last_native_viewport_capture"
+      }
+    },
+    "native_input_pending": false,
+    "nodes": [
+      {
+        "authoring_transform": {
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "translation": [
+            2.5,
+            0.0,
+            0.0
+          ]
+        },
+        "id": "1",
+        "instance_paths": [
+          [
+            "1"
+          ]
+        ],
+        "name": "pCube1",
+        "shape_ids": [
+          "2"
+        ],
+        "transform": {
+          "rotation_degrees": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "translation": [
+            2.5,
+            0.0,
+            0.0
+          ]
+        },
+        "transform_id": "1"
+      }
+    ],
+    "pending_action": null,
+    "read_only_reason": null,
+    "remembered_face": {
+      "face_index": 0,
+      "instance_path": [
+        "1",
+        "2"
+      ],
+      "node_id": "1",
+      "shape_id": "2"
+    },
+    "retained_source_bytes": 0,
+    "retained_source_records": 0,
+    "save_as_available": false,
+    "save_available": false,
+    "save_reconciliation_required": false,
+    "scene_token": "<uuid>",
+    "selected_instance_path": [
+      "1"
+    ],
+    "selected_node": "1",
+    "selection_mode": "object",
+    "shapes": [
+      {
+        "edges": 12,
+        "faces": 6,
+        "id": "2",
+        "material": null,
+        "name": "pCube1Shape",
+        "points": 8,
+        "smoothing_known": true,
+        "source_appearance": {
+          "checked_source_bindings": 0,
+          "issues": {
+            "ambiguous_instance": false,
+            "color_processor_unavailable": true,
+            "evaluation_unavailable": true,
+            "malformed_data": false,
+            "missing_membership": false,
+            "overlapping_membership": false,
+            "quadratic_filtering_unproved": true,
+            "unsupported_graph": false,
+            "unsupported_settings": false,
+            "unsupported_shader": false,
+            "uv_mismatch": false
+          },
+          "shapes": 1,
+          "state": "unbound",
+          "unavailable": 0,
+          "unbound": 1
+        }
+      }
+    ],
+    "source_appearance": {
+      "checked_source_bindings": 0,
+      "issues": {
+        "ambiguous_instance": false,
+        "color_processor_unavailable": true,
+        "evaluation_unavailable": true,
+        "malformed_data": false,
+        "missing_membership": false,
+        "overlapping_membership": false,
+        "quadratic_filtering_unproved": true,
+        "unsupported_graph": false,
+        "unsupported_settings": false,
+        "unsupported_shader": false,
+        "uv_mismatch": false
+      },
+      "shapes": 1,
+      "state": "unbound",
+      "unavailable": 0,
+      "unbound": 1
+    },
+    "text_focused": false,
+    "units": {
+      "angular": "deg",
+      "linear": "cm",
+      "time": "film"
+    },
+    "viewport_backend": "uninitialized",
+    "viewport_error": "uninitialized"
+  },
+  "outcome": "scene"
+}
