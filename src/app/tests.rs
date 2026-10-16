@@ -3649,6 +3649,7 @@ fn cylinder_and_cone_names_count_up_and_skip_collisions() {
 }
 
 /// A group (translate x = 2) holding a child transform that owns one triangle mesh.
+/// Mirrored by `grouped_scene_bytes()` in src/mcp_tests/official_client/selection.rs; this module builds without the mcp feature, so the builder cannot be shared.
 fn group_editor() -> Editor {
     use material_wire as wire;
     let bytes = wire::scene(
