@@ -9,6 +9,7 @@
 - [Build checks and packaging](builds.md): prepared CI, coverage/security checks, local hooks, packaging boundaries and Craft workflow references.
 - [Native verification](native-verification.md): recorded macOS packaged-debug editing/file workflow, evidence method and remaining platform/reference checks.
 - [Native editor MCP](mcp.md): optional stdio tools, read-only ASCII curve metadata/Open, guarded World-axis Move transactions, scene tokens, human-edit guards, protocol limits and capability synchronization.
+- [MCP tool catalogue](mcp-tools.md): generated list of every advertised tool with access and idempotency, drift-tested against the registry.
 - [Operation guard ledger](guard-ledger.md): the native and remote guard pipelines, their order and side effects, with `file:line` anchors and the snapshot tests that enforce them.
 - [Native MCP verification](mcp-native-verification.md): scoped macOS window/protocol evidence, combined icons and selection, and unresolved idle responsiveness.
 - [Contribution guidance](../CONTRIBUTING.md): local workflow, review evidence and publication restrictions.

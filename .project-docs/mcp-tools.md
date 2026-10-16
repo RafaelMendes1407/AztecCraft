@@ -1,0 +1,36 @@
+# MCP tool catalogue
+
+Generated from the tool registry in `src/mcp/registry.rs`; do not edit by hand. Regenerate with `UPDATE_DOCS=1 cargo test --features mcp registry::tests::tool_doc`. Argument schemas are served by `tools/list`; see [mcp.md](mcp.md) for behaviour and limits.
+
+28 tools.
+
+| Tool | Access | Idempotent | Description |
+|---|---|---|---|
+| `inspect_scene` | read-only | no | Inspect committed editor state, including an active Move preview, document origin, bounded canonical curve IDs/names/class/counts/domain, retained-source counts and read-only reason, pending human edits and source-appearance readiness. Curve draw_available means at least one visible instance prepared as draw geometry; it does not claim GPU health or framebuffer success. No CV arrays or script bodies are exposed |
+| `set_active_tool` | mutating | yes | Select the native Select or World-axis Move tool; unsupported tools are not exposed |
+| `begin_move` | mutating | no | Begin one remote-owned World-axis translation of the exact selected transform instance. Numeric motion may begin while Select is active; this does not change tools |
+| `update_move` | mutating | no | Preview a finite absolute World-axis distance from begin in declared scene linear units. Matching scene token and remote-owned Move ID are required |
+| `finish_move` | mutating | no | Commit one undoable Move edit or cancel to the exact begin authoring state. Only the matching remote-owned Move ID may finish |
+| `create_primitive` | mutating | no | Create a cube or plane in the live editor |
+| `select_node` | mutating | yes | Select an object using an optional full transform instance_path; ambiguous objects require a path. Null node_id clears selection without a path |
+| `set_selection_mode` | mutating | yes | Set Object or Face selection mode without editing the scene; a valid remembered face stays inactive in Object mode |
+| `select_face` | mutating | yes | Select a complete canonical face target in Face mode, or clear it with null; explicit targets need not be visible and select their owning instance |
+| `rename_node` | mutating | no | Rename an existing object |
+| `set_transform` | mutating | no | Set f64 translation in declared scene units, rotation in XYZ degrees, and scale |
+| `edit_node` | mutating | no | Edit optional name and individual f64 channels in one undo entry. Omitted arrays and null components are untouched; translation uses declared scene units and supplied rotations use degrees. Does not change selection |
+| `extrude_face` | mutating | no | Extrude one current canonical quad along its local normal by distance in declared scene units. Requires node, shape and full root-to-shape path; shared-shape edits affect every instance. Zero distance changes topology; imported structural edits remain unsupported |
+| `set_material_diffuse` | mutating | no | Edit the checked saved Phong diffuse scalar for an exact shape through shared undo history. Requires complete shared-shader users; affects all those shapes. Values are finite and nonnegative, may exceed one, and do not enable rendered materials |
+| `delete_node` | mutating | no | Delete an object through editor undo history |
+| `undo` | mutating | no | Undo the last editor authoring operation |
+| `redo` | mutating | no | Redo the last undone authoring operation |
+| `frame_selected` | mutating | no | Frame the selected object using the live camera |
+| `set_grid_visibility` | mutating | yes | Set the current viewport's grid visibility explicitly. Session-only and idempotent; does not edit the scene or report GPU health |
+| `orbit_camera` | mutating | no | Orbit the live camera by [yaw, pitch] radians; pitch clamps near the poles |
+| `pan_camera` | mutating | no | Translate the live camera target by [right, up] camera-plane world units |
+| `dolly_camera` | mutating | no | Multiply live camera distance by a positive finite factor; below one moves closer |
+| `open_scene` | mutating | no | Open a Maya binary .mb, supported read-only static cubic Maya ASCII .ma, or legacy .aztec scene from a local UTF-8 path (1 to 4096 bytes, no NUL). ASCII scripts stay inert; unsupported commands/effects refuse the whole candidate. Dirty documents require confirmation. ASCII native writing is unavailable |
+| `save_scene` | mutating | no | Save the active supported Maya binary document, or reconcile an earlier uncertain installation without another write |
+| `save_scene_as` | mutating | no | Save a supported Maya binary scene to a fresh .mb path without overwriting; an uncertain prior save is reconciled instead |
+| `new_scene` | mutating | no | Request a new empty document; dirty documents require explicit confirmation using the returned pending_action_id |
+| `resolve_file_action` | mutating | no | Cancel, discard or save before the exact pending file action using its UUID and current scene token; source-changed Open requires Cancel and reopening |
+| `request_close` | mutating | no | Request native window closure; dirty documents require explicit confirmation, and approved remote closure waits for its successful reply to be flushed |

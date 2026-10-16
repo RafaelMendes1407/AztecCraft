@@ -1,6 +1,6 @@
 # Native editor MCP
 
-The optional MCP server controls the new native Editor window launched by its client. Tools use that window's canonical native scene, history, selection, camera and viewport grid setting. It cannot attach to an already running instance. This candidate exposes twenty-eight tools; it does not establish Maya scripting, plug-in or full-functionality compatibility.
+The optional MCP server controls the new native Editor window launched by its client. Tools use that window's canonical native scene, history, selection, camera and viewport grid setting. It cannot attach to an already running instance. This candidate exposes the tools in the generated [tool catalogue](mcp-tools.md); it does not establish Maya scripting, plug-in or full-functionality compatibility.
 
 The Save integration in this working branch is provisional. Its ordinary vendored
 atomic engine and document adapter have separate consumer checks. Current
@@ -182,7 +182,7 @@ checked History command.
 
 Successful tool results provide `structuredContent` and equivalent text content. Authoring outcomes are `scene`, `created`, `changed` or `unchanged`; file lifecycle outcomes are `document_applied`, `pending_confirmation`, `cancelled`, `close_requested`, `saved`, `save_uncertain` and `save_reconciled`. A scene result nests fields under `inspection`; a created result includes `node_id`. Authoring mutations share native undo history. Selection and camera operations do not create authoring undo entries or mark the document dirty. Navigation arguments use camera units, not pointer pixels. Invalid resulting camera ranges return `camera_error` without changing the camera; finite JSON numbers outside the camera's f32 range are also rejected by camera validation.
 
-The tools `set_grid_visibility`, `set_active_tool`, `select_node`, `set_selection_mode` and `select_face` set an absolute state, so repeating a call returns unchanged; their MCP annotations carry `idempotentHint: true`. No other tool does.
+Tools that set an absolute state return unchanged when repeated and carry `idempotentHint: true`; the generated [tool catalogue](mcp-tools.md) marks which ones, and a drift test keeps it equal to the registry.
 
 `set_grid_visibility` requires an explicit JSON boolean and the current scene
 token. Missing, null, string, numeric and unknown fields refuse; there is no
