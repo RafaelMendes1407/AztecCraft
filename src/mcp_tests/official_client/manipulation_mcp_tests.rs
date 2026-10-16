@@ -1351,6 +1351,84 @@ async fn rotate_commit_in_a_radian_scene_saves_the_expected_radians() {
 }
 
 #[tokio::test]
+async fn declared_echo_does_not_survive_a_new_scene_that_reuses_the_manipulation_id() {
+    let context = egui::Context::default();
+    let (mut editor, client, server) = start(&context).await;
+    editor.create(Primitive::Cube);
+    frame(&mut editor, &context, vec![]);
+    let mut ids = Vec::new();
+    for round in 0..2 {
+        let token = editor.scene_token.to_string();
+        let node = editor.selected.unwrap().to_decimal();
+        let path: Vec<_> = editor
+            .selected_path
+            .iter()
+            .map(|id| id.to_decimal())
+            .collect();
+        let begin = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "begin_manipulation",
+            json!({"scene_token":token,"kind":"rotate","node_id":node,"instance_path":path,"axis":"x","space":"object"}),
+        )
+        .await
+        .structured_content
+        .unwrap();
+        let id = begin["manipulation_id"].as_str().unwrap().to_owned();
+        ids.push(id.clone());
+        let inspected = inspect_manipulation(&mut editor, &context, &client).await;
+        assert_eq!(inspected["active"]["value"], 0.0, "round {round}");
+        if round == 1 {
+            break;
+        }
+        call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "update_manipulation",
+            json!({"scene_token":token,"manipulation_id":id,"angle":33}),
+        )
+        .await;
+        let inspected = inspect_manipulation(&mut editor, &context, &client).await;
+        assert_eq!(inspected["active"]["value"], 33.0);
+        call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "finish_manipulation",
+            json!({"scene_token":token,"manipulation_id":id,"finish":"cancel"}),
+        )
+        .await;
+        let pending = call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "new_scene",
+            json!({"scene_token":token}),
+        )
+        .await
+        .structured_content
+        .unwrap();
+        assert_eq!(pending["outcome"], "pending_confirmation");
+        call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "resolve_file_action",
+            json!({"scene_token":token,"pending_action_id":pending["pending_action_id"],"decision":"discard"}),
+        )
+        .await;
+        editor.create(Primitive::Cube);
+        frame(&mut editor, &context, vec![]);
+    }
+    assert_eq!(ids[0], ids[1], "the repro needs the reused manipulation id");
+    client.cancel().await.unwrap();
+    drop(editor);
+    server.await.unwrap();
+}
+
+#[tokio::test]
 async fn rotate_and_scale_sdk_never_commit_real_native_text_drafts() {
     let context = egui::Context::default();
     let (mut editor, client, server) = start(&context).await;

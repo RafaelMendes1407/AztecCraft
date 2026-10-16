@@ -21,11 +21,11 @@ Remote, `remote_operation_guarded` (`src/app/dispatch.rs:77`), checks in this or
 Native, `apply_operation` (`src/app/dispatch.rs:143`) calls `apply_operation_guarded` (defined at `src/app/dispatch.rs:149`, called at `src/app/dispatch.rs:147`) with
 provenance Native and no token or draft checks. In order:
 
-1. `guard_move_dispatch` first, with side effects (`src/app/dispatch.rs:155`, `src/app/features/move_tool.rs:138`). For
+1. `guard_move_dispatch` first, with side effects (`src/app/dispatch.rs:155`, `src/app/features/move_tool.rs:139`). For
    `SetActiveTool`, `Select`, `SetSelectionMode`, `SelectFace`, `NewScene`, `OpenScene` and
    `RequestClose` it cancels any Move (`cancel_move`, `src/app/features/move_tool.rs:109`) and consumes the
    pointer sequence only on a real tool change that cancelled nothing
-   (`src/app/features/move_tool.rs:133`). Other operations during a Move are `BusyManipulation` except
+   (`src/app/features/move_tool.rs:134`). Other operations during a Move are `BusyManipulation` except
    `UpdateMove`/`FinishMove`.
 2. Closing is `BusyEditing` (`src/app/dispatch.rs:156`), so a native `NewScene` while closing cancels the
    Move and then fails.
@@ -48,7 +48,7 @@ provenance Native and no token or draft checks. In order:
 These are not expressible as a shared guard and must not be hoisted without a new matrix review.
 
 - `may_install` is threaded through `save_document` (`src/file_ui.rs:124`) and
-  `resolve_file_action_guarded` (`src/file_ui.rs:368`, `src/file_ui.rs:444`). A refusal is
+  `resolve_file_action_guarded` (`src/file_ui.rs:369`, `src/file_ui.rs:445`). A refusal is
   `NativeSave: save cancelled before installation`. Only a dirty Maya binary document reaches it
   (matrix states `no_install`, `no_install_modal`).
 - Read-only Maya ASCII is decided by the scene (`authoring_read_only_reason`,
@@ -85,7 +85,7 @@ The matrix records these asymmetries; treat a change as a behavior change that n
 - `SetSidebarPanelVisible` follows Grid: remote refuses a stale token, a Move (`BusyManipulation`), a
   differing draft, text focus, modal and closing (`BusyEditing`); native refuses closing and modal
   before any draft commit (`src/app/dispatch.rs:156`, `src/app/dispatch.rs:159`), is
-  `BusyManipulation` during a manipulation (`src/app/features/move_tool.rs:138`), and otherwise commits a valid
+  `BusyManipulation` during a manipulation (`src/app/features/move_tool.rs:139`), and otherwise commits a valid
   draft first and refuses an invalid one (`src/app/dispatch.rs:253`). The handler is
   `src/app/dispatch.rs:301`; matrix cells are `set_sidebar_panel_visible(channel_box,false)` and
   `set_sidebar_panel_visible(attribute_editor,true)`.

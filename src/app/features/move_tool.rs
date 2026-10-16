@@ -118,6 +118,7 @@ impl Editor {
         };
         self.native_move = None;
         self.manipulation.refusal = None;
+        self.manipulation.declared = None;
         if cancelled {
             self.move_consumed_frame = true;
             self.move_suppress_primary = true;
@@ -283,6 +284,7 @@ impl Editor {
             .map_err(OperationError::Move)?;
         self.native_move = None;
         self.manipulation.refusal = None;
+        self.manipulation.declared = None;
         self.sync_fields();
         Ok(edit_reply(outcome))
     }
