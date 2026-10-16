@@ -6,6 +6,7 @@ mod curve;
 mod mesh;
 mod move_translation;
 mod rotate_frame;
+mod scale_frame;
 mod source;
 pub use appearance::{
     AppearanceIssue, AppearanceIssues, AppearanceState, AppearanceSummary, MaterialInspection,
@@ -16,6 +17,7 @@ pub use mesh::{DirectedEdge, NativeEdge, NativeFace, NativeMesh, Points};
 pub(crate) use move_translation::ChannelBaseline;
 pub use move_translation::{ChannelLeaf, WorldAxis, WorldMoveFrame, WorldMoveUnsupported};
 pub use rotate_frame::{ObjectRotateFrame, RotateAxis, RotateUnsupported};
+pub use scale_frame::{ObjectScaleFrame, ScaleHandle, ScaleUnsupported};
 use source::{ScalarOrigin, SourceFormat, SourceRetention, TransformField};
 
 use crate::scene::{NodeId, Primitive, Scene, SceneError, Transform};
@@ -1388,6 +1390,7 @@ pub enum NativeError {
     ReadOnlyFormat,
     UnsupportedMove(WorldMoveUnsupported),
     UnsupportedRotate(RotateUnsupported),
+    UnsupportedScale(ScaleUnsupported),
     AbsentChannelLeaf {
         channel: ChannelLeaf,
         component: usize,
@@ -1434,6 +1437,7 @@ impl fmt::Display for NativeError {
             ),
             Self::UnsupportedMove(reason) => write!(f, "World-axis move unsupported: {reason}"),
             Self::UnsupportedRotate(reason) => write!(f, "Rotate unsupported: {reason}"),
+            Self::UnsupportedScale(reason) => write!(f, "Scale unsupported: {reason}"),
             Self::BusyManipulation => f.write_str("finish or cancel the active Move manipulation"),
             Self::UnsupportedView(reason) => {
                 write!(f, "native viewport representation unsupported: {reason}")
