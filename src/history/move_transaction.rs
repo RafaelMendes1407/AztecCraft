@@ -60,11 +60,11 @@ impl fmt::Display for ManipulationError {
         match self {
             Self::Native(error) => error.fmt(f),
             Self::View(error) => error.fmt(f),
-            Self::Busy => f.write_str("finish or cancel the active Move manipulation"),
-            Self::StaleScene => f.write_str("Move scene token is stale"),
-            Self::StaleManipulation => f.write_str("Move identifier is absent or stale"),
-            Self::WrongOwner => f.write_str("Move manipulation belongs to another input source"),
-            Self::IdsExhausted => f.write_str("Move identifiers are exhausted"),
+            Self::Busy => f.write_str("finish or cancel the active manipulation"),
+            Self::StaleScene => f.write_str("manipulation scene token is stale"),
+            Self::StaleManipulation => f.write_str("manipulation identifier is absent or stale"),
+            Self::WrongOwner => f.write_str("manipulation belongs to another input source"),
+            Self::IdsExhausted => f.write_str("manipulation identifiers are exhausted"),
         }
     }
 }

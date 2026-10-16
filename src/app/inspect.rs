@@ -73,19 +73,8 @@ impl Editor {
             return Err(OperationError::TooLarge);
         }
         let units = self.history.scene().units();
-        let linear = match &units.linear {
-            LinearUnit::Centimeter => "cm",
-            LinearUnit::Millimeter => "mm",
-            LinearUnit::Meter => "m",
-            LinearUnit::Inch => "in",
-            LinearUnit::Foot => "ft",
-            LinearUnit::Unsupported(value) => value,
-        };
-        let angular = match &units.angular {
-            AngularUnit::Degree => "deg",
-            AngularUnit::Radian => "rad",
-            AngularUnit::Unsupported(value) => value,
-        };
+        let linear = linear_unit_name(&units.linear);
+        let angular = angular_unit_name(&units.angular);
         if linear
             .len()
             .saturating_add(angular.len())
@@ -140,7 +129,7 @@ impl Editor {
             && viewport_error != Some(crate::viewport_renderer::ViewportError::BackendFailed);
         Ok(SceneInspection {
             scene_token: self.scene_token.to_string(),
-            move_tool: self.inspect_move()?,
+            manipulation: self.inspect_manipulation()?,
             nodes,
             retained_source_bytes: self.history.scene().retained_source_bytes(),
             retained_source_records: self.history.scene().retained_source_records(),
@@ -312,5 +301,26 @@ impl Editor {
                 distance: self.camera.distance(),
             },
         })
+    }
+}
+
+#[cfg(any(test, feature = "mcp"))]
+pub(in crate::app) fn linear_unit_name(unit: &LinearUnit) -> &str {
+    match unit {
+        LinearUnit::Centimeter => "cm",
+        LinearUnit::Millimeter => "mm",
+        LinearUnit::Meter => "m",
+        LinearUnit::Inch => "in",
+        LinearUnit::Foot => "ft",
+        LinearUnit::Unsupported(value) => value,
+    }
+}
+
+#[cfg(any(test, feature = "mcp"))]
+pub(in crate::app) fn angular_unit_name(unit: &AngularUnit) -> &str {
+    match unit {
+        AngularUnit::Degree => "deg",
+        AngularUnit::Radian => "rad",
+        AngularUnit::Unsupported(value) => value,
     }
 }

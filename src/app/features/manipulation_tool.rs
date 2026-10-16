@@ -34,6 +34,9 @@ pub(in crate::app) struct ManipulationOptions {
     // Set when the hover memory was reset (drag start, tool change): the next idle frame records
     // the handle under the pointer without writing it, so a "committed" message is not replaced.
     quiet: bool,
+    // Why the scene refused the last update of the active manipulation, for the inspection.
+    #[cfg_attr(not(any(test, feature = "mcp")), allow(dead_code))]
+    pub(in crate::app) refusal: Option<String>,
 }
 
 impl Default for ManipulationOptions {
@@ -45,7 +48,16 @@ impl Default for ManipulationOptions {
             numeric: String::new(),
             hover: None,
             quiet: false,
+            refusal: None,
         }
+    }
+}
+
+pub(in crate::app) fn kind_name(kind: ManipulationKindState) -> &'static str {
+    match kind {
+        ManipulationKindState::Move { .. } => "move",
+        ManipulationKindState::Rotate { .. } => "rotate",
+        ManipulationKindState::Scale { .. } => "scale",
     }
 }
 
@@ -157,9 +169,10 @@ impl Editor {
                 VIEW_BUDGET,
             )
             .map_err(begin_error)?;
+        self.manipulation.refusal = None;
         self.sync_fields();
-        Ok(OperationReply::MoveStarted {
-            move_id: id.to_decimal(),
+        Ok(OperationReply::ManipulationStarted {
+            manipulation_id: id.to_decimal(),
         })
     }
 
@@ -182,9 +195,10 @@ impl Editor {
                 VIEW_BUDGET,
             )
             .map_err(begin_error)?;
+        self.manipulation.refusal = None;
         self.sync_fields();
-        Ok(OperationReply::MoveStarted {
-            move_id: id.to_decimal(),
+        Ok(OperationReply::ManipulationStarted {
+            manipulation_id: id.to_decimal(),
         })
     }
 
@@ -194,36 +208,58 @@ impl Editor {
         value: ManipulationValue,
         provenance: ManipulationProvenance,
     ) -> Result<OperationReply, OperationError> {
-        let (number, expected, noun) = match value {
-            ManipulationValue::Degrees(value) => (value, "Rotate", "angle"),
-            ManipulationValue::Factor(value) => (value, "Scale", "factor"),
+        let (number, parameter) = match value {
+            ManipulationValue::Degrees(value) => (value, "angle"),
+            #[cfg(any(test, feature = "mcp"))]
+            ManipulationValue::Angle(value) => (value, "angle"),
+            ManipulationValue::Factor(value) => (value, "factor"),
         };
         if let Some(active) = self.history.active_manipulation()
             && active.id == id
             && !matches!(
-                (value, active.kind),
-                (
-                    ManipulationValue::Degrees(_),
-                    ManipulationKindState::Rotate { .. }
-                ) | (
-                    ManipulationValue::Factor(_),
-                    ManipulationKindState::Scale { .. }
-                )
+                (parameter, active.kind),
+                ("angle", ManipulationKindState::Rotate { .. })
+                    | ("factor", ManipulationKindState::Scale { .. })
             )
         {
-            return Err(OperationError::InvalidInput(format!(
-                "A {expected} {noun} needs an active {expected} manipulation"
-            )));
+            return Err(OperationError::KindMismatch {
+                parameter,
+                active: kind_name(active.kind),
+            });
         }
         if !number.is_finite() {
             return Err(OperationError::InvalidInput(format!(
-                "{expected} {noun} must be finite"
+                "{} {parameter} must be finite",
+                if parameter == "angle" {
+                    "Rotate"
+                } else {
+                    "Scale"
+                }
             )));
         }
-        let outcome = self
+        // A declared angle is in the scene's angular unit; Move's linear conversion never applies.
+        #[cfg(any(test, feature = "mcp"))]
+        let number = if let ManipulationValue::Angle(angle) = value {
+            let degrees = angle
+                * self
+                    .history
+                    .scene()
+                    .units()
+                    .angular_degrees_factor()
+                    .map_err(OperationError::Scene)?;
+            if !degrees.is_finite() {
+                return Err(OperationError::InvalidInput(
+                    "Rotate angle cannot be represented in degrees".into(),
+                ));
+            }
+            degrees
+        } else {
+            number
+        };
+        let updated = self
             .history
-            .update_move(self.scene_token, id, provenance, number)
-            .map_err(OperationError::Move)?;
+            .update_move(self.scene_token, id, provenance, number);
+        let outcome = self.record_update(updated)?;
         self.sync_fields();
         Ok(match outcome {
             EditOutcome::Changed | EditOutcome::Created(_) | EditOutcome::SessionMaterial(_) => {
@@ -231,6 +267,28 @@ impl Editor {
             }
             EditOutcome::Unchanged => OperationReply::Unchanged,
         })
+    }
+
+    // Remembers a refusal by the scene, for the inspection, and clears it on the next success.
+    pub(in crate::app) fn record_update(
+        &mut self,
+        result: Result<EditOutcome, ManipulationError>,
+    ) -> Result<EditOutcome, OperationError> {
+        match result {
+            Ok(outcome) => {
+                self.manipulation.refusal = None;
+                Ok(outcome)
+            }
+            Err(error) => {
+                if matches!(
+                    error,
+                    ManipulationError::Native(_) | ManipulationError::View(_)
+                ) {
+                    self.manipulation.refusal = Some(error.to_string());
+                }
+                Err(OperationError::Move(error))
+            }
+        }
     }
 
     pub(in crate::app) fn tool_help(&self) -> String {

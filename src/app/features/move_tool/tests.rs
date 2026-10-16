@@ -687,7 +687,7 @@ fn editor_move_guards_preserve_drafts_modal_close_tokens_and_failed_open_baselin
             &|| true,
         )
         .unwrap();
-    assert!(matches!(reply, OperationReply::MoveStarted { .. }));
+    assert!(matches!(reply, OperationReply::ManipulationStarted { .. }));
     let id = editor.history.active_manipulation().unwrap().id;
     editor
         .apply_operation_guarded(
@@ -867,8 +867,8 @@ fn tiny_visible_geometry_inspection_reports_pointer_exclusion_without_global_rea
         },
     );
     output.textures_delta.clear();
-    let inspected = editor.inspect_move().unwrap();
-    assert!(inspected.numeric_available);
+    let inspected = editor.inspect_manipulation().unwrap();
+    assert!(inspected.kinds[0].available);
     let viewport = inspected.viewport.unwrap();
     assert_eq!(viewport.provenance, "last_native_viewport_capture");
     assert!(viewport.pointer_available);
@@ -1285,10 +1285,10 @@ fn face_mode_refuses_move_handles_native_and_numeric_and_keeps_face_click_workin
         Err(OperationError::InvalidInput(message)) if message == FACE_MODE_REFUSAL
     ));
     assert!(editor.history.active_manipulation().is_none());
-    let inspected = editor.inspect_move().unwrap();
-    assert!(!inspected.numeric_available);
+    let inspected = editor.inspect_manipulation().unwrap();
+    assert!(!inspected.kinds[0].available);
     assert_eq!(
-        inspected.numeric_unavailable_reason.as_deref(),
+        inspected.kinds[0].unavailable_reason.as_deref(),
         Some(FACE_MODE_REFUSAL)
     );
     assert!(inspected.viewport.is_none());
@@ -1463,10 +1463,10 @@ fn read_only_ascii_curve_scene_refuses_move_natively_and_numerically_with_the_co
         .to_string();
     editor.native_operation(Operation::SetActiveTool(ActiveTool::Move));
     assert_eq!(editor.active_tool, ActiveTool::Move);
-    let inspected = editor.inspect_move().unwrap();
-    assert!(!inspected.numeric_available);
+    let inspected = editor.inspect_manipulation().unwrap();
+    assert!(!inspected.kinds[0].available);
     assert_eq!(
-        inspected.numeric_unavailable_reason.as_deref(),
+        inspected.kinds[0].unavailable_reason.as_deref(),
         Some(reason.as_str())
     );
     let before = editor.history.scene().clone();
@@ -1594,7 +1594,7 @@ fn actual_hidden_logic_cancels_native_pointer_capture() {
     assert!(editor.history.active_manipulation().is_none());
     assert!(editor.native_move.is_none());
     assert_eq!(editor.history.scene(), &before);
-    assert!(editor.inspect_move().unwrap().viewport.is_none());
+    assert!(editor.inspect_manipulation().unwrap().viewport.is_none());
 }
 
 #[test]

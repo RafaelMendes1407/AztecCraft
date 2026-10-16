@@ -484,7 +484,7 @@ Its library success does not constitute a native Open or appearance proof.
 
 The native toolbox now has Select/Move vector buttons and unmodified Q/W.
 World-only X/Y/Z drags use the same exact selected instance and canonical History
-transaction as the four Move MCP tools. Preview changes are authoritative,
+transaction as the generic manipulation MCP tools. Preview changes are authoritative,
 Channel Box fields remain synchronized and locked during the transaction, and a
 release commits at most one Undo entry. Escape and capture/lifecycle changes
 restore the exact begin authoring intent. Physical viewport origin/size, camera
@@ -521,4 +521,5 @@ handle writes its state, or the core's refusal, to the status line; pressing a r
 unsupported handle shows the same text and consumes the click so it cannot select. A
 zero or negative Scale factor reached by a drag is refused by the core, shown in the
 status and keeps the last valid preview. Undo and Redo report the entry they act on
-("Undo Rotate"). No MCP tool drives these operations yet; see `mcp.md`.
+("Undo Rotate"). The generic `begin_manipulation`, `update_manipulation` and
+`finish_manipulation` MCP tools drive the same operations; see `mcp.md`.

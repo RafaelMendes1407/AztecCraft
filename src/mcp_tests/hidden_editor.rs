@@ -144,7 +144,10 @@ fn remote_numeric_move_survives_successive_actual_hidden_editor_callbacks() {
         })
         .unwrap();
     hidden_frame(&mut editor, &context, vec![]);
-    let Ok(OperationReply::MoveStarted { move_id }) = begin.try_recv().unwrap() else {
+    let Ok(OperationReply::ManipulationStarted {
+        manipulation_id: move_id,
+    }) = begin.try_recv().unwrap()
+    else {
         panic!()
     };
     let id = ManipulationId::from_decimal(&move_id).unwrap();

@@ -7,10 +7,10 @@ Generated from the tool registry in `src/mcp/registry.rs`; do not edit by hand. 
 | Tool | Access | Idempotent | Description |
 |---|---|---|---|
 | `inspect_scene` | read-only | no | Inspect committed editor state, including an active Move preview, document origin, bounded canonical curve IDs/names/class/counts/domain, retained-source counts and read-only reason, pending human edits and source-appearance readiness. Curve draw_available means at least one visible instance prepared as draw geometry; it does not claim GPU health or framebuffer success. No CV arrays or script bodies are exposed |
-| `set_active_tool` | mutating | yes | Select the native Select or World-axis Move tool; unsupported tools are not exposed |
-| `begin_move` | mutating | no | Begin one remote-owned World-axis translation of the exact selected transform instance. Numeric motion may begin while Select is active; this does not change tools |
-| `update_move` | mutating | no | Preview a finite absolute World-axis distance from begin in declared scene linear units. Matching scene token and remote-owned Move ID are required |
-| `finish_move` | mutating | no | Commit one undoable Move edit or cancel to the exact begin authoring state. Only the matching remote-owned Move ID may finish |
+| `set_active_tool` | mutating | yes | Select the native Select, Move, Rotate or Scale tool; unsupported tools are not exposed |
+| `begin_manipulation` | mutating | no | Begin one remote-owned Move (World axis), Rotate or Scale (Object or World space) of the exact selected transform instance. Numeric manipulation may begin while any tool is active; this does not change tools |
+| `update_manipulation` | mutating | no | Preview an absolute value from begin: distance in the scene linear unit for Move, angle in the scene angular unit for Rotate, a unitless factor greater than zero for Scale. Units are echoed in inspection.manipulation.units. Matching scene token and remote-owned manipulation ID are required; a parameter of the wrong kind is a typed error |
+| `finish_manipulation` | mutating | no | Commit one undoable Move, Rotate or Scale edit or cancel to the exact begin authoring state. Only the matching remote-owned manipulation ID may finish |
 | `create_primitive` | mutating | no | Create a cube, plane, sphere, cylinder or cone in the live editor |
 | `select_node` | mutating | yes | Select an object using an optional full transform instance_path; ambiguous objects require a path. Null node_id clears selection without a path |
 | `set_selection_mode` | mutating | yes | Set Object, Face, Vertex, Edge or Hierarchy (Root sub-mask only) selection mode without editing the scene; a valid remembered face, vertex or edge stays inactive outside its own mode |

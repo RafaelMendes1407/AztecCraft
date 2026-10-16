@@ -8,6 +8,7 @@ use azteccraft::{
 };
 use eframe::egui::{self, Event, Key, Modifiers, Pos2, Rect, Shape};
 use glam::Vec3;
+use uuid::Uuid;
 
 const SIZE: egui::Vec2 = egui::vec2(1440.0, 900.0);
 
@@ -482,8 +483,18 @@ fn a_value_of_the_wrong_kind_or_not_finite_is_refused_without_changing_the_previ
         })
         .unwrap();
     let id = editor.history.active_manipulation().unwrap().id;
+    assert!(matches!(
+        editor.apply_operation(Operation::UpdateManipulation {
+            id,
+            value: ManipulationValue::Factor(2.0)
+        }),
+        Err(OperationError::KindMismatch {
+            parameter: "factor",
+            active: "rotate"
+        })
+    ));
+    assert_eq!(editor.history.scene(), &scene);
     for value in [
-        ManipulationValue::Factor(2.0),
         ManipulationValue::Degrees(f64::NAN),
         ManipulationValue::Degrees(f64::INFINITY),
     ] {
@@ -498,7 +509,10 @@ fn a_value_of_the_wrong_kind_or_not_finite_is_refused_without_changing_the_previ
             id,
             distance: crate::editor_operations::MoveDistance::Centimeters(1.0)
         }),
-        Err(OperationError::InvalidInput(_))
+        Err(OperationError::KindMismatch {
+            parameter: "distance",
+            active: "rotate"
+        })
     ));
     editor
         .apply_operation(Operation::FinishMove {
@@ -755,4 +769,196 @@ fn a_committed_message_survives_the_pointer_resting_on_the_handle() {
         idle(&mut editor, &context, 1.0);
     }
     assert_eq!(editor.status, "Rotate committed");
+}
+
+fn begin_operation(editor: &Editor, kind: ActiveTool, space: ManipulationSpace) -> Operation {
+    let target = editor.selected_move_target().unwrap();
+    match kind {
+        ActiveTool::Rotate => Operation::BeginRotate {
+            target,
+            axis: RotateAxis::Z,
+            space,
+        },
+        _ => Operation::BeginScale {
+            target,
+            handle: ScaleHandle::Uniform,
+            space,
+        },
+    }
+}
+
+fn update_operation(kind: ActiveTool, id: ManipulationId) -> Operation {
+    Operation::UpdateManipulation {
+        id,
+        value: match kind {
+            ActiveTool::Rotate => ManipulationValue::Angle(15.0),
+            _ => ManipulationValue::Factor(1.5),
+        },
+    }
+}
+
+#[test]
+fn editor_rotate_and_scale_guards_preserve_drafts_modal_close_tokens_and_failed_open_baseline() {
+    use crate::editor_operations::{FileDecision, RemoteRequest};
+    for kind in [ActiveTool::Rotate, ActiveTool::Scale] {
+        for condition in 0..6 {
+            for operation in 0..4 {
+                let mut editor = Editor::default();
+                editor.create(Primitive::Cube);
+                let context = egui::Context::default();
+                let token = editor.scene_token;
+                let before = editor.history.scene().clone();
+                let begin = begin_operation(&editor, kind, ManipulationSpace::Object);
+                match condition {
+                    0 => editor.channels[0] = "human".into(),
+                    1 => context
+                        .memory_mut(|memory| memory.request_focus(crate::app::name_edit_id())),
+                    2 => editor.native_input_pending = true,
+                    3 => {
+                        editor.apply_operation(Operation::NewScene).unwrap();
+                    }
+                    4 => {
+                        let OperationReply::PendingConfirmation {
+                            pending_action_id, ..
+                        } = editor.apply_operation(Operation::RequestClose).unwrap()
+                        else {
+                            panic!()
+                        };
+                        editor
+                            .apply_operation(Operation::ResolveFileAction {
+                                pending_id: Uuid::parse_str(&pending_action_id).unwrap(),
+                                decision: FileDecision::Discard,
+                            })
+                            .unwrap();
+                    }
+                    _ => (),
+                }
+                let id = ManipulationId::from_decimal("1").unwrap();
+                let request = match operation {
+                    0 => Operation::SetActiveTool(kind),
+                    1 => begin,
+                    2 => update_operation(kind, id),
+                    _ => Operation::FinishMove {
+                        id,
+                        finish: ManipulationFinish::Commit,
+                    },
+                };
+                let reply = editor.remote_operation(
+                    RemoteRequest {
+                        expected_scene_token: Some(if condition == 5 {
+                            Uuid::new_v4()
+                        } else {
+                            token
+                        }),
+                        operation: request,
+                    },
+                    &context,
+                );
+                assert!(
+                    matches!(
+                        reply,
+                        Err(OperationError::BusyEditing | OperationError::StaleScene)
+                    ),
+                    "{kind:?} {condition} {operation}"
+                );
+                assert_eq!(editor.history.scene(), &before);
+                assert!(editor.history.active_manipulation().is_none());
+                assert_eq!(editor.active_tool, ActiveTool::Select);
+            }
+        }
+    }
+}
+
+#[test]
+fn rotate_and_scale_owner_busy_cancel_and_close_follow_move() {
+    for kind in [ActiveTool::Rotate, ActiveTool::Scale] {
+        let (mut editor, context, _) = setup(
+            if kind == ActiveTool::Rotate {
+                Key::E
+            } else {
+                Key::R
+            },
+            1.0,
+        );
+        let before = editor.history.scene().clone();
+        let bytes = azteccraft::native_scene::binary::encode(&before);
+        let token = editor.scene_token;
+        let camera = editor.camera.clone();
+
+        // A native manipulation refuses every remote step, including its own update and finish.
+        let begin = begin_operation(&editor, kind, ManipulationSpace::Object);
+        editor.apply_operation(begin).unwrap();
+        let id = editor.history.active_manipulation().unwrap().id;
+        for operation in [
+            update_operation(kind, id),
+            Operation::FinishMove {
+                id,
+                finish: ManipulationFinish::Commit,
+            },
+            Operation::Undo,
+        ] {
+            let reply = editor.remote_operation(
+                crate::editor_operations::RemoteRequest {
+                    expected_scene_token: Some(token),
+                    operation,
+                },
+                &context,
+            );
+            assert!(matches!(reply, Err(OperationError::BusyManipulation)));
+        }
+        editor
+            .apply_operation(Operation::FinishMove {
+                id,
+                finish: ManipulationFinish::Cancel,
+            })
+            .unwrap();
+        assert_eq!(editor.history.scene(), &before);
+
+        // A remote manipulation rejects a native step as another owner's, and a second begin.
+        let begin = begin_operation(&editor, kind, ManipulationSpace::Object);
+        editor
+            .apply_operation_guarded(ManipulationProvenance::Remote, begin, &|| true)
+            .unwrap();
+        let id = editor.history.active_manipulation().unwrap().id;
+        assert!(matches!(
+            editor.apply_operation(update_operation(kind, id)),
+            Err(OperationError::Move(ManipulationError::WrongOwner))
+        ));
+        assert!(matches!(
+            editor.apply_operation_guarded(
+                ManipulationProvenance::Remote,
+                begin_operation(&editor, kind, ManipulationSpace::World),
+                &|| true
+            ),
+            Err(OperationError::BusyManipulation)
+        ));
+        editor
+            .apply_operation_guarded(
+                ManipulationProvenance::Remote,
+                update_operation(kind, id),
+                &|| true,
+            )
+            .unwrap();
+        assert_ne!(editor.history.scene(), &before);
+
+        // A failed Open cancels the remote manipulation and restores its exact baseline.
+        let missing = tempfile::tempdir().unwrap();
+        assert!(
+            editor
+                .apply_operation(Operation::OpenScene {
+                    path: missing.path().join("missing-rotate-scale.mb")
+                })
+                .is_err()
+        );
+        assert_eq!(editor.scene_token, token);
+        assert_eq!(editor.camera, camera);
+        assert!(editor.history.active_manipulation().is_none());
+        assert_eq!(editor.history.scene(), &before);
+        assert_eq!(
+            azteccraft::native_scene::binary::encode(editor.history.scene()),
+            bytes
+        );
+        assert_eq!(editor.history.undo_label(), Some("Create"));
+        assert!(!editor.history.can_redo());
+    }
 }

@@ -1559,7 +1559,7 @@ impl fmt::Display for NativeError {
             Self::UnsupportedMove(reason) => write!(f, "World-axis move unsupported: {reason}"),
             Self::UnsupportedRotate(reason) => write!(f, "Rotate unsupported: {reason}"),
             Self::UnsupportedScale(reason) => write!(f, "Scale unsupported: {reason}"),
-            Self::BusyManipulation => f.write_str("finish or cancel the active Move manipulation"),
+            Self::BusyManipulation => f.write_str("finish or cancel the active manipulation"),
             Self::UnsupportedView(reason) => {
                 write!(f, "native viewport representation unsupported: {reason}")
             }

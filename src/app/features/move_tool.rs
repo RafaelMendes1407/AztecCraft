@@ -1,4 +1,6 @@
-use super::manipulation_tool::{begin_error, is_manipulation_tool, mode_refusal, tool_name};
+use super::manipulation_tool::{
+    begin_error, is_manipulation_tool, kind_name, mode_refusal, tool_name,
+};
 use crate::app::Editor;
 use crate::editor_operations::{
     ActiveTool, ManipulationValue, MoveDistance, Operation, OperationError, OperationReply,
@@ -115,6 +117,7 @@ impl Editor {
             Ok(())
         };
         self.native_move = None;
+        self.manipulation.refusal = None;
         if cancelled {
             self.move_consumed_frame = true;
             self.move_suppress_primary = true;
@@ -204,9 +207,10 @@ impl Editor {
                 256 * 1024 * 1024,
             )
             .map_err(begin_error)?;
+        self.manipulation.refusal = None;
         self.sync_fields();
-        Ok(OperationReply::MoveStarted {
-            move_id: id.to_decimal(),
+        Ok(OperationReply::ManipulationStarted {
+            manipulation_id: id.to_decimal(),
         })
     }
 
@@ -225,9 +229,10 @@ impl Editor {
             && active.id == id
             && active.move_axis().is_none()
         {
-            return Err(OperationError::InvalidInput(
-                "A Move distance needs an active Move manipulation".into(),
-            ));
+            return Err(OperationError::KindMismatch {
+                parameter: "distance",
+                active: kind_name(active.kind),
+            });
         }
         let factor = self
             .history
@@ -252,10 +257,10 @@ impl Editor {
                 "Move distance cannot be represented in the declared linear unit".into(),
             ));
         }
-        let outcome = self
+        let updated = self
             .history
-            .update_move(self.scene_token, id, provenance, distance_cm)
-            .map_err(OperationError::Move)?;
+            .update_move(self.scene_token, id, provenance, distance_cm);
+        let outcome = self.record_update(updated)?;
         self.sync_fields();
         Ok(edit_reply(outcome))
     }
@@ -271,65 +276,190 @@ impl Editor {
             .finish_move(self.scene_token, id, provenance, finish)
             .map_err(OperationError::Move)?;
         self.native_move = None;
+        self.manipulation.refusal = None;
         self.sync_fields();
         Ok(edit_reply(outcome))
     }
 
     #[cfg(any(test, feature = "mcp"))]
-    pub(in crate::app) fn inspect_move(
+    pub(in crate::app) fn inspect_manipulation(
         &self,
-    ) -> Result<crate::editor_operations::MoveInspection, OperationError> {
+    ) -> Result<crate::editor_operations::ManipulationInspection, OperationError> {
+        use crate::app::inspect::{angular_unit_name, linear_unit_name};
         use crate::editor_operations::{
-            ActiveMoveInspection, MoveAxisInspection, MoveInspection, MoveViewportInspection,
+            ActiveManipulationInspection, KindInspection, ManipulationInspection,
+            ManipulationUnits, MoveAxisInspection, MoveViewportInspection,
         };
-        let frame = if let Some(refusal) = mode_refusal("Move", self.selection_mode) {
+        use azteccraft::{
+            history::ManipulationKindState,
+            native_scene::{RotateAxis, RotateSpace, ScaleHandle, ScaleSpace},
+        };
+        let units = self.history.scene().units();
+        let target = if let Some(refusal) = mode_refusal("Move", self.selection_mode) {
             Err(OperationError::InvalidInput(refusal))
         } else {
-            self.selected_move_target().and_then(|target| {
-                self.history
-                    .scene()
-                    .world_move_frame(&target)
-                    .map_err(OperationError::Scene)
-            })
+            self.selected_move_target()
         };
-        let axis_refusals: Vec<String> = frame.as_ref().map_or_else(
-            |_| Vec::new(),
-            |frame| {
-                [WorldAxis::X, WorldAxis::Y, WorldAxis::Z]
-                    .into_iter()
-                    .filter_map(|axis| {
-                        frame.require_leaves(axis).err().map(|error| {
-                            format!("{} axis: {error}", axis_name(axis).to_uppercase())
+        let frame = match &target {
+            Err(error) => Err(error.to_string()),
+            Ok(target) => self
+                .history
+                .scene()
+                .world_move_frame(target)
+                .map_err(|error| error.to_string()),
+        };
+        // A kind is available when any of its handles could begin; otherwise the reasons are joined.
+        let availability = |kind, refusals: Result<Vec<(&str, Option<String>)>, String>| {
+            let (available, unavailable_reason) = match refusals {
+                Err(reason) => (false, Some(reason)),
+                Ok(refusals) => {
+                    let blocked: Vec<String> = refusals
+                        .iter()
+                        .filter_map(|(name, refusal)| {
+                            refusal.as_ref().map(|reason| format!("{name}: {reason}"))
                         })
-                    })
-                    .collect()
-            },
-        );
-        let numeric_available = frame.is_ok() && axis_refusals.len() < 3;
-        let numeric_unavailable_reason = match &frame {
-            Err(error) => Some(error.to_string()),
-            Ok(_) if axis_refusals.is_empty() => None,
-            Ok(_) => Some(axis_refusals.join("; ")),
+                        .collect();
+                    (
+                        blocked.len() < refusals.len(),
+                        (!blocked.is_empty()).then(|| blocked.join("; ")),
+                    )
+                }
+            };
+            KindInspection {
+                kind,
+                available,
+                unavailable_reason,
+            }
         };
+        let move_refusals = match &frame {
+            Err(error) => Err(error.clone()),
+            Ok(frame) => Ok([WorldAxis::X, WorldAxis::Y, WorldAxis::Z]
+                .into_iter()
+                .map(|axis| {
+                    (
+                        match axis {
+                            WorldAxis::X => "X axis",
+                            WorldAxis::Y => "Y axis",
+                            WorldAxis::Z => "Z axis",
+                        },
+                        frame
+                            .require_leaves(axis)
+                            .err()
+                            .map(|error| error.to_string()),
+                    )
+                })
+                .collect()),
+        };
+        let rotate_refusals = match &target {
+            Err(error) => Err(error.to_string()),
+            Ok(target) => Ok([
+                (RotateAxis::X, "X axis"),
+                (RotateAxis::Y, "Y axis"),
+                (RotateAxis::Z, "Z axis"),
+            ]
+            .into_iter()
+            .map(|(axis, name)| {
+                (
+                    name,
+                    self.history
+                        .scene()
+                        .rotation_refusal(target, axis, RotateSpace::Object)
+                        .map(|error| error.to_string()),
+                )
+            })
+            .collect()),
+        };
+        let scale_refusals = match &target {
+            Err(error) => Err(error.to_string()),
+            Ok(target) => Ok([
+                (ScaleHandle::X, "X handle"),
+                (ScaleHandle::Y, "Y handle"),
+                (ScaleHandle::Z, "Z handle"),
+                (ScaleHandle::Uniform, "uniform handle"),
+            ]
+            .into_iter()
+            .map(|(handle, name)| {
+                (
+                    name,
+                    self.history
+                        .scene()
+                        .scale_refusal(target, handle, ScaleSpace::Object)
+                        .map(|error| error.to_string()),
+                )
+            })
+            .collect()),
+        };
+        let kinds = vec![
+            availability("move", move_refusals),
+            availability("rotate", rotate_refusals),
+            availability("scale", scale_refusals),
+        ];
         let active = self
             .history
             .active_manipulation()
-            .and_then(|active| Some((active.move_axis()?, active.move_distance_cm()?, active)))
-            .map(|(axis, distance_cm, active)| {
-                let factor = self
-                    .history
-                    .scene()
-                    .units()
-                    .linear_factor()
-                    .map_err(OperationError::Scene)?;
-                let distance = distance_cm / factor;
-                if !distance.is_finite() {
+            .map(|active| {
+                let (kind, space, axis, handle, parameter, value, unit) = match active.kind {
+                    ManipulationKindState::Move { axis } => {
+                        let value = active.parameter
+                            / units.linear_factor().map_err(OperationError::Scene)?;
+                        (
+                            "move",
+                            "world",
+                            Some(axis_name(axis)),
+                            None,
+                            "distance",
+                            value,
+                            linear_unit_name(&units.linear).to_owned(),
+                        )
+                    }
+                    ManipulationKindState::Rotate { axis, space } => {
+                        let value = active.parameter
+                            / units
+                                .angular_degrees_factor()
+                                .map_err(OperationError::Scene)?;
+                        (
+                            "rotate",
+                            match space {
+                                RotateSpace::Object => "object",
+                                RotateSpace::World => "world",
+                            },
+                            Some(match axis {
+                                RotateAxis::X => "x",
+                                RotateAxis::Y => "y",
+                                RotateAxis::Z => "z",
+                            }),
+                            None,
+                            "angle",
+                            value,
+                            angular_unit_name(&units.angular).to_owned(),
+                        )
+                    }
+                    ManipulationKindState::Scale { handle, space } => (
+                        "scale",
+                        match space {
+                            ScaleSpace::Object => "object",
+                            ScaleSpace::World => "world",
+                        },
+                        None,
+                        Some(match handle {
+                            ScaleHandle::X => "x",
+                            ScaleHandle::Y => "y",
+                            ScaleHandle::Z => "z",
+                            ScaleHandle::Uniform => "uniform",
+                        }),
+                        "factor",
+                        active.parameter,
+                        "unitless".to_owned(),
+                    ),
+                };
+                if !value.is_finite() {
                     return Err(OperationError::InvalidInput(
-                        "Move distance inspection overflow".into(),
+                        "Manipulation inspection overflow".into(),
                     ));
                 }
-                Ok(ActiveMoveInspection {
-                    move_id: active.id.to_decimal(),
+                Ok(ActiveManipulationInspection {
+                    manipulation_id: active.id.to_decimal(),
+                    kind,
                     node_id: active.target.node.to_decimal(),
                     instance_path: active
                         .target
@@ -337,12 +467,25 @@ impl Editor {
                         .iter()
                         .map(|id| id.to_decimal())
                         .collect(),
-                    axis: axis_name(axis),
+                    space,
+                    axis,
+                    handle,
                     provenance: match active.provenance {
                         ManipulationProvenance::Native => "native",
                         ManipulationProvenance::Remote => "remote",
                     },
-                    distance,
+                    parameter,
+                    value,
+                    unit,
+                    channels: match active.kind {
+                        ManipulationKindState::Move { .. } => "translate",
+                        ManipulationKindState::Rotate { .. } => "rotate",
+                        ManipulationKindState::Scale { .. } => "scale",
+                    },
+                    baseline_channels: active.baseline_channels,
+                    current_channels: active.current_channels.ok_or_else(|| {
+                        OperationError::InvalidInput("Manipulated node is unreadable".into())
+                    })?,
                 })
             })
             .transpose()?;
@@ -395,13 +538,16 @@ impl Editor {
                     pointer_available: pointer.is_some(),
                 }
             });
-        Ok(MoveInspection {
+        Ok(ManipulationInspection {
             active_tool: self.active_tool,
-            orientation: "world",
-            class: "object_translation",
-            numeric_available,
-            numeric_unavailable_reason,
+            units: ManipulationUnits {
+                distance: linear_unit_name(&units.linear).to_owned(),
+                angle: angular_unit_name(&units.angular).to_owned(),
+                factor: "unitless",
+            },
+            kinds,
             active,
+            refusal: self.manipulation.refusal.clone(),
             viewport,
         })
     }

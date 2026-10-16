@@ -493,8 +493,8 @@ async fn sdk_hierarchy_mode_is_busy_during_an_active_move() {
         &mut editor,
         &context,
         client.peer(),
-        "begin_move",
-        json!({"scene_token":token,"node_id":created["node_id"],"instance_path":path,"axis":"x"}),
+        "begin_manipulation",
+        json!({"scene_token":token,"node_id":created["node_id"],"instance_path":path,"kind":"move","axis":"x"}),
     )
     .await;
     let preview = editor.history.scene().clone();

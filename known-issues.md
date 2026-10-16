@@ -291,11 +291,11 @@ insertion is a separate follow-up (#19).
 ## Move lifecycle gaps
 
 **Severity:** low
-**Area:** Move tool, MCP lifecycle
+**Area:** Move, Rotate and Scale tools, MCP lifecycle
 
-A remote-owned Move has no timeout and is not tied to the MCP client session. If
+A remote-owned Move, Rotate or Scale has no timeout and is not tied to the MCP client session. If
 the client disconnects it stays active, preview included, until a matching
-`finish_move` from a later client with the same scene token and move ID, or a human
+`finish_manipulation` from a later client with the same scene token and manipulation ID, or a human
 cancel (Escape, tool/selection change, New/Open or close). Until then every other
 mutating operation, Grid toggle and selection-mode change reports
 `busy_manipulation`. Replacing the scene (New or Open) also resets the active tool
@@ -445,9 +445,8 @@ that preview).
 Rotate and Scale share one Object/World selector; Maya keeps one per tool. The selector,
 the axis choice and the numeric field are a row above the viewport standing in for the
 unsupported Tool Settings panel. Gimbal, Parent, Normal, Custom and Component are listed
-disabled. The inspection tool reports Move fields (`orientation`, `class`) even while
-Rotate or Scale is active, and no MCP tool begins, updates or finishes a Rotate or Scale
-yet; both gaps belong to the generic manipulation tools (Task 6).
+disabled. The MCP `update_manipulation` takes an absolute Rotate angle in the scene
+angular unit and the native numeric field takes degrees; both reach the core as degrees.
 
 ## Grid lines leak across faces (#111)
 

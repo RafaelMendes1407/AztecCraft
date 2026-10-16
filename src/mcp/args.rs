@@ -47,22 +47,28 @@ pub(in crate::mcp) fn native_id(value: &str) -> Result<NativeId, ErrorData> {
     })
 }
 
-pub(in crate::mcp) fn move_id(value: &str) -> Result<ManipulationId, ErrorData> {
+pub(in crate::mcp) fn manipulation_id(value: &str) -> Result<ManipulationId, ErrorData> {
     if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
         return Err(ErrorData::invalid_params(
-            "move_id must be an unsigned decimal string",
+            "manipulation_id must be an unsigned decimal string",
             None,
         ));
     }
-    ManipulationId::from_decimal(value)
-        .map_err(|_| ErrorData::invalid_params("move_id must fit an unsigned 64-bit integer", None))
+    ManipulationId::from_decimal(value).map_err(|_| {
+        ErrorData::invalid_params("manipulation_id must fit an unsigned 64-bit integer", None)
+    })
 }
 
 pub(in crate::mcp) fn schema<T: JsonSchema>() -> JsonObject {
-    schemars::schema_for!(T)
+    let mut schema = schemars::schema_for!(T)
         .as_object()
         .expect("tool argument schemas must be objects")
-        .clone()
+        .clone();
+    // A tagged enum is a oneOf without a type; MCP requires an object input schema.
+    schema
+        .entry("type")
+        .or_insert_with(|| Value::String("object".into()));
+    schema
 }
 
 /// A request bound to the scene token the caller last inspected.

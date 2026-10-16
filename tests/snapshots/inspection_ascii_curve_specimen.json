@@ -43,16 +43,35 @@
     "grid_visible": true,
     "has_draft": false,
     "has_file": true,
-    "modal": false,
-    "move_tool": {
+    "manipulation": {
       "active": null,
       "active_tool": "select",
-      "class": "object_translation",
-      "numeric_available": false,
-      "numeric_unavailable_reason": "Select an object or face before framing",
-      "orientation": "world",
+      "kinds": [
+        {
+          "available": false,
+          "kind": "move",
+          "unavailable_reason": "Select an object or face before framing"
+        },
+        {
+          "available": false,
+          "kind": "rotate",
+          "unavailable_reason": "Select an object or face before framing"
+        },
+        {
+          "available": false,
+          "kind": "scale",
+          "unavailable_reason": "Select an object or face before framing"
+        }
+      ],
+      "refusal": null,
+      "units": {
+        "angle": "deg",
+        "distance": "cm",
+        "factor": "unitless"
+      },
       "viewport": null
     },
+    "modal": false,
     "native_input_pending": false,
     "nodes": [
       {

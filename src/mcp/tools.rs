@@ -59,13 +59,13 @@ fn tool_reply(reply: Result<OperationReply, OperationError>) -> CallToolResult {
                 OperationError::BusyManipulation => "busy_manipulation",
                 OperationError::Move(error) => match error {
                     ManipulationError::StaleScene => "stale_scene",
-                    ManipulationError::StaleManipulation => "stale_move",
-                    ManipulationError::WrongOwner => "move_owner",
+                    ManipulationError::StaleManipulation => "stale_manipulation",
+                    ManipulationError::WrongOwner => "manipulation_owner",
                     ManipulationError::Busy => "busy_manipulation",
                     ManipulationError::Native(NativeError::AbsentChannelLeaf { .. }) => {
                         "absent_channel_leaf"
                     }
-                    _ => "move_error",
+                    _ => "manipulation_error",
                 },
                 OperationError::StaleScene => "stale_scene",
                 OperationError::TooLarge => "too_large",
@@ -102,6 +102,7 @@ fn tool_reply(reply: Result<OperationReply, OperationError>) -> CallToolResult {
                     azteccraft::document::NativeSaveError::Io(_) => "save_io",
                     azteccraft::document::NativeSaveError::Encode(_) => "save_encode",
                 },
+                OperationError::KindMismatch { .. } => "manipulation_kind_mismatch",
                 OperationError::AmbiguousSelection => "ambiguous_selection",
                 OperationError::StalePendingAction => "stale_pending_action",
             };
@@ -204,10 +205,11 @@ impl ServerHandler for EditorServer {
 mod tests {
     use super::*;
     use crate::editor_operations::{
-        AttributeEditorTab, FileDecision, MAX_NAME_BYTES, MoveDistance, Operation, SelectionMode,
-        ShadingMode, SidebarPanel,
+        AttributeEditorTab, FileDecision, MAX_NAME_BYTES, ManipulationSpace, ManipulationValue,
+        MoveDistance, Operation, SelectionMode, ShadingMode, SidebarPanel,
     };
     use crate::mcp::tool_names;
+    use azteccraft::native_scene::{RotateAxis, ScaleHandle};
     use rmcp::model::{ErrorCode, JsonObject};
     use uuid::Uuid;
 
@@ -248,8 +250,15 @@ mod tests {
     }
 
     #[test]
-    fn move_schemas_reject_unsupported_axes_tools_ids_and_extra_fields() {
+    fn manipulation_schemas_reject_unsupported_kinds_axes_ids_and_extra_fields() {
         let token = Uuid::new_v4().to_string();
+        let move_args = |extra: serde_json::Value| {
+            let mut args = json!({"scene_token":token,"kind":"move","node_id":"1","instance_path":["1"],"axis":"x"});
+            args.as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            args
+        };
         for (name, args) in [
             (
                 "set_active_tool",
@@ -259,41 +268,103 @@ mod tests {
                 "set_active_tool",
                 json!({"scene_token":token,"tool":"move","owner":"native"}),
             ),
+            ("begin_manipulation", move_args(json!({"instance_path":[]}))),
+            ("begin_manipulation", move_args(json!({"axis":"xy"}))),
             (
-                "begin_move",
-                json!({"scene_token":token,"node_id":"1","instance_path":[],"axis":"x"}),
+                "begin_manipulation",
+                move_args(json!({"instance_path":vec!["1";257]})),
+            ),
+            ("begin_manipulation", move_args(json!({"node_id":1}))),
+            ("begin_manipulation", move_args(json!({"kind":"shear"}))),
+            ("begin_manipulation", move_args(json!({"kind":null}))),
+            // Move takes no space, handle or unknown field.
+            ("begin_manipulation", move_args(json!({"space":"world"}))),
+            ("begin_manipulation", move_args(json!({"handle":"x"}))),
+            ("begin_manipulation", move_args(json!({"owner":"native"}))),
+            // Rotate needs an axis and an explicit space and no handle.
+            (
+                "begin_manipulation",
+                json!({"scene_token":token,"kind":"rotate","node_id":"1","instance_path":["1"],"axis":"x"}),
             ),
             (
-                "begin_move",
-                json!({"scene_token":token,"node_id":"1","instance_path":["1"],"axis":"xy"}),
+                "begin_manipulation",
+                json!({"scene_token":token,"kind":"rotate","node_id":"1","instance_path":["1"],"axis":"x","space":"parent"}),
             ),
             (
-                "begin_move",
-                json!({"scene_token":token,"node_id":"1","instance_path":vec!["1";257],"axis":"z"}),
+                "begin_manipulation",
+                json!({"scene_token":token,"kind":"rotate","node_id":"1","instance_path":["1"],"handle":"x","space":"object"}),
+            ),
+            // Scale needs a handle (including uniform) and an explicit space and no axis.
+            (
+                "begin_manipulation",
+                json!({"scene_token":token,"kind":"scale","node_id":"1","instance_path":["1"],"axis":"x","space":"object"}),
             ),
             (
-                "begin_move",
-                json!({"scene_token":token,"node_id":1,"instance_path":["1"],"axis":"x"}),
+                "begin_manipulation",
+                json!({"scene_token":token,"kind":"scale","node_id":"1","instance_path":["1"],"handle":"xy","space":"object"}),
             ),
+            (
+                "update_manipulation",
+                json!({"scene_token":token,"manipulation_id":"+1","distance":1}),
+            ),
+            (
+                "update_manipulation",
+                json!({"scene_token":token,"manipulation_id":"18446744073709551616","distance":1}),
+            ),
+            (
+                "update_manipulation",
+                json!({"scene_token":token,"manipulation_id":1,"distance":1}),
+            ),
+            // Exactly one parameter, finite, and a factor above zero.
+            (
+                "update_manipulation",
+                json!({"scene_token":token,"manipulation_id":"1"}),
+            ),
+            (
+                "update_manipulation",
+                json!({"scene_token":token,"manipulation_id":"1","distance":1,"angle":1}),
+            ),
+            (
+                "update_manipulation",
+                json!({"scene_token":token,"manipulation_id":"1","angle":1,"factor":2}),
+            ),
+            (
+                "update_manipulation",
+                json!({"scene_token":token,"manipulation_id":"1","angle":"1"}),
+            ),
+            (
+                "update_manipulation",
+                json!({"scene_token":token,"manipulation_id":"1","degrees":1}),
+            ),
+            (
+                "update_manipulation",
+                json!({"scene_token":token,"manipulation_id":"1","factor":0}),
+            ),
+            (
+                "update_manipulation",
+                json!({"scene_token":token,"manipulation_id":"1","factor":-1}),
+            ),
+            (
+                "update_manipulation",
+                json!({"scene_token":token,"manipulation_id":"1","distance":1,"owner":"native"}),
+            ),
+            (
+                "finish_manipulation",
+                json!({"scene_token":token,"manipulation_id":"1","finish":"release"}),
+            ),
+            (
+                "finish_manipulation",
+                json!({"scene_token":token,"manipulation_id":"1","finish":"commit","owner":"native"}),
+            ),
+            // The removed Move-only tools are gone.
+            ("begin_move", move_args(json!({}))),
             (
                 "update_move",
-                json!({"scene_token":token,"move_id":"+1","distance":1}),
-            ),
-            (
-                "update_move",
-                json!({"scene_token":token,"move_id":"18446744073709551616","distance":1}),
-            ),
-            (
-                "update_move",
-                json!({"scene_token":token,"move_id":1,"distance":1}),
+                json!({"scene_token":token,"move_id":"1","distance":1}),
             ),
             (
                 "finish_move",
-                json!({"scene_token":token,"move_id":"1","finish":"release"}),
-            ),
-            (
-                "finish_move",
-                json!({"scene_token":token,"move_id":"1","finish":"commit","owner":"native"}),
+                json!({"scene_token":token,"move_id":"1","finish":"commit"}),
             ),
         ] {
             assert!(
@@ -301,8 +372,9 @@ mod tests {
                 "{name}: {args}"
             );
         }
-        let valid = json!({"scene_token":token,"move_id":"18446744073709551615","distance":-1.0000000000000002});
-        let request = parse_request("update_move", valid.as_object().unwrap().clone()).unwrap();
+        let valid = json!({"scene_token":token,"manipulation_id":"18446744073709551615","distance":-1.0000000000000002});
+        let request =
+            parse_request("update_manipulation", valid.as_object().unwrap().clone()).unwrap();
         let Operation::UpdateMove {
             id,
             distance: MoveDistance::Declared(value),
@@ -312,6 +384,66 @@ mod tests {
         };
         assert_eq!(id.to_decimal(), "18446744073709551615");
         assert_eq!(value.to_bits(), (-1.0000000000000002f64).to_bits());
+        for (parameter, value) in [("angle", 1e-300_f64), ("angle", -720.5), ("factor", 1e-300)] {
+            let args = json!({"scene_token":token,"manipulation_id":"7",parameter:value});
+            let request =
+                parse_request("update_manipulation", args.as_object().unwrap().clone()).unwrap();
+            let Operation::UpdateManipulation { id, value: actual } = request.operation else {
+                panic!("{parameter}")
+            };
+            assert_eq!(id.to_decimal(), "7");
+            match (parameter, actual) {
+                ("angle", ManipulationValue::Angle(actual))
+                | ("factor", ManipulationValue::Factor(actual)) => {
+                    assert_eq!(actual.to_bits(), value.to_bits())
+                }
+                other => panic!("{other:?}"),
+            }
+        }
+        let begin = |args: serde_json::Value| {
+            parse_request("begin_manipulation", args.as_object().unwrap().clone())
+                .unwrap()
+                .operation
+        };
+        assert!(matches!(
+            begin(
+                json!({"scene_token":token,"kind":"rotate","node_id":"1","instance_path":["1"],"axis":"z","space":"world"})
+            ),
+            Operation::BeginRotate {
+                axis: RotateAxis::Z,
+                space: ManipulationSpace::World,
+                ..
+            }
+        ));
+        assert!(matches!(
+            begin(
+                json!({"scene_token":token,"kind":"scale","node_id":"1","instance_path":["1"],"handle":"uniform","space":"object"})
+            ),
+            Operation::BeginScale {
+                handle: ScaleHandle::Uniform,
+                space: ManipulationSpace::Object,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn begin_and_update_advertise_one_of_with_closed_branches() {
+        let tools = catalog();
+        for (name, tagged) in [("begin_manipulation", true), ("update_manipulation", false)] {
+            let tool = tools.iter().find(|tool| tool.name == name).unwrap();
+            let one_of = tool.input_schema["oneOf"].as_array().unwrap();
+            assert_eq!(one_of.len(), 3, "{name}");
+            for branch in one_of {
+                assert_eq!(branch["additionalProperties"], false, "{name}: {branch}");
+                if tagged {
+                    assert!(
+                        branch["properties"]["kind"]["const"].is_string(),
+                        "{branch}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
@@ -326,7 +458,12 @@ mod tests {
         );
         let token = Uuid::new_v4().to_string();
         for tool in tools {
-            assert_eq!(tool.input_schema["additionalProperties"], false);
+            // The oneOf tools close each branch instead (begin_and_update_advertise_one_of...).
+            if tool.input_schema.contains_key("oneOf") {
+                assert!(!tool.input_schema.contains_key("additionalProperties"));
+            } else {
+                assert_eq!(tool.input_schema["additionalProperties"], false);
+            }
             assert_eq!(
                 tool.annotations.as_ref().unwrap().read_only_hint,
                 Some(tool.name == "inspect_scene")
@@ -334,11 +471,15 @@ mod tests {
             let args = match tool.name.as_ref() {
                 "inspect_scene" => json!({}),
                 "set_active_tool" => json!({"scene_token":token,"tool":"move"}),
-                "begin_move" => {
-                    json!({"scene_token":token,"node_id":"1","instance_path":["1"],"axis":"x"})
+                "begin_manipulation" => {
+                    json!({"scene_token":token,"kind":"move","node_id":"1","instance_path":["1"],"axis":"x"})
                 }
-                "update_move" => json!({"scene_token":token,"move_id":"1","distance":1.25}),
-                "finish_move" => json!({"scene_token":token,"move_id":"1","finish":"cancel"}),
+                "update_manipulation" => {
+                    json!({"scene_token":token,"manipulation_id":"1","distance":1.25})
+                }
+                "finish_manipulation" => {
+                    json!({"scene_token":token,"manipulation_id":"1","finish":"cancel"})
+                }
                 "create_primitive" => json!({"scene_token":token,"primitive":"cube"}),
                 "select_node" => json!({"scene_token":token,"node_id":null}),
                 "set_selection_mode" => json!({"scene_token":token,"mode":"face"}),
