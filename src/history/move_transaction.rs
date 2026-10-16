@@ -60,11 +60,11 @@ impl fmt::Display for ManipulationError {
         match self {
             Self::Native(error) => error.fmt(f),
             Self::View(error) => error.fmt(f),
-            Self::Busy => f.write_str("finish or cancel the active Move manipulation"),
-            Self::StaleScene => f.write_str("Move scene token is stale"),
-            Self::StaleManipulation => f.write_str("Move identifier is absent or stale"),
-            Self::WrongOwner => f.write_str("Move manipulation belongs to another input source"),
-            Self::IdsExhausted => f.write_str("Move identifiers are exhausted"),
+            Self::Busy => f.write_str("finish or cancel the active manipulation"),
+            Self::StaleScene => f.write_str("manipulation scene token is stale"),
+            Self::StaleManipulation => f.write_str("manipulation identifier is absent or stale"),
+            Self::WrongOwner => f.write_str("manipulation belongs to another input source"),
+            Self::IdsExhausted => f.write_str("manipulation identifiers are exhausted"),
         }
     }
 }
@@ -94,6 +94,10 @@ pub struct ManipulationState<'a> {
     pub provenance: ManipulationProvenance,
     pub parameter: f64,
     pub kind: ManipulationKindState,
+    /// The three channels this manipulation edits, as stored at begin.
+    pub baseline_channels: [f64; 3],
+    /// The same three channels now (the live preview); `None` if the node cannot be read.
+    pub current_channels: Option<[f64; 3]>,
 }
 
 impl ManipulationState<'_> {
@@ -129,6 +133,14 @@ enum ManipulationKind {
 }
 
 impl ManipulationKind {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::Move { .. } => "Move",
+            Self::Rotate { .. } => "Rotate",
+            Self::Scale { .. } => "Scale",
+        }
+    }
+
     fn initial_parameter(&self) -> f64 {
         match self {
             Self::Move { .. } | Self::Rotate { .. } => 0.0,
@@ -220,6 +232,12 @@ impl History {
                 provenance: active.provenance,
                 parameter: active.parameter,
                 kind: active.kind.state(),
+                baseline_channels: active.kind.baseline().values(),
+                current_channels: self.scene.node(active.target.node).ok().map(|node| {
+                    let first = active.kind.baseline().first_channel();
+                    let values = node.transform().values();
+                    [values[first], values[first + 1], values[first + 2]]
+                }),
             })
     }
 
@@ -377,11 +395,14 @@ impl History {
                 EditOutcome::Changed
             });
         }
-        self.execute(Command::EditNode {
-            id: node,
-            name: None,
-            channels,
-        })
+        self.execute_labeled(
+            Command::EditNode {
+                id: node,
+                name: None,
+                channels,
+            },
+            active.kind.label(),
+        )
         .map_err(Into::into)
     }
 

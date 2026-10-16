@@ -1,5 +1,6 @@
 use super::features::{
-    extrude, file, history, inspect, material, move_tool, node_edit, selection, status_line, view,
+    extrude, file, history, inspect, manipulation, material, node_edit, selection, status_line,
+    view,
 };
 use crate::editor_operations::{MAX_NAME_BYTES, RemoteRequest};
 use rmcp::model::{ErrorData, JsonObject, Tool, ToolAnnotations};
@@ -19,7 +20,7 @@ pub(super) struct ToolSpec {
 /// Catalogue order is the order of this list, then each feature's own order.
 const FEATURES: &[&[ToolSpec]] = &[
     inspect::TOOLS,
-    move_tool::TOOLS,
+    manipulation::TOOLS,
     selection::TOOLS,
     node_edit::TOOLS,
     extrude::TOOLS,

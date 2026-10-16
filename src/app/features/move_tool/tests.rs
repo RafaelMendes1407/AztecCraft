@@ -1,8 +1,16 @@
 use super::*;
-use crate::editor_operations::SidebarPanel;
+use crate::editor_operations::{SelectionMode, SidebarPanel};
+use azteccraft::native_scene::NativeError;
 use eframe::egui::{self, Event, Key, Modifiers, PointerButton, Pos2, Rect, Shape};
 
-fn raw(size: egui::Vec2, origin: Pos2, scale: f32, events: Vec<Event>) -> egui::RawInput {
+const FACE_MODE_REFUSAL: &str = "Move is unavailable in Face selection; switch to Object selection";
+
+pub(in crate::app) fn raw(
+    size: egui::Vec2,
+    origin: Pos2,
+    scale: f32,
+    events: Vec<Event>,
+) -> egui::RawInput {
     let mut input = egui::RawInput {
         screen_rect: Some(Rect::from_min_size(origin, size)),
         events,
@@ -15,7 +23,7 @@ fn raw(size: egui::Vec2, origin: Pos2, scale: f32, events: Vec<Event>) -> egui::
     input
 }
 
-fn frame(
+pub(in crate::app) fn frame(
     editor: &mut Editor,
     context: &egui::Context,
     mut input: egui::RawInput,
@@ -30,7 +38,7 @@ fn frame(
     output
 }
 
-fn key(key: Key) -> Event {
+pub(in crate::app) fn key(key: Key) -> Event {
     Event::Key {
         key,
         physical_key: None,
@@ -40,7 +48,7 @@ fn key(key: Key) -> Event {
     }
 }
 
-fn button(position: Pos2, pressed: bool) -> Vec<Event> {
+pub(in crate::app) fn button(position: Pos2, pressed: bool) -> Vec<Event> {
     vec![
         Event::PointerMoved(position),
         Event::PointerButton {
@@ -52,7 +60,7 @@ fn button(position: Pos2, pressed: bool) -> Vec<Event> {
     ]
 }
 
-fn viewport(output: &egui::FullOutput) -> Rect {
+pub(in crate::app) fn viewport(output: &egui::FullOutput) -> Rect {
     output
         .shapes
         .iter()
@@ -679,7 +687,7 @@ fn editor_move_guards_preserve_drafts_modal_close_tokens_and_failed_open_baselin
             &|| true,
         )
         .unwrap();
-    assert!(matches!(reply, OperationReply::MoveStarted { .. }));
+    assert!(matches!(reply, OperationReply::ManipulationStarted { .. }));
     let id = editor.history.active_manipulation().unwrap().id;
     editor
         .apply_operation_guarded(
@@ -859,8 +867,8 @@ fn tiny_visible_geometry_inspection_reports_pointer_exclusion_without_global_rea
         },
     );
     output.textures_delta.clear();
-    let inspected = editor.inspect_move().unwrap();
-    assert!(inspected.numeric_available);
+    let inspected = editor.inspect_manipulation().unwrap();
+    assert!(inspected.kinds[0].available);
     let viewport = inspected.viewport.unwrap();
     assert_eq!(viewport.provenance, "last_native_viewport_capture");
     assert!(viewport.pointer_available);
@@ -1212,6 +1220,7 @@ fn release_with_a_refused_final_sample_commits_the_last_valid_preview() {
     editor
         .finish_native_sample(
             id,
+            ActiveTool::Move,
             true,
             Err(OperationError::InvalidInput("final sample refused".into())),
         )
@@ -1276,10 +1285,10 @@ fn face_mode_refuses_move_handles_native_and_numeric_and_keeps_face_click_workin
         Err(OperationError::InvalidInput(message)) if message == FACE_MODE_REFUSAL
     ));
     assert!(editor.history.active_manipulation().is_none());
-    let inspected = editor.inspect_move().unwrap();
-    assert!(!inspected.numeric_available);
+    let inspected = editor.inspect_manipulation().unwrap();
+    assert!(!inspected.kinds[0].available);
     assert_eq!(
-        inspected.numeric_unavailable_reason.as_deref(),
+        inspected.kinds[0].unavailable_reason.as_deref(),
         Some(FACE_MODE_REFUSAL)
     );
     assert!(inspected.viewport.is_none());
@@ -1315,10 +1324,10 @@ fn vertex_and_edge_modes_refuse_move_everywhere_face_does() {
             }),
             Err(OperationError::InvalidInput(message)) if message == refusal
         ));
-        let inspected = editor.inspect_move().unwrap();
-        assert!(!inspected.numeric_available);
+        let inspected = editor.inspect_manipulation().unwrap();
+        assert!(!inspected.kinds[0].available);
         assert_eq!(
-            inspected.numeric_unavailable_reason.as_deref(),
+            inspected.kinds[0].unavailable_reason.as_deref(),
             Some(refusal.as_str())
         );
         assert!(inspected.viewport.is_none());
@@ -1454,10 +1463,10 @@ fn read_only_ascii_curve_scene_refuses_move_natively_and_numerically_with_the_co
         .to_string();
     editor.native_operation(Operation::SetActiveTool(ActiveTool::Move));
     assert_eq!(editor.active_tool, ActiveTool::Move);
-    let inspected = editor.inspect_move().unwrap();
-    assert!(!inspected.numeric_available);
+    let inspected = editor.inspect_manipulation().unwrap();
+    assert!(!inspected.kinds[0].available);
     assert_eq!(
-        inspected.numeric_unavailable_reason.as_deref(),
+        inspected.kinds[0].unavailable_reason.as_deref(),
         Some(reason.as_str())
     );
     let before = editor.history.scene().clone();
@@ -1585,7 +1594,7 @@ fn actual_hidden_logic_cancels_native_pointer_capture() {
     assert!(editor.history.active_manipulation().is_none());
     assert!(editor.native_move.is_none());
     assert_eq!(editor.history.scene(), &before);
-    assert!(editor.inspect_move().unwrap().viewport.is_none());
+    assert!(editor.inspect_manipulation().unwrap().viewport.is_none());
 }
 
 #[test]
@@ -1672,4 +1681,65 @@ fn same_frame_name_or_channel_focus_blocks_qw_before_move_dispatch() {
             assert!(editor.history.active_manipulation().is_none());
         }
     }
+}
+
+#[test]
+fn a_scene_refusal_mid_move_drag_keeps_the_last_valid_preview_and_other_errors_propagate() {
+    let (mut editor, _, _) = setup(1.0);
+    let node = editor.selected.unwrap();
+    editor
+        .apply_operation(Operation::EditNode {
+            id: node,
+            name: None,
+            translation: [Some(1e8), None, None],
+            rotation_degrees: [None; 3],
+            scale: [None; 3],
+        })
+        .unwrap();
+    let target = editor.selected_move_target().unwrap();
+    editor
+        .apply_operation(Operation::BeginMove {
+            target,
+            axis: WorldAxis::X,
+        })
+        .unwrap();
+    let id = editor.history.active_manipulation().unwrap().id;
+    let update = |editor: &mut Editor, distance: f64| {
+        editor.apply_operation(Operation::UpdateMove {
+            id,
+            distance: MoveDistance::Centimeters(distance),
+        })
+    };
+    let updated = update(&mut editor, 1.0);
+    assert!(updated.is_ok(), "{updated:?}");
+    let valid = editor.history.scene().clone();
+    // A step below the precision of the large translation is refused by the scene.
+    let updated = update(&mut editor, 1e-3);
+    assert!(matches!(
+        updated,
+        Err(OperationError::Move(ManipulationError::Native(_)))
+    ));
+    editor
+        .finish_native_sample(id, ActiveTool::Move, false, updated)
+        .unwrap();
+    assert!(editor.error);
+    assert!(
+        editor.status.ends_with("; showing the last valid preview"),
+        "{}",
+        editor.status
+    );
+    assert_eq!(editor.history.scene(), &valid);
+    assert!(editor.history.active_manipulation().is_some());
+    // Anything but a scene refusal stops the drag handling.
+    for error in [
+        OperationError::Move(ManipulationError::StaleManipulation),
+        OperationError::InvalidInput("x".into()),
+    ] {
+        assert!(
+            editor
+                .finish_native_sample(id, ActiveTool::Move, false, Err(error))
+                .is_err()
+        );
+    }
+    assert_eq!(editor.history.scene(), &valid);
 }

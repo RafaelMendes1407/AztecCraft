@@ -107,8 +107,8 @@ mod official_client {
     mod extrude;
     mod files;
     mod grid;
+    mod manipulation_mcp_tests;
     mod material;
-    mod move_mcp_tests;
     mod node_edit;
     mod selection;
     mod session;

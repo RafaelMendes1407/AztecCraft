@@ -1,7 +1,7 @@
 use super::*;
 use crate::native_scene::{
-    NativeTransform, RotateSpace, RotateUnsupported, ScaleSpace, ScaleUnsupported, binary,
-    test_fixtures,
+    NativeTransform, RotateAxis, RotateSpace, RotateUnsupported, ScaleHandle, ScaleSpace,
+    ScaleUnsupported, binary, test_fixtures,
 };
 use crate::scene::Primitive;
 
@@ -989,4 +989,157 @@ fn refused_scale_begin_consumes_no_id() {
     ));
     assert!(history.active_manipulation().is_none());
     assert_eq!(history.next_manipulation_id, 0);
+}
+
+#[test]
+fn each_manipulation_kind_names_its_undo_and_redo_entry() {
+    let mut history = cube_history();
+    let token = Uuid::new_v4();
+    let node = target(&history).node;
+    assert_eq!((history.undo_label(), history.redo_label()), (None, None));
+    let commit = |history: &mut History, id, value| {
+        history
+            .update_move(token, id, ManipulationProvenance::Native, value)
+            .unwrap();
+        history
+            .finish_move(
+                token,
+                id,
+                ManipulationProvenance::Native,
+                ManipulationFinish::Commit,
+            )
+            .unwrap();
+    };
+    let id = start(&mut history, token);
+    commit(&mut history, id, 2.0);
+    assert_eq!(history.undo_label(), Some("Move"));
+    let id = history
+        .begin_rotate(
+            &target(&history),
+            RotateAxis::X,
+            RotateSpace::Object,
+            token,
+            ManipulationProvenance::Native,
+            BUDGET,
+        )
+        .unwrap();
+    commit(&mut history, id, 30.0);
+    assert_eq!(history.undo_label(), Some("Rotate"));
+    let id = history
+        .begin_scale(
+            &target(&history),
+            ScaleHandle::Uniform,
+            ScaleSpace::Object,
+            token,
+            ManipulationProvenance::Native,
+            BUDGET,
+        )
+        .unwrap();
+    commit(&mut history, id, 2.0);
+    assert_eq!(history.undo_label(), Some("Scale"));
+    history
+        .execute(Command::Rename {
+            id: node,
+            name: "renamed".into(),
+        })
+        .unwrap();
+    assert_eq!(history.undo_label(), Some("Rename"));
+    // Undo names the edit it reverts and Redo the one it reapplies, in the same order.
+    for expected in ["Rename", "Scale", "Rotate", "Move"] {
+        assert_eq!(history.undo_label(), Some(expected));
+        assert!(history.undo());
+        assert_eq!(history.redo_label(), Some(expected));
+    }
+    assert_eq!(history.undo_label(), None);
+    for expected in ["Move", "Rotate"] {
+        assert!(history.redo());
+        assert_eq!(history.undo_label(), Some(expected));
+    }
+}
+
+#[test]
+fn a_cancelled_manipulation_leaves_no_label() {
+    let mut history = cube_history();
+    let token = Uuid::new_v4();
+    let id = start(&mut history, token);
+    history
+        .update_move(token, id, ManipulationProvenance::Native, 1.0)
+        .unwrap();
+    history
+        .finish_move(
+            token,
+            id,
+            ManipulationProvenance::Native,
+            ManipulationFinish::Cancel,
+        )
+        .unwrap();
+    assert_eq!(history.undo_label(), None);
+}
+
+#[test]
+fn active_state_reports_the_baseline_and_live_channels_of_each_kind() {
+    let token = Uuid::new_v4();
+    let mut history = cube_history();
+    let node = target(&history).node;
+    history
+        .scene
+        .set_transform(
+            node,
+            NativeTransform {
+                translation: [1.0, 2.0, 3.0],
+                rotation: [10.0, 0.0, 0.0],
+                scale: [1.5, 1.0, 1.0],
+            },
+        )
+        .unwrap();
+    let rotate = history
+        .begin_rotate(
+            &target(&history),
+            RotateAxis::X,
+            RotateSpace::Object,
+            token,
+            ManipulationProvenance::Remote,
+            BUDGET,
+        )
+        .unwrap();
+    let state = history.active_manipulation().unwrap();
+    assert_eq!(state.baseline_channels, [10.0, 0.0, 0.0]);
+    assert_eq!(state.current_channels, Some([10.0, 0.0, 0.0]));
+    history
+        .update_move(token, rotate, ManipulationProvenance::Remote, 30.0)
+        .unwrap();
+    let state = history.active_manipulation().unwrap();
+    assert_eq!(state.baseline_channels, [10.0, 0.0, 0.0]);
+    assert_eq!(state.current_channels, Some([40.0, 0.0, 0.0]));
+    history
+        .finish_move(
+            token,
+            rotate,
+            ManipulationProvenance::Remote,
+            ManipulationFinish::Cancel,
+        )
+        .unwrap();
+
+    let scale = history
+        .begin_scale(
+            &target(&history),
+            ScaleHandle::X,
+            ScaleSpace::Object,
+            token,
+            ManipulationProvenance::Remote,
+            BUDGET,
+        )
+        .unwrap();
+    history
+        .update_move(token, scale, ManipulationProvenance::Remote, 2.0)
+        .unwrap();
+    let state = history.active_manipulation().unwrap();
+    assert_eq!(state.baseline_channels, [1.5, 1.0, 1.0]);
+    assert_eq!(state.current_channels, Some([3.0, 1.0, 1.0]));
+    history.cancel_active_move().unwrap();
+
+    let moved = start(&mut history, token);
+    let state = history.active_manipulation().unwrap();
+    assert_eq!(state.baseline_channels, [1.0, 2.0, 3.0]);
+    assert_eq!(state.id, moved);
 }

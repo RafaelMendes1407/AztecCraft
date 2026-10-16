@@ -3,6 +3,7 @@ mod appearance;
 pub mod ascii;
 pub mod binary;
 mod curve;
+mod manipulator_frame;
 mod mesh;
 mod move_translation;
 mod rotate_frame;
@@ -15,6 +16,7 @@ pub use appearance::{
     MaterialShader,
 };
 pub use curve::{CurveForm, NativeCurveShape};
+pub use manipulator_frame::ManipulatorFrame;
 pub use mesh::{DirectedEdge, NativeEdge, NativeFace, NativeMesh, Points};
 pub(crate) use move_translation::ChannelBaseline;
 pub use move_translation::{ChannelLeaf, WorldAxis, WorldMoveFrame, WorldMoveUnsupported};
@@ -91,18 +93,19 @@ impl Units {
             LinearUnit::Unsupported(_) => return Err(NativeError::UnsupportedLinearUnit),
         })
     }
+    /// Degrees in one declared angular unit.
+    pub fn angular_degrees_factor(&self) -> Result<f64, NativeError> {
+        match self.angular {
+            AngularUnit::Degree => Ok(1.0),
+            AngularUnit::Radian => Ok(180.0 / std::f64::consts::PI),
+            AngularUnit::Unsupported(_) => Err(NativeError::UnsupportedView("angular unit")),
+        }
+    }
     pub(crate) fn factors(&self) -> Result<(f64, f64), NativeError> {
         let linear = self
             .linear_factor()
             .map_err(|_| NativeError::UnsupportedView("linear unit"))?;
-        let angular = match self.angular {
-            AngularUnit::Degree => 1.0,
-            AngularUnit::Radian => 180.0 / std::f64::consts::PI,
-            AngularUnit::Unsupported(_) => {
-                return Err(NativeError::UnsupportedView("angular unit"));
-            }
-        };
-        Ok((linear, angular))
+        Ok((linear, self.angular_degrees_factor()?))
     }
 }
 
@@ -1556,7 +1559,7 @@ impl fmt::Display for NativeError {
             Self::UnsupportedMove(reason) => write!(f, "World-axis move unsupported: {reason}"),
             Self::UnsupportedRotate(reason) => write!(f, "Rotate unsupported: {reason}"),
             Self::UnsupportedScale(reason) => write!(f, "Scale unsupported: {reason}"),
-            Self::BusyManipulation => f.write_str("finish or cancel the active Move manipulation"),
+            Self::BusyManipulation => f.write_str("finish or cancel the active manipulation"),
             Self::UnsupportedView(reason) => {
                 write!(f, "native viewport representation unsupported: {reason}")
             }

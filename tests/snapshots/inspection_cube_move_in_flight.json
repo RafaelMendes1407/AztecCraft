@@ -28,23 +28,57 @@
     "grid_visible": false,
     "has_draft": false,
     "has_file": false,
-    "modal": false,
-    "move_tool": {
+    "manipulation": {
       "active": {
         "axis": "x",
-        "distance": 2.5,
+        "baseline_channels": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "channels": "translate",
+        "current_channels": [
+          2.5,
+          0.0,
+          0.0
+        ],
+        "handle": null,
         "instance_path": [
           "1"
         ],
-        "move_id": "1",
+        "kind": "move",
+        "manipulation_id": "1",
         "node_id": "1",
-        "provenance": "native"
+        "parameter": "distance",
+        "provenance": "native",
+        "space": "world",
+        "unit": "cm",
+        "value": 2.5
       },
       "active_tool": "move",
-      "class": "object_translation",
-      "numeric_available": true,
-      "numeric_unavailable_reason": null,
-      "orientation": "world",
+      "kinds": [
+        {
+          "available": true,
+          "kind": "move",
+          "unavailable_reason": null
+        },
+        {
+          "available": true,
+          "kind": "rotate",
+          "unavailable_reason": null
+        },
+        {
+          "available": true,
+          "kind": "scale",
+          "unavailable_reason": null
+        }
+      ],
+      "refusal": null,
+      "units": {
+        "angle": "deg",
+        "distance": "cm",
+        "factor": "unitless"
+      },
       "viewport": {
         "axes": [
           {
@@ -68,6 +102,7 @@
         "provenance": "last_native_viewport_capture"
       }
     },
+    "modal": false,
     "native_input_pending": false,
     "nodes": [
       {

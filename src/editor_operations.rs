@@ -3,7 +3,8 @@ use azteccraft::native_scene::NativeTransform;
 use azteccraft::{
     history::{ManipulationError, ManipulationFinish, ManipulationId},
     native_scene::{
-        EdgeTarget, FaceTarget, NativeError, NativeId, TransformTarget, VertexTarget, WorldAxis,
+        EdgeTarget, FaceTarget, NativeError, NativeId, RotateAxis, RotateSpace, ScaleHandle,
+        ScaleSpace, TransformTarget, VertexTarget, WorldAxis,
     },
     scene::{NodeId, Primitive},
     viewport::InvalidCameraInput,
@@ -121,6 +122,41 @@ pub enum ActiveTool {
     #[default]
     Select,
     Move,
+    Rotate,
+    Scale,
+}
+
+/// The space a Rotate or Scale handle works in. Gimbal, Parent, Normal, Custom and Component
+/// are unsupported and have no variant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ManipulationSpace {
+    Object,
+    World,
+}
+
+impl ManipulationSpace {
+    pub fn rotate(self) -> RotateSpace {
+        match self {
+            Self::Object => RotateSpace::Object,
+            Self::World => RotateSpace::World,
+        }
+    }
+
+    pub fn scale(self) -> ScaleSpace {
+        match self {
+            Self::Object => ScaleSpace::Object,
+            Self::World => ScaleSpace::World,
+        }
+    }
+}
+
+/// A Rotate angle or a Scale factor. `Degrees` and `Factor` are what the history takes; `Angle`
+/// is an absolute angle in the scene's declared angular unit and is converted to degrees.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ManipulationValue {
+    Degrees(f64),
+    Angle(f64),
+    Factor(f64),
 }
 
 pub enum MoveDistance {
@@ -138,6 +174,20 @@ pub enum Operation {
     UpdateMove {
         id: ManipulationId,
         distance: MoveDistance,
+    },
+    BeginRotate {
+        target: TransformTarget,
+        axis: RotateAxis,
+        space: ManipulationSpace,
+    },
+    BeginScale {
+        target: TransformTarget,
+        handle: ScaleHandle,
+        space: ManipulationSpace,
+    },
+    UpdateManipulation {
+        id: ManipulationId,
+        value: ManipulationValue,
     },
     FinishMove {
         id: ManipulationId,
@@ -269,8 +319,8 @@ pub enum OperationReply {
     Created {
         node_id: String,
     },
-    MoveStarted {
-        move_id: String,
+    ManipulationStarted {
+        manipulation_id: String,
     },
     /// Created or assigned session material; the id is valid only at this history position.
     #[cfg(any(test, feature = "mcp"))]
@@ -315,7 +365,7 @@ pub enum OperationReply {
 #[cfg(any(test, feature = "mcp"))]
 pub struct SceneInspection {
     pub scene_token: String,
-    pub move_tool: MoveInspection,
+    pub manipulation: ManipulationInspection,
     pub nodes: Vec<NodeInspection>,
     pub shapes: Vec<ShapeInspection>,
     /// Session-only lambert table, empty on sourced scenes. Ids are valid only at the current
@@ -406,25 +456,53 @@ pub enum FaceSelectionPolicy {
 
 #[derive(Debug, Serialize)]
 #[cfg(any(test, feature = "mcp"))]
-pub struct MoveInspection {
+pub struct ManipulationInspection {
     pub active_tool: ActiveTool,
-    pub orientation: &'static str,
-    pub class: &'static str,
-    pub numeric_available: bool,
-    pub numeric_unavailable_reason: Option<String>,
-    pub active: Option<ActiveMoveInspection>,
+    /// What each parameter of `update_manipulation` is measured in.
+    pub units: ManipulationUnits,
+    /// Whether a numeric manipulation of each kind could begin on the selection now.
+    pub kinds: Vec<KindInspection>,
+    pub active: Option<ActiveManipulationInspection>,
+    /// Why the last update of the active manipulation was refused; the preview is unchanged.
+    pub refusal: Option<String>,
     pub viewport: Option<MoveViewportInspection>,
 }
 
 #[derive(Debug, Serialize)]
 #[cfg(any(test, feature = "mcp"))]
-pub struct ActiveMoveInspection {
-    pub move_id: String,
+pub struct ManipulationUnits {
+    pub distance: String,
+    pub angle: String,
+    pub factor: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg(any(test, feature = "mcp"))]
+pub struct KindInspection {
+    pub kind: &'static str,
+    pub available: bool,
+    pub unavailable_reason: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg(any(test, feature = "mcp"))]
+pub struct ActiveManipulationInspection {
+    pub manipulation_id: String,
+    pub kind: &'static str,
     pub node_id: String,
     pub instance_path: Vec<String>,
-    pub axis: &'static str,
+    pub space: &'static str,
+    pub axis: Option<&'static str>,
+    pub handle: Option<&'static str>,
     pub provenance: &'static str,
-    pub distance: f64,
+    /// `distance`, `angle` or `factor`: the parameter `update_manipulation` takes for this kind.
+    pub parameter: &'static str,
+    pub value: f64,
+    pub unit: String,
+    /// `translate`, `rotate` or `scale`: the three channels this manipulation edits.
+    pub channels: &'static str,
+    pub baseline_channels: [f64; 3],
+    pub current_channels: [f64; 3],
 }
 
 #[derive(Debug, Serialize)]
@@ -576,6 +654,11 @@ pub enum OperationError {
     AmbiguousSelection,
     StalePendingAction,
     Camera(InvalidCameraInput),
+    /// An update parameter that does not belong to the active manipulation's kind.
+    KindMismatch {
+        parameter: &'static str,
+        active: &'static str,
+    },
 }
 
 impl OperationError {
@@ -590,7 +673,7 @@ impl OperationError {
 impl fmt::Display for OperationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::BusyManipulation => f.write_str("Finish or cancel the active Move manipulation"),
+            Self::BusyManipulation => f.write_str("Finish or cancel the active manipulation"),
             Self::Move(error) => error.fmt(f),
             Self::BusyEditing => f.write_str(
                 "Process native input and finish the text edit or dialog before remote mutation",
@@ -613,6 +696,10 @@ impl fmt::Display for OperationError {
                 f.write_str("pending file action is absent or stale; inspect before deciding")
             }
             Self::Camera(error) => error.fmt(f),
+            Self::KindMismatch { parameter, active } => write!(
+                f,
+                "A {parameter} does not apply to the active {active} manipulation"
+            ),
         }
     }
 }

@@ -79,7 +79,10 @@ async fn sdk_inspection_matches_committed_snapshots() {
             axis: azteccraft::native_scene::WorldAxis::X,
         })
         .unwrap();
-    let OperationReply::MoveStarted { move_id } = begin else {
+    let OperationReply::ManipulationStarted {
+        manipulation_id: move_id,
+    } = begin
+    else {
         panic!("expected a started Move")
     };
     editor

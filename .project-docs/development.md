@@ -484,7 +484,7 @@ Its library success does not constitute a native Open or appearance proof.
 
 The native toolbox now has Select/Move vector buttons and unmodified Q/W.
 World-only X/Y/Z drags use the same exact selected instance and canonical History
-transaction as the four Move MCP tools. Preview changes are authoritative,
+transaction as the generic manipulation MCP tools. Preview changes are authoritative,
 Channel Box fields remain synchronized and locked during the transaction, and a
 release commits at most one Undo entry. Escape and capture/lifecycle changes
 restore the exact begin authoring intent. Physical viewport origin/size, camera
@@ -503,3 +503,23 @@ window/DPI changes, cancellation/source-word preservation, strict SDK parameters
 and actual SDK preview/commit/cancel/Save/reopen. Runtime, native framebuffer and
 desktop verification are pending on this candidate; no full Maya parity or
 current-parent publication is claimed by this paragraph.
+
+## Rotate and Scale tools (native UI)
+
+E and R select the Rotate and Scale tools, and their Tool Box icons are live. While
+either is active, a row above the viewport holds the Object/World selector, an axis
+choice and a numeric field with Apply (Enter also applies). Gimbal, Parent, Normal,
+Custom and Component are listed disabled with the hover text "unsupported". The row
+stands in for the unsupported Tool Settings panel.
+
+A ring or box drag begins `BeginRotate` or `BeginScale` and previews through
+`UpdateManipulation` (degrees or a unitless factor), then commits through `FinishMove`.
+They go through the same guards as Move (draft commit, modal, close, scene token, owner,
+`BusyManipulation`), and one drag is one history entry named Rotate or Scale; the numeric
+field uses the same three operations. The Channel Box follows the preview. Hovering a
+handle writes its state, or the core's refusal, to the status line; pressing a refused or
+unsupported handle shows the same text and consumes the click so it cannot select. A
+zero or negative Scale factor reached by a drag is refused by the core, shown in the
+status and keeps the last valid preview. Undo and Redo report the entry they act on
+("Undo Rotate"). The generic `begin_manipulation`, `update_manipulation` and
+`finish_manipulation` MCP tools drive the same operations; see `mcp.md`.

@@ -291,17 +291,17 @@ insertion is a separate follow-up (#19).
 ## Move lifecycle gaps
 
 **Severity:** low
-**Area:** Move tool, MCP lifecycle
+**Area:** Move, Rotate and Scale tools, MCP lifecycle
 
-A remote-owned Move has no timeout and is not tied to the MCP client session. If
+A remote-owned Move, Rotate or Scale has no timeout and is not tied to the MCP client session. If
 the client disconnects it stays active, preview included, until a matching
-`finish_move` from a later client with the same scene token and move ID, or a human
+`finish_manipulation` from a later client with the same scene token and manipulation ID, or a human
 cancel (Escape, tool/selection change, New/Open or close). Until then every other
 mutating operation, Grid toggle and selection-mode change reports
 `busy_manipulation`. Replacing the scene (New or Open) also resets the active tool
 to Select; Maya keeps the current tool across scene changes.
 
-If the baseline or source of an active Move cannot be validated at finish or
+If the baseline or source of an active manipulation cannot be validated at finish or
 cancel (believed unreachable), the transaction is still cleared first, so the
 history is not left busy. The scene then keeps its preview values and the
 baseline is lost: the document is dirty rather than silently restored, and the
@@ -324,7 +324,7 @@ cluster therefore follows the last drawn group.
 
 - The F2 to F6 menu-set hotkeys are deferred.
 - No Layer Editor exists, so the toggle shows or hides only the Channel Box.
-- The toggle is disabled during an active Move, including a Move with no native gesture, like other edits.
+- The toggle is disabled during an active manipulation, including a remote one with no native gesture, like other edits.
 - Save As has no strip button and stays in the File menu.
 - Open's native dialog calls `rfd` directly and cannot be click-tested, so equivalence between the strip
   and menu Open is checked only for enable state and hover text.
@@ -418,16 +418,44 @@ grid still draw. Hidden, not unfiltered, because unfiltered markers would show u
 the picker rejects. Picking is unaffected apart from its own budget error. A cache or spatial index
 would lift the limit.
 
+## Rotate exactness is partial (#128)
+
+A Rotate that changes exactly one channel by the requested delta stores `baseline + delta` in the scene's declared unit, bit for bit (object-space X ring, single-channel numeric entry, and Y/Z or world rotations whose decomposition changes one channel within the snap tolerance of that value). Two cases are computed rather than exact, and may differ from `baseline + requested` by about 1 ulp:
+
+- A radian scene: Rotate works internally in degrees, so a requested radian angle is converted to degrees and back.
+- A Y/Z ring or world rotation that genuinely changes several channels (Euler decomposition).
+
+Untouched channels are preserved bit for bit. Inspection echoes the requested value as given after a remote update, so it does not reveal these differences.
+
 ## Rotate and Scale handle limits are provisional
 
 The Rotate ring angle comes from a ray-plane hit. Just above the edge-on limit
 (|ray . ring normal| of 1e-3, about 0.06 degrees from the plane) the hit is
 far away and the angle can swing sharply per pixel; below it the drag is refused as
 Degenerate. The limit, the 72 px handle size, the 1 px Scale pivot refusal and the
-100 px uniform-scale reference are provisional, not taken from Maya, and are to be
-tuned with the Task 5 UI wiring. Handle frames must be right-handed; the caller
-must refuse mirrored frames. A zero or negative Scale ratio is reachable by an
-ordinary drag and the core refuses it; the UI must show that refusal.
+100 px uniform-scale reference are provisional, not taken from Maya, were not changed
+by the UI wiring and use physical pixels (they ignore HiDPI scaling). Maya 2026 back-half
+ring behaviour is unverified.
+
+A Rotate drag whose samples are refused for a stretch (edge-on ring, pointer behind the
+camera) can lose whole turns. Each accepted sample adds the shortest signed step from the
+last accepted angle, so a pointer that circles the pivot by more than half a turn while
+samples are refused resumes on the wrong multiple of 360 degrees. Nothing is lost for
+refusals by the scene, because the drag keeps tracking the angle itself.
+
+Handle frames must be right-handed and perpendicular. `HandleFrame::new` refuses a
+mirrored one (`MirroredFrame`) or a skewed one (`SkewedFrame`), which an Object-space
+frame under a negative or uneven scale parent produces. The tool shows "Rotate unavailable"
+or "Scale unavailable" with the reason, and World space still works. A zero or negative Scale
+ratio is reachable by an ordinary drag; the core refuses it with InvalidFactor, the status
+line shows the refusal, and the drag continues from the last valid preview (release commits
+that preview).
+
+Rotate and Scale share one Object/World selector; Maya keeps one per tool. The selector,
+the axis choice and the numeric field are a row above the viewport standing in for the
+unsupported Tool Settings panel. Gimbal, Parent, Normal, Custom and Component are listed
+disabled. The MCP `update_manipulation` takes an absolute Rotate angle in the scene
+angular unit and the native numeric field takes degrees; both reach the core as degrees.
 
 ## Grid lines leak across faces (#111)
 

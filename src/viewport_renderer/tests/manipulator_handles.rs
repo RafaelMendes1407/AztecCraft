@@ -89,8 +89,8 @@ fn pixel_of(camera: &Camera, world: DVec3) -> DVec2 {
 #[test]
 #[ignore = "requires a real headless GPU adapter"]
 fn headless_gpu_rotate_ring_front_half_reaches_pixels_and_back_half_does_not() {
-    let camera = // A narrow view keeps a 72 px ring well in front of the camera in this 128 px image.
-    handle_camera(0.6, 0.4, 30.0);
+    // A narrow view keeps a 72 px ring well in front of the camera in this 128 px image.
+    let camera = handle_camera(0.6, 0.4, 30.0);
     let (image, handles) = render_rotate(&camera);
     let eye = camera.eye().as_dvec3();
     let focal = f64::from(SIZE) * 0.5 / (f64::from(30_f32.to_radians()) * 0.5).tan();

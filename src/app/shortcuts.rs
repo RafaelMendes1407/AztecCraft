@@ -17,6 +17,8 @@ impl Editor {
                 } if modifiers.is_none() => match key {
                     Key::Q => Some(ActiveTool::Select),
                     Key::W => Some(ActiveTool::Move),
+                    Key::E => Some(ActiveTool::Rotate),
+                    Key::R => Some(ActiveTool::Scale),
                     _ => None,
                 },
                 _ => None,

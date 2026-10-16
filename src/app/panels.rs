@@ -85,10 +85,15 @@ impl Editor {
                     (
                         "Rotate",
                         UiIcon::Rotate,
-                        None,
-                        "Rotate: not implemented yet",
+                        Some(ActiveTool::Rotate),
+                        "Rotate tool (E)",
                     ),
-                    ("Scale", UiIcon::Scale, None, "Scale: not implemented yet"),
+                    (
+                        "Scale",
+                        UiIcon::Scale,
+                        Some(ActiveTool::Scale),
+                        "Scale tool (R)",
+                    ),
                     (
                         "Last Used",
                         UiIcon::LastUsed,
@@ -209,6 +214,7 @@ impl Editor {
             ui.separator();
             ui.weak("Alt + left: orbit | Middle: pan | Right / wheel: dolly");
         });
+        self.manipulation_options(ui);
         let captured = crate::viewport_ui::capture(ui, &self.camera);
         if !matches!(&captured, Ok(Some(_)))
             && let Err(error) = self.missing_move_viewport()
@@ -279,8 +285,9 @@ impl Editor {
             } else {
                 Vec::new()
             };
+            let name = self.active_tool_name();
             if selection_intent.is_some() && self.native_move.is_some() && self.cancel_move()? {
-                self.status = "Move cancelled: selection mode changed".into();
+                self.status = format!("{name} cancelled: selection mode changed");
                 self.error = false;
             }
             if !self.files.is_modal()
@@ -393,6 +400,7 @@ impl Editor {
             self.viewport_error = painted.as_ref().err().map(|error| error.category());
             self.face_centres_hidden = matches!(painted, Ok(true));
             self.paint_move(&input);
+            self.paint_manipulation(&input);
             match painted {
                 Ok(_) | Err(crate::viewport_renderer::RenderError::Uninitialized) => Ok(()),
                 Err(error) => Err(OperationError::File(error.to_string())),

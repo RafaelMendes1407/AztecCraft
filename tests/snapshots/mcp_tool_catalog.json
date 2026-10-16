@@ -1,7 +1,7 @@
 [
   {
     "name": "inspect_scene",
-    "description": "Inspect committed editor state, including an active Move preview, document origin, bounded canonical curve IDs/names/class/counts/domain, retained-source counts and read-only reason, pending human edits and source-appearance readiness. Curve draw_available means at least one visible instance prepared as draw geometry; it does not claim GPU health or framebuffer success. No CV arrays or script bodies are exposed",
+    "description": "Inspect committed editor state, including an active manipulation preview (Move, Rotate or Scale), document origin, bounded canonical curve IDs/names/class/counts/domain, retained-source counts and read-only reason, pending human edits and source-appearance readiness. Curve draw_available means at least one visible instance prepared as draw geometry; it does not claim GPU health or framebuffer success. No CV arrays or script bodies are exposed",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
@@ -16,13 +16,15 @@
   },
   {
     "name": "set_active_tool",
-    "description": "Select the native Select or World-axis Move tool; unsupported tools are not exposed",
+    "description": "Select the native Select, Move, Rotate or Scale tool; unsupported tools are not exposed",
     "inputSchema": {
       "$defs": {
         "ActiveTool": {
           "enum": [
             "select",
-            "move"
+            "move",
+            "rotate",
+            "scale"
           ],
           "type": "string"
         }
@@ -51,8 +53,8 @@
     }
   },
   {
-    "name": "begin_move",
-    "description": "Begin one remote-owned World-axis translation of the exact selected transform instance. Numeric motion may begin while Select is active; this does not change tools",
+    "name": "begin_manipulation",
+    "description": "Begin one remote-owned Move (World axis), Rotate or Scale (Object or World space) of the exact selected transform instance. Numeric manipulation may begin while any tool is active; this does not change tools",
     "inputSchema": {
       "$defs": {
         "AxisInput": {
@@ -62,36 +64,140 @@
             "z"
           ],
           "type": "string"
+        },
+        "HandleInput": {
+          "enum": [
+            "x",
+            "y",
+            "z",
+            "uniform"
+          ],
+          "type": "string"
+        },
+        "SpaceInput": {
+          "description": "Rotate and Scale work in the node's own axes (`object`) or the world axes (`world`).",
+          "enum": [
+            "object",
+            "world"
+          ],
+          "type": "string"
         }
       },
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "additionalProperties": false,
-      "properties": {
-        "axis": {
-          "$ref": "#/$defs/AxisInput"
-        },
-        "instance_path": {
-          "items": {
-            "type": "string"
+      "description": "`kind` selects the manipulation; each kind takes its own handle fields and nothing else. Move\nworks along World axes only and takes no `space`.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "axis": {
+              "$ref": "#/$defs/AxisInput"
+            },
+            "instance_path": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 256,
+              "minItems": 1,
+              "type": "array"
+            },
+            "kind": {
+              "const": "move",
+              "type": "string"
+            },
+            "node_id": {
+              "type": "string"
+            },
+            "scene_token": {
+              "type": "string"
+            }
           },
-          "maxItems": 256,
-          "minItems": 1,
-          "type": "array"
+          "required": [
+            "kind",
+            "scene_token",
+            "node_id",
+            "instance_path",
+            "axis"
+          ],
+          "type": "object"
         },
-        "node_id": {
-          "type": "string"
+        {
+          "additionalProperties": false,
+          "properties": {
+            "axis": {
+              "$ref": "#/$defs/AxisInput"
+            },
+            "instance_path": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 256,
+              "minItems": 1,
+              "type": "array"
+            },
+            "kind": {
+              "const": "rotate",
+              "type": "string"
+            },
+            "node_id": {
+              "type": "string"
+            },
+            "scene_token": {
+              "type": "string"
+            },
+            "space": {
+              "$ref": "#/$defs/SpaceInput"
+            }
+          },
+          "required": [
+            "kind",
+            "scene_token",
+            "node_id",
+            "instance_path",
+            "axis",
+            "space"
+          ],
+          "type": "object"
         },
-        "scene_token": {
-          "type": "string"
+        {
+          "additionalProperties": false,
+          "properties": {
+            "handle": {
+              "$ref": "#/$defs/HandleInput"
+            },
+            "instance_path": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 256,
+              "minItems": 1,
+              "type": "array"
+            },
+            "kind": {
+              "const": "scale",
+              "type": "string"
+            },
+            "node_id": {
+              "type": "string"
+            },
+            "scene_token": {
+              "type": "string"
+            },
+            "space": {
+              "$ref": "#/$defs/SpaceInput"
+            }
+          },
+          "required": [
+            "kind",
+            "scene_token",
+            "node_id",
+            "instance_path",
+            "handle",
+            "space"
+          ],
+          "type": "object"
         }
-      },
-      "required": [
-        "scene_token",
-        "node_id",
-        "instance_path",
-        "axis"
       ],
-      "title": "BeginMoveArgs",
+      "title": "BeginManipulationArgs",
       "type": "object"
     },
     "annotations": {
@@ -101,29 +207,78 @@
     }
   },
   {
-    "name": "update_move",
-    "description": "Preview a finite absolute World-axis distance from begin in declared scene linear units. Matching scene token and remote-owned Move ID are required",
+    "name": "update_manipulation",
+    "description": "Preview an absolute value from begin: distance in the scene linear unit for Move, angle in the scene angular unit for Rotate, a unitless factor greater than zero for Scale. Units are echoed in inspection.manipulation.units. Matching scene token and remote-owned manipulation ID are required; a parameter of the wrong kind is a typed error",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "additionalProperties": false,
-      "properties": {
-        "distance": {
-          "format": "double",
-          "type": "number"
+      "description": "Exactly one of distance (Move), angle (Rotate) or factor (Scale), matching the kind of the manipulation; any other is a typed manipulation_kind_mismatch error",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "distance": {
+              "description": "Absolute Move distance from begin along the World axis, in the scene linear unit (inspection units.distance)",
+              "type": "number"
+            },
+            "manipulation_id": {
+              "type": "string"
+            },
+            "scene_token": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scene_token",
+            "manipulation_id",
+            "distance"
+          ],
+          "type": "object"
         },
-        "move_id": {
-          "type": "string"
+        {
+          "additionalProperties": false,
+          "properties": {
+            "angle": {
+              "description": "Absolute Rotate angle from begin about the axis, in the scene angular unit (inspection units.angle)",
+              "type": "number"
+            },
+            "manipulation_id": {
+              "type": "string"
+            },
+            "scene_token": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scene_token",
+            "manipulation_id",
+            "angle"
+          ],
+          "type": "object"
         },
-        "scene_token": {
-          "type": "string"
+        {
+          "additionalProperties": false,
+          "properties": {
+            "factor": {
+              "description": "Absolute Scale factor from begin, unitless and greater than zero",
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            "manipulation_id": {
+              "type": "string"
+            },
+            "scene_token": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scene_token",
+            "manipulation_id",
+            "factor"
+          ],
+          "type": "object"
         }
-      },
-      "required": [
-        "scene_token",
-        "move_id",
-        "distance"
       ],
-      "title": "UpdateMoveArgs",
+      "title": "UpdateManipulationArgs",
       "type": "object"
     },
     "annotations": {
@@ -133,8 +288,8 @@
     }
   },
   {
-    "name": "finish_move",
-    "description": "Commit one undoable Move edit or cancel to the exact begin authoring state. Only the matching remote-owned Move ID may finish",
+    "name": "finish_manipulation",
+    "description": "Commit one undoable Move, Rotate or Scale edit or cancel to the exact begin authoring state. Only the matching remote-owned manipulation ID may finish",
     "inputSchema": {
       "$defs": {
         "FinishInput": {
@@ -151,7 +306,7 @@
         "finish": {
           "$ref": "#/$defs/FinishInput"
         },
-        "move_id": {
+        "manipulation_id": {
           "type": "string"
         },
         "scene_token": {
@@ -160,10 +315,10 @@
       },
       "required": [
         "scene_token",
-        "move_id",
+        "manipulation_id",
         "finish"
       ],
-      "title": "FinishMoveArgs",
+      "title": "FinishManipulationArgs",
       "type": "object"
     },
     "annotations": {

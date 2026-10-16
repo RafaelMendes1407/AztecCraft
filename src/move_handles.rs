@@ -25,6 +25,8 @@ pub enum HandleError {
     InvalidSolve,
     Degenerate,
     ZeroBeginParameter,
+    MirroredFrame,
+    SkewedFrame,
 }
 
 impl From<InvalidCameraInput> for HandleError {
@@ -49,7 +51,22 @@ impl fmt::Display for HandleError {
             Self::InvalidSolve => "Move axis distance cannot be represented",
             Self::Degenerate => "Rotate ring is edge-on to the camera",
             Self::ZeroBeginParameter => "Scale handle was grabbed too close to the pivot",
+            Self::MirroredFrame => {
+                "Handle axes are mirrored (a negative-scale ancestor flips the drag direction)"
+            }
+            Self::SkewedFrame => "Handle axes are not perpendicular (an ancestor scale is skewed)",
         })
+    }
+}
+
+impl HandleError {
+    /// The message with the leading tool name replaced: the shared texts are written for Move.
+    pub fn describe_for(&self, tool: &str) -> String {
+        let text = self.to_string();
+        match text.strip_prefix("Move") {
+            Some(rest) => format!("{tool}{rest}"),
+            None => text,
+        }
     }
 }
 

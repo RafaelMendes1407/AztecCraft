@@ -28,14 +28,32 @@
     "grid_visible": true,
     "has_draft": false,
     "has_file": false,
-    "modal": true,
-    "move_tool": {
+    "manipulation": {
       "active": null,
       "active_tool": "select",
-      "class": "object_translation",
-      "numeric_available": true,
-      "numeric_unavailable_reason": null,
-      "orientation": "world",
+      "kinds": [
+        {
+          "available": true,
+          "kind": "move",
+          "unavailable_reason": null
+        },
+        {
+          "available": true,
+          "kind": "rotate",
+          "unavailable_reason": null
+        },
+        {
+          "available": true,
+          "kind": "scale",
+          "unavailable_reason": null
+        }
+      ],
+      "refusal": null,
+      "units": {
+        "angle": "deg",
+        "distance": "cm",
+        "factor": "unitless"
+      },
       "viewport": {
         "axes": [
           {
@@ -59,6 +77,7 @@
         "provenance": "last_native_viewport_capture"
       }
     },
+    "modal": true,
     "native_input_pending": false,
     "nodes": [
       {

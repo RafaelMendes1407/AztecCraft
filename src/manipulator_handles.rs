@@ -23,6 +23,8 @@ const DISABLED_SEGMENTS: usize = 48;
 const VIEW_RING_FACTOR: f64 = 1.2;
 // |ray . ring normal| below this is an edge-on ring (about 0.06 degrees from the plane).
 const EDGE_ON_LIMIT: f64 = 1e-3;
+// Largest dot product between two unit frame axes (about 6e-5 degrees from perpendicular).
+const MAX_SKEW: f64 = 1e-6;
 const BOX_HALF: f64 = 5.0;
 const CENTER_BOX_HALF: f64 = 7.0;
 // A Scale pivot grab closer than this to the pivot has no meaningful ratio.
@@ -40,9 +42,9 @@ pub struct HandleFrame {
 }
 
 impl HandleFrame {
-    /// `axes` must be orthonormal (up to scale) and right-handed, as a rotation of the world axes.
-    /// A mirrored (left-handed) frame flips the sign of every ring drag, and the handles do not
-    /// check for it; the caller must refuse mirrored frames before building one.
+    /// `axes` must be perpendicular (their lengths may differ) and right-handed, as a rotation of
+    /// the world axes. A mirrored (left-handed) frame would flip the sign of every ring drag and a
+    /// skewed one would draw rings that do not match the edit, so both are refused.
     pub fn new(origin: DVec3, axes: [DVec3; 3]) -> Result<Self, HandleError> {
         let mut unit = [DVec3::ZERO; 3];
         for (slot, axis) in unit.iter_mut().zip(axes) {
@@ -51,6 +53,13 @@ impl HandleFrame {
                 return Err(HandleError::InvalidProjection);
             }
             *slot = axis / length;
+        }
+        let [x, y, z] = unit;
+        if x.dot(y).abs() > MAX_SKEW || y.dot(z).abs() > MAX_SKEW || z.dot(x).abs() > MAX_SKEW {
+            return Err(HandleError::SkewedFrame);
+        }
+        if x.cross(y).dot(z) <= 0.0 {
+            return Err(HandleError::MirroredFrame);
         }
         Ok(Self { origin, axes: unit })
     }
@@ -87,6 +96,10 @@ impl DisabledHandle {
     pub fn segments(&self) -> &[ScreenSegment] {
         &self.segments
     }
+}
+
+fn inside_viewport(pixel: DVec2, size: DVec2) -> bool {
+    pixel.is_finite() && !pixel.cmplt(DVec2::ZERO).any() && !pixel.cmpgt(size).any()
 }
 
 fn nearest_disabled(handles: &[DisabledHandle], pixel: DVec2) -> Option<DisabledKind> {
@@ -228,7 +241,7 @@ impl RotateHandles {
 
     /// The ring with the nearest visible segment inside the pick threshold; ties go to X, Y, Z.
     pub fn hit_test(&self, pixel: DVec2) -> Option<RotateAxis> {
-        if !pixel.is_finite() || pixel.cmplt(DVec2::ZERO).any() || pixel.cmpgt(self.size).any() {
+        if !inside_viewport(pixel, self.size) {
             return None;
         }
         let mut closest = HIT_RADIUS * HIT_RADIUS;
@@ -247,7 +260,7 @@ impl RotateHandles {
 
     /// A drawn-but-unsupported handle under the pointer, for the status line.
     pub fn hit_disabled(&self, pixel: DVec2) -> Option<DisabledKind> {
-        if !pixel.is_finite() || self.hit_test(pixel).is_some() {
+        if !inside_viewport(pixel, self.size) || self.hit_test(pixel).is_some() {
             return None;
         }
         nearest_disabled(&self.disabled, pixel)
@@ -465,7 +478,7 @@ impl ScaleHandles {
 
     /// The center box wins inside its square; otherwise the nearest axis box or shaft.
     pub fn hit_test(&self, pixel: DVec2) -> Option<ScaleHandle> {
-        if !pixel.is_finite() || pixel.cmplt(DVec2::ZERO).any() || pixel.cmpgt(self.size).any() {
+        if !inside_viewport(pixel, self.size) {
             return None;
         }
         if (pixel - self.origin).abs().max_element() <= CENTER_BOX_HALF {
@@ -488,7 +501,7 @@ impl ScaleHandles {
     }
 
     pub fn hit_disabled(&self, pixel: DVec2) -> Option<DisabledKind> {
-        if !pixel.is_finite() || self.hit_test(pixel).is_some() {
+        if !inside_viewport(pixel, self.size) || self.hit_test(pixel).is_some() {
             return None;
         }
         nearest_disabled(&self.disabled, pixel)

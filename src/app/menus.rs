@@ -13,6 +13,14 @@ pub(super) struct FileAction {
     pub(super) run: fn(&mut Editor),
 }
 
+/// "Undo Rotate" or "Redo Scale"; the bare verb when there is no entry to name.
+fn history_hover(verb: &str, label: Option<&str>) -> String {
+    match label {
+        Some(label) => format!("{verb} {label}"),
+        None => verb.to_owned(),
+    }
+}
+
 impl FileAction {
     pub(super) fn hover(&self) -> &str {
         match (self.enabled, self.reason.as_deref()) {
@@ -107,6 +115,7 @@ impl Editor {
                         self.history.can_undo(),
                         egui::Button::new("Undo   Ctrl/Cmd Z"),
                     )
+                    .on_hover_text(history_hover("Undo", self.history.undo_label()))
                     .clicked()
                 {
                     self.history_step(false);
@@ -117,6 +126,7 @@ impl Editor {
                         self.history.can_redo(),
                         egui::Button::new("Redo   Ctrl/Cmd Shift Z"),
                     )
+                    .on_hover_text(history_hover("Redo", self.history.redo_label()))
                     .clicked()
                 {
                     self.history_step(true);
@@ -212,11 +222,13 @@ impl Editor {
             }
             ui.separator();
             if crate::tool_icons::button(ui, "Undo", UiIcon::Undo, self.history.can_undo())
+                .on_hover_text(history_hover("Undo", self.history.undo_label()))
                 .clicked()
             {
                 self.history_step(false);
             }
             if crate::tool_icons::button(ui, "Redo", UiIcon::Redo, self.history.can_redo())
+                .on_hover_text(history_hover("Redo", self.history.redo_label()))
                 .clicked()
             {
                 self.history_step(true);

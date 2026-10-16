@@ -3518,7 +3518,10 @@ mod toolbox_wire {
         let labels: Vec<&str> = found.iter().map(|c| c.label.as_str()).collect();
         assert_eq!(labels, TOOLBOX);
         for control in &found {
-            let live = matches!(control.label.as_str(), "Select" | "Move");
+            let live = matches!(
+                control.label.as_str(),
+                "Select" | "Move" | "Rotate" | "Scale"
+            );
             assert_eq!(control.disabled, !live, "{}", control.label);
         }
         assert_eq!(found[0].selected, Some(true));
@@ -3537,7 +3540,7 @@ mod toolbox_wire {
     }
 
     #[test]
-    fn select_and_move_toggle_the_active_tool_and_others_do_nothing() {
+    fn the_live_tools_toggle_the_active_tool_and_others_do_nothing() {
         let (mut editor, context) = setup();
         let output = frame(&mut editor, &context, vec![]);
         let found = toolbox(&output);
@@ -3547,9 +3550,16 @@ mod toolbox_wire {
         assert_eq!(editor.active_tool, ActiveTool::Move);
         click(&mut editor, &context, select_at);
         assert_eq!(editor.active_tool, ActiveTool::Select);
+        for (index, tool) in [(4, ActiveTool::Rotate), (5, ActiveTool::Scale)] {
+            click(&mut editor, &context, found[index].rect.center());
+            assert_eq!(editor.active_tool, tool, "{}", found[index].label);
+            assert!(editor.status.contains(" tool ("), "{}", editor.status);
+            click(&mut editor, &context, select_at);
+            assert_eq!(editor.active_tool, ActiveTool::Select);
+        }
         let scene = editor.history.scene().clone();
         let token = editor.scene_token;
-        for index in [1, 2, 4, 5, 6] {
+        for index in [1, 2, 6] {
             click(&mut editor, &context, found[index].rect.center());
             assert_eq!(
                 editor.active_tool,
@@ -3568,6 +3578,8 @@ mod toolbox_wire {
         for (index, expected) in [
             (0, "Select tool (Q)"),
             (3, "Move tool (W)"),
+            (4, "Rotate tool (E)"),
+            (5, "Scale tool (R)"),
             (1, "Lasso: not implemented yet"),
             (
                 6,

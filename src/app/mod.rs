@@ -75,6 +75,7 @@ pub struct Editor {
     attribute_editor_tab: Option<AttributeEditorTab>,
     attribute_editor_tab_request: Option<AttributeEditorTab>,
     active_tool: ActiveTool,
+    manipulation: features::manipulation_tool::ManipulationOptions,
     native_move: Option<features::move_tool::NativeMove>,
     move_viewport: Option<features::move_tool::MoveViewportFeedback>,
     move_consumed_frame: bool,
@@ -116,6 +117,7 @@ impl Default for Editor {
             attribute_editor_tab: None,
             attribute_editor_tab_request: None,
             active_tool: ActiveTool::Select,
+            manipulation: Default::default(),
             native_move: None,
             move_viewport: None,
             move_consumed_frame: false,
@@ -263,6 +265,7 @@ fn text_edit_focused(ctx: &egui::Context) -> bool {
         memory.focused().is_some_and(|id| {
             id == name_edit_id()
                 || id == material_edit_id()
+                || id == features::manipulation_tool::manipulation_value_id()
                 || (0..9).any(|index| id == channel_edit_id(index))
         })
     })
