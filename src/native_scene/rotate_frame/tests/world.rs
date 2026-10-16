@@ -1,4 +1,5 @@
 use super::*;
+use crate::scene::Primitive;
 use glam::{DQuat, DVec3, EulerRot};
 
 fn quat(degrees: [f64; 3]) -> DQuat {
@@ -316,4 +317,97 @@ fn gimbal_and_huge_angles_are_refused_in_world_space() {
             RotateUnsupported::NumericalAngle
         ))
     ));
+}
+
+// root -> middle -> leaf, so the parent map is a product of two rotated, scaled ancestors.
+fn chain(root: NativeTransform, middle: NativeTransform, leaf: [f64; 3]) -> (NativeScene, NodeId) {
+    let (mut scene, root_id, middle_id, _) = test_fixtures::grouped_shape();
+    let leaf_id = scene.create(Primitive::Cube, "leaf").unwrap();
+    let discarded = scene.shapes.pop().unwrap().id;
+    let leaf_native = scene.node(leaf_id).unwrap().transform_id;
+    let middle_native = scene.node(middle_id).unwrap().transform_id;
+    scene.dag.retain(|edge| {
+        edge.child != discarded && !(edge.child == leaf_native && edge.parent.is_none())
+    });
+    scene.dag.push(DagEdge {
+        parent: Some(middle_native),
+        child: leaf_native,
+    });
+    scene.validate().unwrap();
+    scene.set_transform(root_id, root).unwrap();
+    scene.set_transform(middle_id, middle).unwrap();
+    scene
+        .set_transform(
+            leaf_id,
+            NativeTransform {
+                rotation: leaf,
+                ..NativeTransform::default()
+            },
+        )
+        .unwrap();
+    (scene, leaf_id)
+}
+
+#[test]
+fn three_level_chain_multiplies_ancestors_in_path_order() {
+    let root = NativeTransform {
+        translation: [4.0, -2.0, 1.0],
+        rotation: [35.0, -50.0, 80.0],
+        scale: [2.0; 3],
+    };
+    let middle = NativeTransform {
+        translation: [0.5, 3.0, -7.0],
+        rotation: [-110.0, 25.0, 40.0],
+        scale: [0.5; 3],
+    };
+    let leaf = [20.0, 30.0, -40.0];
+    let (scene, node) = chain(root, middle, leaf);
+    assert_eq!(scene.transform_paths().unwrap().len(), 3);
+    let parents = quat(root.rotation) * quat(middle.rotation);
+    for axis in [RotateAxis::X, RotateAxis::Y, RotateAxis::Z] {
+        for degrees in [17.0, -63.0, 150.0] {
+            let out = world_frame(&scene, node, axis)
+                .rotation(axis, degrees)
+                .unwrap();
+            let expected = DQuat::from_axis_angle(world_axis(axis), degrees.to_radians())
+                * (parents * quat(leaf));
+            assert!(
+                same_orientation(parents * quat(out), expected),
+                "{axis:?} {degrees}"
+            );
+        }
+    }
+    // A non-uniform scale anywhere in the chain is refused.
+    let (scene, node) = chain(
+        root,
+        NativeTransform {
+            scale: [0.5, 0.5, 0.6],
+            ..middle
+        },
+        leaf,
+    );
+    assert!(matches!(
+        scene.begin_rotation(&target(&scene, node), RotateAxis::X, RotateSpace::World),
+        Err(NativeError::UnsupportedRotate(
+            RotateUnsupported::ParentTransform
+        ))
+    ));
+}
+
+// Documents the snap heuristic recorded in known-issues.md: both channels truly move by about
+// 7e-13 rad, and the one that moves less is snapped back to its baseline.
+#[test]
+fn world_snap_heuristic_drops_the_smaller_of_two_equal_sub_tolerance_changes() {
+    let (scene, node) = nested(
+        NativeTransform {
+            rotation: [0.0, 0.0, 45.0],
+            ..NativeTransform::default()
+        },
+        [0.0; 3],
+    );
+    let out = world_frame(&scene, node, RotateAxis::X)
+        .rotation(RotateAxis::X, 1e-11)
+        .unwrap();
+    let moved = out.iter().filter(|value| **value != 0.0).count();
+    assert_eq!(moved, 1, "{out:?}");
 }

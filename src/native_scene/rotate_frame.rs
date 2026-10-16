@@ -166,7 +166,8 @@ impl RotateFrame {
                 self.decompose(step * rotation_matrix(self.radians))?
             }
         };
-        // The intended channel is the one that moves most; the rest may snap back to baseline.
+        // Heuristic: the channel that moves most is taken as intended; a genuine change below
+        // SNAP_TOLERANCE on any other channel is snapped away (see known-issues.md).
         let intended = match self.space {
             RotateSpace::Object => axis.index(),
             RotateSpace::World => (0..3)
@@ -299,7 +300,8 @@ impl NativeScene {
     }
 
     // Product of the ancestors' local linear maps (the path excluding the selected node). World
-    // rotation also needs positive scale on the selected node so its orientation is defined.
+    // rotation also requires positive scale on the selected node: a policy choice consistent with
+    // Move, not a mathematical need (the node's scale sits to the right of its rotation).
     fn parent_linear(
         &self,
         target: &TransformTarget,
