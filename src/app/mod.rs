@@ -113,7 +113,7 @@ impl Default for Editor {
             material_shape: None,
             material_draft: None,
             native_input_pending: false,
-            status: "Ready | Create a cube, plane or sphere to start".into(),
+            status: "Ready | Create a cube, plane, sphere, cylinder or cone to start".into(),
             error: false,
             aspect: 1.0,
             files: files::FileState::default(),

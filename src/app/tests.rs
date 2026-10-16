@@ -3542,7 +3542,7 @@ mod toolbox_wire {
 fn startup_status_names_every_creatable_primitive() {
     assert_eq!(
         Editor::default().status,
-        "Ready | Create a cube, plane or sphere to start"
+        "Ready | Create a cube, plane, sphere, cylinder or cone to start"
     );
 }
 
@@ -3641,5 +3641,84 @@ fn cylinder_and_cone_names_count_up_and_skip_collisions() {
             let id = editor.selected.unwrap();
             assert_eq!(editor.history.scene().node(id).unwrap().name(), *expected);
         }
+    }
+}
+
+#[test]
+fn create_menu_cylinder_and_cone_items_create_selectable_framed_movable_solids() {
+    for (label, name, faces, cap) in [
+        ("Polygon cylinder", "pCylinder1", 22, 20),
+        ("Polygon cone", "pCone1", 21, 20),
+    ] {
+        let mut editor = Editor::default();
+        let ctx = egui::Context::default();
+        let output = frame(&mut editor, &ctx, vec![]);
+        let create = face_text_position(&output, "Create");
+        let output = face_pointer_click(&mut editor, &ctx, create, egui::Modifiers::NONE, vec![]);
+        face_text_position(&output, "Other primitives");
+        let item = face_text_position(&output, label);
+        face_pointer_click(&mut editor, &ctx, item, egui::Modifiers::NONE, vec![]);
+        let id = editor.selected.expect("menu item selects the new solid");
+        assert_eq!(editor.history.scene().node(id).unwrap().name(), name);
+        assert_eq!(
+            editor.history.scene().shapes()[0].mesh().faces().len(),
+            faces
+        );
+        assert!(editor.history.can_undo());
+        assert!(editor.is_dirty());
+
+        editor
+            .apply_operation(Operation::SetSelectionMode(SelectionMode::Face))
+            .unwrap();
+        let cap_face = selected_face(&editor, cap);
+        editor
+            .apply_operation(Operation::SelectFace {
+                target: Some(cap_face.clone()),
+            })
+            .unwrap();
+        assert_eq!(editor.remembered_face.as_ref(), Some(&cap_face));
+        let camera = editor.camera.clone();
+        editor.apply_operation(Operation::FrameSelected).unwrap();
+        assert_ne!(editor.camera, camera);
+        editor
+            .apply_operation(Operation::SetSelectionMode(SelectionMode::Object))
+            .unwrap();
+
+        editor
+            .apply_operation(Operation::SetActiveTool(ActiveTool::Move))
+            .unwrap();
+        let target = editor.selected_move_target().unwrap();
+        editor
+            .apply_operation(Operation::BeginMove {
+                target,
+                axis: azteccraft::native_scene::WorldAxis::X,
+            })
+            .unwrap();
+        let move_id = editor.history.active_manipulation().unwrap().id;
+        editor
+            .apply_operation(Operation::UpdateMove {
+                id: move_id,
+                distance: crate::editor_operations::MoveDistance::Centimeters(5.0),
+            })
+            .unwrap();
+        editor
+            .apply_operation(Operation::FinishMove {
+                id: move_id,
+                finish: azteccraft::history::ManipulationFinish::Commit,
+            })
+            .unwrap();
+        editor.history.scene().validate().unwrap();
+        assert_eq!(
+            editor
+                .history
+                .scene()
+                .node(id)
+                .unwrap()
+                .transform()
+                .translation[0],
+            5.0
+        );
+        let view = ViewScene::from_native(editor.history.scene(), 256 * 1024 * 1024).unwrap();
+        assert_eq!(view.instances()[0].faces().len(), faces);
     }
 }
