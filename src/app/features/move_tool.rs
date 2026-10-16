@@ -302,11 +302,17 @@ impl Editor {
             native_scene::{RotateAxis, RotateSpace, ScaleHandle, ScaleSpace},
         };
         let units = self.history.scene().units();
-        let target = if let Some(refusal) = mode_refusal("Move", self.selection_mode) {
-            Err(OperationError::InvalidInput(refusal))
-        } else {
-            self.selected_move_target()
+        // Each kind names itself in the selection-mode refusal.
+        let target_for = |tool: &str| {
+            if let Some(refusal) = mode_refusal(tool, self.selection_mode) {
+                Err(OperationError::InvalidInput(refusal))
+            } else {
+                self.selected_move_target()
+            }
         };
+        let target = target_for("Move");
+        let rotate_target = target_for("Rotate");
+        let scale_target = target_for("Scale");
         let frame = match &target {
             Err(error) => Err(error.to_string()),
             Ok(target) => self
@@ -357,7 +363,7 @@ impl Editor {
                 })
                 .collect()),
         };
-        let rotate_refusals = match &target {
+        let rotate_refusals = match &rotate_target {
             Err(error) => Err(error.to_string()),
             Ok(target) => Ok([
                 (RotateAxis::X, "X axis"),
@@ -376,7 +382,7 @@ impl Editor {
             })
             .collect()),
         };
-        let scale_refusals = match &target {
+        let scale_refusals = match &scale_target {
             Err(error) => Err(error.to_string()),
             Ok(target) => Ok([
                 (ScaleHandle::X, "X handle"),
