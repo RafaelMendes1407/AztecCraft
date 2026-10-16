@@ -254,3 +254,16 @@ cancel (believed unreachable), the transaction is still cleared first, so the
 history is not left busy. The scene then keeps its preview values and the
 baseline is lost: the document is dirty rather than silently restored, and the
 Channel Box is resynchronized to the scene.
+
+## Poly Sphere is provisional (#43)
+
+Create > Polygon sphere and `create_primitive` with `sphere` build a radius-1,
+20x20, Y-axis sphere (382 points, 780 edges, 400 faces: 40 pole triangles and
+360 quads). The radius and subdivisions come from the polySphere node reference;
+the command page lists radius 0.5, and Maya 2026 defaults are unverified (#5).
+Vertex and face order and winding are not claimed to match Maya. Edges are hard,
+so the viewport looks faceted. There is no options dialog, no UVs or normals, and
+new nodes are not persisted (Save is unavailable for created scenes, as for the
+cube). Pole triangles cannot be extruded; body quads can. The new node is named
+`pSphere1` with shape `pSphere1Shape`, whereas Maya names the shape `pSphereShape1`.
+The legacy quad-only JSON/OBJ scene refuses spheres with a typed error.
