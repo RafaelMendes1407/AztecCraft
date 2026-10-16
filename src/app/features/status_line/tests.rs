@@ -10,6 +10,7 @@ const MODES: [&str; 3] = [
     "Object selection",
     "Component selection",
 ];
+const HIERARCHY: &str = "Hierarchy selection";
 const TOGGLES: [&str; 5] = [
     "Modeling Toolkit",
     "HumanIK",
@@ -24,6 +25,7 @@ struct Control {
     id: accesskit::NodeId,
     rect: Rect,
     disabled: bool,
+    selected: Option<bool>,
 }
 
 fn controls(output: &egui::FullOutput) -> Vec<Control> {
@@ -46,6 +48,7 @@ fn controls(output: &egui::FullOutput) -> Vec<Control> {
                     Pos2::new(bounds.x1 as f32, bounds.y1 as f32),
                 ),
                 disabled: node.is_disabled(),
+                selected: node.toggled().map(|t| t == accesskit::Toggled::True),
             })
         })
         .collect()
@@ -189,7 +192,7 @@ fn clicking_disabled_strip_buttons_changes_nothing() {
     let before = snapshot(&editor);
     for control in strip(&output)
         .iter()
-        .filter(|c| c.role == accesskit::Role::Button)
+        .filter(|c| c.label == HIERARCHY || TOGGLES.contains(&c.label.as_str()))
     {
         assert!(control.disabled, "{}", control.label);
         click(&mut editor, &context, control.rect.center());
@@ -240,7 +243,11 @@ fn every_strip_control_has_its_label_and_disabled_state() {
             .find(|c| c.label == *name)
             .unwrap_or_else(|| panic!("missing AccessKit label {name}"));
         assert_eq!(control.role, accesskit::Role::Button, "{name}");
-        assert!(control.disabled, "{name}");
+        assert_eq!(
+            control.disabled,
+            *name == HIERARCHY || TOGGLES.contains(name),
+            "{name}"
+        );
     }
     let combo = found
         .iter()
@@ -262,7 +269,10 @@ fn tab_to_combo(editor: &mut Editor, context: &egui::Context) {
         let focused = found.iter().find(|c| Some(c.id) == focus);
         match focused {
             Some(c) if c.role == accesskit::Role::ComboBox => return,
-            Some(c) => panic!("Tab focused disabled strip button {}", c.label),
+            Some(c) if c.label == HIERARCHY || TOGGLES.contains(&c.label.as_str()) => {
+                panic!("Tab focused disabled strip button {}", c.label)
+            }
+            Some(_) => {}
             None => {}
         }
     }
@@ -285,7 +295,7 @@ fn keyboard_activates_the_enabled_combo_and_skips_disabled_buttons() {
         let focused = controls(&output).into_iter().find(|c| Some(c.id) == focus);
         if let Some(c) = focused {
             assert!(
-                !MODES.contains(&c.label.as_str()) && !TOGGLES.contains(&c.label.as_str()),
+                c.label != HIERARCHY && !TOGGLES.contains(&c.label.as_str()),
                 "Tab focused disabled {}",
                 c.label
             );
@@ -315,4 +325,282 @@ fn keyboard_activates_the_enabled_combo_and_skips_disabled_buttons() {
         (after.0, after.2, after.3, after.4),
         (before.0, before.2, before.3, before.4)
     );
+}
+
+const OBJECT: &str = "Object selection";
+const COMPONENT: &str = "Component selection";
+
+fn button_center(output: &egui::FullOutput, label: &str) -> Pos2 {
+    strip(output)
+        .iter()
+        .find(|c| c.label == label)
+        .unwrap_or_else(|| panic!("strip control {label}"))
+        .rect
+        .center()
+}
+
+fn strip_output(editor: &mut Editor, context: &egui::Context) -> egui::FullOutput {
+    frame_with(editor, context, SIZE, 1.0, vec![]);
+    frame_with(editor, context, SIZE, 1.0, vec![])
+}
+
+/// Hovers first, then delivers keys, press and release in ONE frame.
+fn click_with_keys(editor: &mut Editor, context: &egui::Context, at: Pos2, keys: Vec<Event>) {
+    frame_with(editor, context, SIZE, 1.0, vec![Event::PointerMoved(at)]);
+    let mut events = keys;
+    for pressed in [true, false] {
+        events.push(Event::PointerButton {
+            pos: at,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        });
+    }
+    frame_with(editor, context, SIZE, 1.0, events);
+}
+
+#[test]
+fn component_and_object_clicks_set_the_mode_and_repeat_clicks_do_nothing() {
+    let (mut editor, context) = setup();
+    let output = strip_output(&mut editor, &context);
+    assert_eq!(editor.selection_mode, SelectionMode::Object);
+    click(&mut editor, &context, button_center(&output, COMPONENT));
+    assert_eq!(editor.selection_mode, SelectionMode::Face);
+    let after_face = snapshot(&editor);
+    click(&mut editor, &context, button_center(&output, COMPONENT));
+    assert_eq!(snapshot(&editor), after_face);
+    click(&mut editor, &context, button_center(&output, OBJECT));
+    assert_eq!(editor.selection_mode, SelectionMode::Object);
+    let after_object = snapshot(&editor);
+    click(&mut editor, &context, button_center(&output, OBJECT));
+    assert_eq!(snapshot(&editor), after_object);
+}
+
+#[test]
+fn same_frame_shortcuts_beat_the_strip_click_exactly_like_the_select_toggle_menu_item() {
+    // Select > Components > Face (menus.rs) assigns the intent directly and so beats a
+    // same-frame F8, unlike the strip and Select > Toggle, which only fill an empty slot.
+    for label in [OBJECT, COMPONENT] {
+        let (mut reference, context) = setup();
+        strip_output(&mut reference, &context);
+        let reference_scene = reference.history.scene().clone();
+        frame_with(
+            &mut reference,
+            &context,
+            SIZE,
+            1.0,
+            vec![key(Key::F11), key(Key::Delete)],
+        );
+        let (mut editor, context) = setup();
+        let output = strip_output(&mut editor, &context);
+        let scene = editor.history.scene().clone();
+        click_with_keys(
+            &mut editor,
+            &context,
+            button_center(&output, label),
+            vec![key(Key::F11), key(Key::Delete)],
+        );
+        assert_eq!(editor.selection_mode, SelectionMode::Face, "{label}");
+        assert_eq!(editor.history.scene(), &scene, "{label}");
+        assert_eq!(reference.history.scene(), &reference_scene, "{label}");
+        assert_eq!(editor.status, reference.status, "{label}");
+        assert_eq!(editor.error, reference.error, "{label}");
+        assert_eq!(editor.selected, reference.selected, "{label}");
+    }
+}
+
+#[test]
+fn valid_draft_commits_to_the_old_target_and_invalid_draft_refuses() {
+    let (mut editor, context) = setup();
+    let output = strip_output(&mut editor, &context);
+    let target = editor.selected.expect("cube selected");
+    editor.channels[0] = "2".into();
+    editor.channel_intents[0] = true;
+    click(&mut editor, &context, button_center(&output, COMPONENT));
+    assert_eq!(editor.selection_mode, SelectionMode::Face);
+    assert!(!editor.has_draft());
+    assert_eq!(editor.selected, Some(target));
+    assert_eq!(
+        editor.history.scene().nodes()[0].transform().translation[0],
+        2.0
+    );
+
+    let (mut editor, context) = setup();
+    let output = strip_output(&mut editor, &context);
+    let scene = editor.history.scene().clone();
+    editor.channels[0] = "nan".into();
+    editor.channel_intents[0] = true;
+    click(&mut editor, &context, button_center(&output, COMPONENT));
+    assert_eq!(editor.selection_mode, SelectionMode::Object);
+    assert_eq!(editor.channels[0], "nan");
+    assert_eq!(editor.history.scene(), &scene);
+    assert!(editor.error);
+}
+
+#[test]
+fn clicking_a_mode_cancels_an_active_move() {
+    use crate::app::features::move_tool::tests::{press_x, setup as move_setup};
+    let (mut editor, context, rect) = move_setup(1.0);
+    context.enable_accesskit();
+    let before = editor.history.scene().clone();
+    let begin = press_x(&mut editor, &context, rect, 1.0);
+    frame_with(
+        &mut editor,
+        &context,
+        egui::vec2(1440.0, 900.0),
+        1.0,
+        vec![Event::PointerMoved(
+            begin + egui::vec2(rect.height() / 20.0, 0.0),
+        )],
+    );
+    assert_ne!(editor.history.scene(), &before);
+    // The pointer is still held (a click would first release and commit the move), so the strip
+    // button is activated from the keyboard.
+    let big = egui::vec2(1440.0, 900.0);
+    let mut focused = false;
+    for _ in 0..40 {
+        let output = frame_with(&mut editor, &context, big, 1.0, vec![key(Key::Tab)]);
+        let focus = output
+            .platform_output
+            .accesskit_update
+            .as_ref()
+            .map(|u| u.focus);
+        if strip(&output)
+            .iter()
+            .any(|c| c.label == COMPONENT && Some(c.id) == focus)
+        {
+            focused = true;
+            break;
+        }
+    }
+    assert!(focused, "Tab never reached the Component button");
+    assert!(editor.native_move.is_some());
+    frame_with(&mut editor, &context, big, 1.0, vec![key(Key::Space)]);
+    assert_eq!(editor.selection_mode, SelectionMode::Face);
+    assert!(editor.history.active_manipulation().is_none() && editor.native_move.is_none());
+    assert_eq!(editor.history.scene(), &before);
+    assert_eq!(editor.status, "Move cancelled: selection mode changed");
+}
+
+#[test]
+fn modal_and_closing_disable_both_mode_buttons() {
+    for closing in [false, true] {
+        let (mut editor, context) = setup();
+        if closing {
+            editor.close_document().unwrap();
+        } else {
+            editor.new_document().unwrap();
+        }
+        let output = strip_output(&mut editor, &context);
+        let before = snapshot(&editor);
+        for label in [OBJECT, COMPONENT] {
+            let control = strip(&output)
+                .into_iter()
+                .find(|c| c.label == label)
+                .unwrap();
+            assert!(control.disabled, "{label} closing={closing}");
+            click(&mut editor, &context, control.rect.center());
+            assert_eq!(snapshot(&editor), before, "{label} closing={closing}");
+        }
+    }
+}
+
+#[test]
+fn accesskit_selected_follows_the_mode() {
+    let (mut editor, context) = setup();
+    let selected = |output: &egui::FullOutput| {
+        let found = strip(output);
+        let state = |label: &str| found.iter().find(|c| c.label == label).unwrap().selected;
+        (state(HIERARCHY), state(OBJECT), state(COMPONENT))
+    };
+    let output = strip_output(&mut editor, &context);
+    assert_eq!(selected(&output), (Some(false), Some(true), Some(false)));
+    click(&mut editor, &context, button_center(&output, COMPONENT));
+    let output = frame_with(&mut editor, &context, SIZE, 1.0, vec![]);
+    assert_eq!(selected(&output), (Some(false), Some(false), Some(true)));
+    frame_with(&mut editor, &context, SIZE, 1.0, vec![key(Key::F8)]);
+    let output = frame_with(&mut editor, &context, SIZE, 1.0, vec![]);
+    assert_eq!(selected(&output), (Some(false), Some(true), Some(false)));
+}
+
+#[test]
+fn releasing_a_move_over_the_component_button_commits_the_move() {
+    use crate::app::features::move_tool::tests::{press_x, setup as move_setup};
+    let (mut editor, context, rect) = move_setup(1.0);
+    context.enable_accesskit();
+    let before = editor.history.scene().clone();
+    let big = egui::vec2(1440.0, 900.0);
+    let begin = press_x(&mut editor, &context, rect, 1.0);
+    let output = frame_with(
+        &mut editor,
+        &context,
+        big,
+        1.0,
+        vec![Event::PointerMoved(
+            begin + egui::vec2(rect.height() / 20.0, 0.0),
+        )],
+    );
+    let target = button_center(&output, COMPONENT);
+    frame_with(
+        &mut editor,
+        &context,
+        big,
+        1.0,
+        vec![Event::PointerMoved(target)],
+    );
+    // A release over the strip commits the drag first, so keyboard activation and F8/F11 are
+    // the only Move cancel routes.
+    frame_with(
+        &mut editor,
+        &context,
+        big,
+        1.0,
+        vec![Event::PointerButton {
+            pos: target,
+            button: PointerButton::Primary,
+            pressed: false,
+            modifiers: Modifiers::NONE,
+        }],
+    );
+    assert!(editor.history.active_manipulation().is_none() && editor.native_move.is_none());
+    assert_ne!(editor.history.scene(), &before);
+    assert_eq!(editor.selection_mode, SelectionMode::Object);
+    assert!(
+        !editor.status.contains("Move cancelled"),
+        "{}",
+        editor.status
+    );
+}
+
+#[test]
+fn strip_click_with_a_popup_open_is_dropped_like_the_menu_path() {
+    let (mut editor, context) = setup();
+    let output = strip_output(&mut editor, &context);
+    let combo = strip(&output).remove(0);
+    click(&mut editor, &context, combo.rect.center());
+    assert!(egui::Popup::is_any_open(&context));
+    let before = snapshot(&editor);
+    // A pointer press outside the popup would close it first, so activate from the keyboard.
+    let mut focused = false;
+    for _ in 0..40 {
+        let output = frame_with(&mut editor, &context, SIZE, 1.0, vec![key(Key::Tab)]);
+        let focus = output
+            .platform_output
+            .accesskit_update
+            .as_ref()
+            .map(|u| u.focus);
+        assert!(egui::Popup::is_any_open(&context), "popup closed");
+        if strip(&output)
+            .iter()
+            .any(|c| c.label == COMPONENT && Some(c.id) == focus)
+        {
+            focused = true;
+            break;
+        }
+    }
+    assert!(focused, "Tab never reached the Component button");
+    frame_with(&mut editor, &context, SIZE, 1.0, vec![key(Key::Space)]);
+    assert_eq!(editor.selection_mode, SelectionMode::Object);
+    assert!(!editor.error);
+    assert_eq!(snapshot(&editor).3, before.3);
 }

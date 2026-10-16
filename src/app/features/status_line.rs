@@ -1,4 +1,5 @@
-use crate::app::Editor;
+use crate::app::{Editor, SelectionModeIntent};
+use crate::editor_operations::SelectionMode;
 use crate::tool_icons::icon_button;
 use azteccraft::ui_icons::UiIcon;
 use eframe::egui::{self, Align, Layout};
@@ -11,28 +12,35 @@ const MENU_SET_UNAVAILABLE: &str = "not implemented yet";
 struct StripButton {
     label: &'static str,
     icon: UiIcon,
-    enabled: bool,
     hover: &'static str,
 }
 
-const SELECTION_MODES: [StripButton; 3] = [
-    StripButton {
+struct ModeButton {
+    label: &'static str,
+    icon: UiIcon,
+    hover: &'static str,
+    /// `None` while the mode is unsupported.
+    target: Option<(SelectionModeIntent, SelectionMode)>,
+}
+
+const SELECTION_MODES: [ModeButton; 3] = [
+    ModeButton {
         label: "Hierarchy selection",
         icon: UiIcon::SelectHierarchy,
-        enabled: false,
         hover: "Hierarchy selection: not implemented yet",
+        target: None,
     },
-    StripButton {
+    ModeButton {
         label: "Object selection",
         icon: UiIcon::SelectObject,
-        enabled: false,
-        hover: "Object selection: not implemented yet",
+        hover: "Object selection (F8 toggles)",
+        target: Some((SelectionModeIntent::Object, SelectionMode::Object)),
     },
-    StripButton {
+    ModeButton {
         label: "Component selection",
         icon: UiIcon::SelectComponent,
-        enabled: false,
-        hover: "Component selection: not implemented yet",
+        hover: "Component selection (Face only; Vertex, Edge, UV unsupported)  F11",
+        target: Some((SelectionModeIntent::Face, SelectionMode::Face)),
     },
 ];
 
@@ -41,42 +49,56 @@ const SIDEBAR_TOGGLES: [StripButton; 5] = [
     StripButton {
         label: "Modeling Toolkit",
         icon: UiIcon::SidebarModelingToolkit,
-        enabled: false,
         hover: "Modeling Toolkit: not implemented yet",
     },
     StripButton {
         label: "HumanIK",
         icon: UiIcon::SidebarHumanIk,
-        enabled: false,
         hover: "HumanIK: not implemented yet",
     },
     StripButton {
         label: "Attribute Editor",
         icon: UiIcon::SidebarAttributeEditor,
-        enabled: false,
         hover: "Attribute Editor: not implemented yet",
     },
     StripButton {
         label: "Tool Settings",
         icon: UiIcon::SidebarToolSettings,
-        enabled: false,
         hover: "Tool Settings: not implemented yet",
     },
     StripButton {
         label: "Channel Box / Layer Editor",
         icon: UiIcon::SidebarChannelBox,
-        enabled: false,
         hover: "Channel Box / Layer Editor: not implemented yet",
     },
 ];
 
 impl Editor {
-    pub(in crate::app) fn status_line(&self, ui: &mut egui::Ui) {
+    pub(in crate::app) fn status_line(
+        &self,
+        ui: &mut egui::Ui,
+        selection_intent: &mut Option<SelectionModeIntent>,
+    ) {
+        let admitted = !self.files.is_modal() && !self.files.is_closing();
         ui.horizontal(|ui| {
             menu_set_selector(ui);
             ui.separator();
             for button in &SELECTION_MODES {
-                strip_button(ui, button);
+                let selected = button
+                    .target
+                    .is_some_and(|(_, mode)| mode == self.selection_mode);
+                let enabled = admitted && button.target.is_some();
+                let response = icon_button(
+                    ui,
+                    button.label,
+                    button.icon,
+                    enabled,
+                    selected,
+                    button.hover,
+                );
+                if let (true, Some((intent, _))) = (response.clicked(), button.target) {
+                    selection_intent.get_or_insert(intent);
+                }
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 for button in SIDEBAR_TOGGLES.iter().rev() {
@@ -88,14 +110,7 @@ impl Editor {
 }
 
 fn strip_button(ui: &mut egui::Ui, button: &StripButton) {
-    icon_button(
-        ui,
-        button.label,
-        button.icon,
-        button.enabled,
-        false,
-        button.hover,
-    );
+    icon_button(ui, button.label, button.icon, false, false, button.hover);
 }
 
 fn menu_set_selector(ui: &mut egui::Ui) {

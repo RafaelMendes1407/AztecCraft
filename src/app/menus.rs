@@ -132,7 +132,7 @@ impl Editor {
             });
         });
         ui.separator();
-        self.status_line(ui);
+        self.status_line(ui, selection_intent);
         ui.separator();
         ui.horizontal(|ui| {
             if crate::tool_icons::button(ui, "Cube", UiIcon::PolyCube, authoring).clicked() {
