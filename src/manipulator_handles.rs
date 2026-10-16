@@ -64,6 +64,10 @@ impl HandleFrame {
         Ok(Self { origin, axes: unit })
     }
 
+    pub fn origin(&self) -> DVec3 {
+        self.origin
+    }
+
     pub fn world(origin: DVec3) -> Result<Self, HandleError> {
         Self::new(origin, [DVec3::X, DVec3::Y, DVec3::Z])
     }

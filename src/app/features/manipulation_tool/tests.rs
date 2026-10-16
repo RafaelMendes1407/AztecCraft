@@ -986,3 +986,35 @@ fn rotate_and_scale_owner_busy_cancel_and_close_follow_move() {
         assert!(!editor.history.can_redo());
     }
 }
+
+#[test]
+fn scale_handles_sit_at_the_scale_fixed_point_and_rotate_handles_at_the_pivot() {
+    let scene = azteccraft::native_scene::ascii::decode(
+        concat!(
+            "//Maya ASCII 2016 scene\nrequires maya \"2016\"; ",
+            "currentUnit -l centimeter -a degree -t film;\n",
+            "createNode transform -n \"a\"; setAttr \".t\" -type \"double3\" 1 0 0; ",
+            "setAttr \".r\" -type \"double3\" 0 0 90; ",
+            "setAttr \".rp\" -type \"double3\" 1 0 0; ",
+            "setAttr \".rpt\" -type \"double3\" 0 3 0; ",
+            "setAttr \".spt\" -type \"double3\" 2 0 0;\n"
+        )
+        .as_bytes()
+        .to_vec()
+        .into(),
+    )
+    .unwrap();
+    let mut editor = Editor {
+        history: azteccraft::history::History::new(scene),
+        ..Editor::default()
+    };
+    let node = editor.history.scene().nodes()[0].id();
+    editor.select(Some(node));
+    let target = editor.selected_move_target().unwrap();
+    let core = editor.history.scene().manipulator_frame(&target).unwrap();
+    assert!((core.scale_origin_cm - core.origin_cm).length() > 1.0);
+    let (_, rotate) = editor.manipulation_frame(ActiveTool::Rotate).unwrap();
+    let (_, scale) = editor.manipulation_frame(ActiveTool::Scale).unwrap();
+    assert_eq!(rotate.origin(), core.origin_cm);
+    assert_eq!(scale.origin(), core.scale_origin_cm);
+}

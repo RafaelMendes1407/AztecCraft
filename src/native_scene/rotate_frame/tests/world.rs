@@ -389,3 +389,33 @@ fn world_snap_heuristic_drops_the_smaller_of_two_equal_sub_tolerance_changes() {
     let moved = out.iter().filter(|value| **value != 0.0).count();
     assert_eq!(moved, 1, "{out:?}");
 }
+
+#[test]
+fn rotate_pivot_translate_leaves_world_rotate_channels_unchanged() {
+    // RT is a translation left of R, so a world turn gives the same channels with or without it.
+    let parent = NativeTransform {
+        rotation: [0.0, 0.0, 90.0],
+        scale: [2.0, 2.0, 2.0],
+        ..NativeTransform::default()
+    };
+    let (mut scene, node) = nested(parent, [0.0, 0.0, 90.0]);
+    let turn = |scene: &NativeScene| {
+        world_frame(scene, node, RotateAxis::Z)
+            .rotation(RotateAxis::Z, 30.0)
+            .unwrap()
+    };
+    let before = turn(&scene);
+    test_fixtures::set_extras(
+        &mut scene,
+        node,
+        TransformExtras {
+            rotate_pivot_translate: Some([4.0, -5.0, 6.0]),
+            ..TransformExtras::default()
+        },
+    );
+    assert_eq!(turn(&scene), before);
+    // Independent: P^-1 Rz(30) P * Rz(90) with P = 2 Rz(90) is Rz(120).
+    for (got, want) in before.into_iter().zip([0.0, 0.0, 120.0]) {
+        assert!((got - want).abs() < 1e-9, "{before:?}");
+    }
+}

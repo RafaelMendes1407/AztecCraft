@@ -337,3 +337,96 @@ fn multi_axis_rotate_axis_frame_matches_the_matrix_and_the_row_vector_reference(
     let handles = scene.manipulator_frame(&target_of(&scene, node)).unwrap();
     near(handles.object_axes[0], frame.x_axis);
 }
+
+#[test]
+fn scale_origin_is_the_scale_fixed_point_not_the_translate() {
+    let (mut scene, node) = test_fixtures::cube();
+    scene
+        .set_transform(
+            node,
+            NativeTransform {
+                translation: [1.0, 0.0, 0.0],
+                rotation: [0.0, 0.0, 90.0],
+                ..NativeTransform::default()
+            },
+        )
+        .unwrap();
+    let selected = target_of(&scene, node);
+    let plain = scene.manipulator_frame(&selected).unwrap();
+    near(plain.scale_origin_cm, plain.origin_cm);
+    // spt: ST sits right of R, so the fixed point moves by R * spt = (0, 2, 0).
+    test_fixtures::set_extras(
+        &mut scene,
+        node,
+        TransformExtras {
+            scale_pivot_translate: Some([2.0, 0.0, 0.0]),
+            ..TransformExtras::default()
+        },
+    );
+    let frame = scene.manipulator_frame(&selected).unwrap();
+    near(frame.origin_cm, DVec3::new(1.0, 0.0, 0.0));
+    near(frame.scale_origin_cm, DVec3::new(1.0, 2.0, 0.0));
+    // rp = (1, 0, 0) under Rz(90): RP + R * (-RP) = (1, -1, 0), plus T.
+    test_fixtures::set_extras(&mut scene, node, TransformExtras::default());
+    scene.nodes[0].rotate_pivot[0] = Scalar::new(1.0);
+    let frame = scene.manipulator_frame(&selected).unwrap();
+    near(frame.scale_origin_cm, DVec3::new(2.0, -1.0, 0.0));
+}
+
+#[test]
+fn axes_that_overflow_are_refused() {
+    // The parent map is finite, but its product with a 45 degree turn sums two 1.2e308 terms.
+    let (mut scene, root, leaf, _) = test_fixtures::grouped_shape();
+    scene
+        .set_transform(
+            root,
+            NativeTransform {
+                scale: [1.7e308; 3],
+                ..NativeTransform::default()
+            },
+        )
+        .unwrap();
+    scene
+        .set_transform(
+            leaf,
+            NativeTransform {
+                rotation: [0.0, 0.0, 45.0],
+                ..NativeTransform::default()
+            },
+        )
+        .unwrap();
+    test_fixtures::set_extras(
+        &mut scene,
+        root,
+        TransformExtras {
+            shear: Some([1.0, 0.0, 0.0]),
+            ..TransformExtras::default()
+        },
+    );
+    assert!(matches!(
+        scene.manipulator_frame(&target_of(&scene, leaf)),
+        Err(NativeError::UnsupportedMove(
+            WorldMoveUnsupported::ParentTransform
+        ))
+    ));
+}
+
+#[test]
+fn scale_origin_includes_a_nonzero_scale_pivot() {
+    let (mut scene, node) = test_fixtures::cube();
+    scene
+        .set_transform(
+            node,
+            NativeTransform {
+                translation: [1.0, 0.0, 0.0],
+                scale: [3.0, 3.0, 3.0],
+                ..NativeTransform::default()
+            },
+        )
+        .unwrap();
+    scene.nodes[0].scale_pivot[0] = Scalar::new(2.0);
+    let frame = scene.manipulator_frame(&target_of(&scene, node)).unwrap();
+    // Scaling about the pivot leaves its image fixed: T + sp.
+    near(frame.scale_origin_cm, DVec3::new(3.0, 0.0, 0.0));
+    near(frame.origin_cm, DVec3::new(1.0, 0.0, 0.0));
+}

@@ -1,5 +1,5 @@
 use super::move_translation::ChannelBaseline;
-use super::rotate_frame::{rotation_matrix, rotation_times_uniform_scale};
+use super::rotate_frame::rotation_times_uniform_scale;
 use super::*;
 use glam::DMat3;
 
@@ -159,7 +159,12 @@ impl NativeScene {
         }
         let axis_component = match space {
             ScaleSpace::Object => [Some(0), Some(1), Some(2)],
-            ScaleSpace::World => self.world_scale_components(target, transform.rotation_radians)?,
+            ScaleSpace::World => {
+                let rotation = transform
+                    .rotation_frame()
+                    .ok_or(NativeError::InvalidTransformExtras)?;
+                self.world_scale_components(target, rotation)?
+            }
         };
         let frame = ScaleFrame {
             space,
@@ -175,12 +180,12 @@ impl NativeScene {
     }
 
     // For each world axis, the local scale channel it maps to through the parent chain and the
-    // node rotation. Scaling along a world axis edits a single channel only when that axis is a
-    // local axis of the node's world orientation; otherwise the result would shear.
+    // node's R(ro) * RA frame. Scaling along a world axis edits a single channel only when that
+    // axis is a local axis of the node's world orientation; otherwise the result would shear.
     fn world_scale_components(
         &self,
         target: &TransformTarget,
-        rotation: [f64; 3],
+        rotation: DMat3,
     ) -> Result<[Option<usize>; 3], NativeError> {
         let refused = NativeError::UnsupportedScale(ScaleUnsupported::ParentTransform);
         let parent = self.ancestor_world(target)?.ok_or(refused.clone())?;
@@ -192,7 +197,7 @@ impl NativeScene {
         }
         let uniform =
             (linear.x_axis.length() + linear.y_axis.length() + linear.z_axis.length()) / 3.0;
-        let orientation = (linear / uniform) * rotation_matrix(rotation);
+        let orientation = (linear / uniform) * rotation;
         Ok(std::array::from_fn(|axis| {
             let image = [
                 orientation.x_axis[axis],
