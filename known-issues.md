@@ -350,10 +350,12 @@ and its centre marker is the corner average. New nodes are named `pCylinder1` an
 `pCylinderShape1` and `pConeShape1`. The legacy quad-only JSON/OBJ scene refuses both
 with a typed error. No shelf icons exist for them.
 
+## DefaultLightingApprox is not Maya default lighting
+
 `DefaultLightingApprox` (`src/shading.rs`) is a headlight Lambert plus ambient floor, not Maya's
 default lighting. The 2026 Lighting page was unreachable, so the light direction and whether it
-follows the camera are unverified. It is not yet wired into the viewport (A1b), and
-`ViewFace::normal` is in local space; non-uniform parent scale needs a world-space transform. The
+follows the camera are unverified. It is wired into `Submission::new` as one flat colour per
+face, with the normal taken to world space by the inverse transpose of the world matrix. The
 ambient floor (0.4) is chosen for legibility, not measured from Maya (provisional). Back faces
 receive only the ambient floor (no two-sided lighting, culling off), so an open plane looks dark
 from behind; Maya's two-sided default is unverified.
@@ -368,3 +370,12 @@ Degenerate. The limit, the 72 px handle size, the 1 px Scale pivot refusal and t
 tuned with the Task 5 UI wiring. Handle frames must be right-handed; the caller
 must refuse mirrored frames. A zero or negative Scale ratio is reachable by an
 ordinary drag and the core refuses it; the UI must show that refusal.
+
+## Grid lines leak across faces (#111)
+
+Native macOS still shows grid lines across a cube's front faces and a cylinder's lower faces,
+also after DefaultLightingApprox. #111 is unfixed and untouched by the lighting change. The
+headless offscreen harness shows no grid pixel in a window at the cube centre
+(`headless_gpu_offscreen_does_not_reproduce_issue_111`), but a grid line may simply not cross that
+window at that view, so this is weak evidence of any difference from the app. If they do differ,
+look at the real egui render pass first (depth attachment or compositing).
