@@ -35,6 +35,7 @@ fn same_structure(a: &NativeScene, b: &NativeScene) -> bool {
         && a.dag == b.dag
         && a.shapes == b.shapes
         && a.curves == b.curves
+        && a.session_materials == b.session_materials
         && a.nodes.len() == b.nodes.len()
         && a.nodes
             .iter()

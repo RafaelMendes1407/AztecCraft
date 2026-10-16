@@ -311,6 +311,24 @@ fn only_effective_last_duplicate_assignment_changes() {
 }
 
 #[test]
+fn session_materials_in_a_sourced_scene_are_invalid_and_never_encode() {
+    let (_, candidate) = fixture();
+    assert_eq!(
+        encode(&candidate).unwrap().len(),
+        candidate.retained_source_bytes()
+    );
+    let shape = candidate.shapes[0].id;
+    let mut changed = candidate.clone();
+    changed.session_materials.assignments.insert(shape, 0);
+    assert!(changed.validate().is_err());
+    assert_eq!(encode(&changed).unwrap_err().kind(), ErrorKind::Unsupported);
+    changed = candidate.clone();
+    changed.session_materials.materials[0].color = [0.2, 0.4, 0.6];
+    changed.validate().unwrap();
+    assert_eq!(encode(&changed).unwrap_err().kind(), ErrorKind::Unsupported);
+}
+
+#[test]
 fn refuses_sourcefree_absent_origin_invalid_origin_and_structural_changes() {
     assert_eq!(
         encode(&NativeScene::default()).unwrap_err().kind(),
