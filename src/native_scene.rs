@@ -472,6 +472,22 @@ pub struct FaceTarget {
     pub face_index: usize,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VertexTarget {
+    pub transform: NodeId,
+    pub shape: NativeId,
+    pub path: Vec<NativeId>,
+    pub vertex_index: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EdgeTarget {
+    pub transform: NodeId,
+    pub shape: NativeId,
+    pub path: Vec<NativeId>,
+    pub edge_index: usize,
+}
+
 pub const MAX_TRANSFORM_PATHS: usize = 4096;
 pub const MAX_TRANSFORM_DEPTH: usize = 256;
 pub const MAX_PATH_IDENTITIES: usize = 65536;
@@ -814,18 +830,47 @@ impl NativeScene {
     pub fn dag_edges(&self) -> &[DagEdge] {
         &self.dag
     }
+    fn resolve_shape_instance(
+        &self,
+        transform: NodeId,
+        shape_id: NativeId,
+        path: &[NativeId],
+    ) -> Result<&NativeMeshShape, NativeError> {
+        let node = self.node(transform)?;
+        self.shape(shape_id)?;
+        let shape = self.instance_shape(path)?;
+        if shape.id != shape_id || path[path.len() - 2] != node.transform_id {
+            return Err(NativeError::InvalidInstancePath);
+        }
+        Ok(shape)
+    }
     pub fn resolve_face_target(
         &self,
         target: &FaceTarget,
     ) -> Result<&NativeMeshShape, NativeError> {
-        let node = self.node(target.transform)?;
-        self.shape(target.shape)?;
-        let shape = self.instance_shape(&target.path)?;
-        if shape.id != target.shape || target.path[target.path.len() - 2] != node.transform_id {
-            return Err(NativeError::InvalidInstancePath);
-        }
+        let shape = self.resolve_shape_instance(target.transform, target.shape, &target.path)?;
         if target.face_index >= shape.mesh.faces().len() {
             return Err(SceneError::MissingFace(target.face_index).into());
+        }
+        Ok(shape)
+    }
+    pub fn resolve_vertex_target(
+        &self,
+        target: &VertexTarget,
+    ) -> Result<&NativeMeshShape, NativeError> {
+        let shape = self.resolve_shape_instance(target.transform, target.shape, &target.path)?;
+        if target.vertex_index >= shape.mesh.point_count() {
+            return Err(SceneError::MissingVertex(target.vertex_index).into());
+        }
+        Ok(shape)
+    }
+    pub fn resolve_edge_target(
+        &self,
+        target: &EdgeTarget,
+    ) -> Result<&NativeMeshShape, NativeError> {
+        let shape = self.resolve_shape_instance(target.transform, target.shape, &target.path)?;
+        if target.edge_index >= shape.mesh.edges().len() {
+            return Err(SceneError::MissingEdge(target.edge_index).into());
         }
         Ok(shape)
     }
