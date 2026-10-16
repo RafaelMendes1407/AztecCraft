@@ -4,9 +4,9 @@ use crate::editor_operations::{
 };
 #[cfg(any(test, feature = "mcp"))]
 use crate::editor_operations::{
-    AttributeEditorTabInspection, CameraInspection, FaceSelectionPolicy, FaceSelectionTarget,
-    NodeInspection, RemoteRequest, SceneInspection, ShapeInspection, SidebarPanelsInspection,
-    TransformInput, UnitsInspection, VertexSelectionTarget,
+    AttributeEditorTabInspection, CameraInspection, EdgeSelectionTarget, FaceSelectionPolicy,
+    FaceSelectionTarget, NodeInspection, RemoteRequest, SceneInspection, ShapeInspection,
+    SidebarPanelsInspection, TransformInput, UnitsInspection, VertexSelectionTarget,
 };
 #[cfg(any(test, feature = "mcp"))]
 use azteccraft::native_scene::{LinearUnit, NativeTransform};

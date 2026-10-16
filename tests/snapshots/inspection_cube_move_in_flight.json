@@ -121,6 +121,7 @@
     ],
     "pending_action": null,
     "read_only_reason": null,
+    "remembered_edge": null,
     "remembered_face": {
       "face_index": 0,
       "instance_path": [

@@ -116,6 +116,7 @@
       "source_changed": false
     },
     "read_only_reason": null,
+    "remembered_edge": null,
     "remembered_face": null,
     "remembered_vertex": null,
     "retained_source_bytes": 0,

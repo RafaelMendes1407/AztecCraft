@@ -62,9 +62,10 @@ Call `inspect_scene` first. Every other tool requires `scene_token`, a UUID stri
 | `finish_move` | `move_id`; `finish`: `commit` or `cancel` | One Undo at commit, or exact begin-state restoration |
 | `create_primitive` | `primitive`: `cube`, `plane`, `sphere`, `cylinder` or `cone` (provisional radius-1 polygon solids: 20x20 sphere with pole triangles; cylinder with two 20-gon caps; cone with a 20-gon base); optional `name` | Created `node_id`; selects the new node |
 | `select_node` | Optional `node_id` and `instance_path`, at most 256 decimal NativeId strings | Full root-to-transform prefix; ambiguous objects require a path. Null or omitted node clears selection and cannot include a path. `select_node` stays exact: it selects the named transform and is not limited by the selection mode |
-| `set_selection_mode` | Required `mode`: `object`, `face`, `vertex` or `hierarchy` (Root sub-mask only; Leaf and Template are unsupported); `edge` is not accepted yet | Changes the transient selection mask; a valid remembered face or vertex remains inactive outside its own mode. In Hierarchy mode a native viewport click selects the root transform of the hit object's hierarchy |
+| `set_selection_mode` | Required `mode`: `object`, `face`, `vertex`, `edge` or `hierarchy` (Root sub-mask only; Leaf and Template are unsupported) | Changes the transient selection mask; a valid remembered face, vertex or edge remains inactive outside its own mode. In Hierarchy mode a native viewport click selects the root transform of the hit object's hierarchy |
 | `select_face` | Required `target`: complete target object or null | In Face mode, selects that exact owning instance and canonical face; null clears only the face |
 | `select_vertex` | Required `target`: complete target object or null | In Vertex mode, selects that exact owning instance and native point index; null clears only the vertex |
+| `select_edge` | Required `target`: complete target object or null | In Edge mode, selects that exact owning instance and native edge index; null clears only the edge |
 | `rename_node` | `node_id`, `name` | Changed or unchanged authoring state |
 | `set_transform` | `node_id`, `translation`, `rotation_degrees`, `scale`, each an array of three finite f64 numbers | Translation in declared scene units, rotation in degrees, dimensionless scale |
 | `edit_node` | `node_id`; optional `name`, `translation`, `rotation_degrees`, `scale` | One undo entry for the supplied name and individual channels; selection stays unchanged |
@@ -76,7 +77,7 @@ Call `inspect_scene` first. Every other tool requires `scene_token`, a UUID stri
 | `delete_node` | `node_id` | Changed authoring state |
 | `undo` | None | Changed or unchanged history state |
 | `redo` | None | Changed or unchanged history state |
-| `frame_selected` | None | Frames the selected object in Object mode, selected face corners in Face mode or the remembered point in Vertex mode; no active face or vertex returns `no_selection` |
+| `frame_selected` | None | Frames the selected object in Object mode, selected face corners in Face mode, the remembered point in Vertex mode or both endpoints of the remembered edge in Edge mode; no active face, vertex or edge returns `no_selection` |
 | `set_grid_visibility` | `visible`: required boolean | Changed or unchanged grid visibility in this window's viewport |
 | `set_shading_mode` | `mode`: required, `"wireframe"` or `"smooth_shade_all"` | Changed or unchanged shading mode in this window's viewport |
 | `set_sidebar_panel_visibility` | `panel`: required, `"channel_box"` or `"attribute_editor"`; `visible`: required boolean | Changed or unchanged visibility of that sidebar panel in this window; the dock shows one panel, so showing one hides the other |
@@ -110,9 +111,19 @@ null target, is `invalid_input`; failed requests preserve the selection, remembe
 state and mode. Remote guards match `select_face` (token, active Move, closing,
 modal, draft). Inspection adds `remembered_vertex` (the target or null), inactive
 outside Vertex mode, revalidated after edits and Undo/Redo, and charged against the
-inspection size budget. Native Vertex mode is not reachable yet (no hotkey, menu,
-Status Line control, marker drawing or click picking); until those land, Vertex
-selection is driven only through these tools. Edge selection is not exposed.
+inspection size budget.
+
+`select_edge.target` has `edge_index` in place of `vertex_index`: the native edge
+index, bounds-checked against the shape, with the same rules (Edge mode only, null
+included; occluded and off-screen edges may be named; failed requests preserve
+state; remote guards match `select_face`). Inspection adds `remembered_edge`, inactive
+outside Edge mode, revalidated and charged against the size budget like the vertex.
+Each component type keeps its own remembered pick: selecting an edge leaves the
+remembered vertex untouched and it becomes active again in Vertex mode.
+
+Native Vertex and Edge modes are not reachable yet (no hotkey, menu, Status Line
+control, marker or edge drawing, or click picking; native controls land in a later
+change); until then Vertex and Edge selection are driven only through these tools.
 
 Inspection reports `selection_mode`, the complete `remembered_face` target or
 null, and fixed `face_selection_policy: "visible_centers_only"`. A remembered
@@ -385,7 +396,7 @@ No-default core builds remain independent of desktop and MCP dependencies. See [
 
 Every existing and new user-facing capability and its relevant state must be accessible through MCP, including while catch-up is in progress. Each applicable feature slice includes its typed operation, MCP schema/handler and inspection changes, real Editor protocol tests and documentation before the completed feature gate. The feature owner coordinates protected editor boundaries and adapter review with the MCP owner. Do not advertise a tool before the operation exists or leave MCP support as a permanent later backlog.
 
-The current catalog omits edges/UVs, multiple-face gestures, GUI Export, native-UI material assignment, material rendering beyond the flat base colour, animation, simulation and scripting. Face mode and one full canonical face target are exposed through the same operations as native Center selection. Its single material-data edit is the bounded existing Phong diffuse scalar described above. `extrude_face` exposes the existing bounded single-quad operation through an explicit current target; native face-extrusion UI remains unsupported. Core-only APIs and unsupported controls do not imply an advertised MCP tool. The current binary decoder refuses shared-instance MB input, and the native UI cannot create instances; SDK ambiguity behavior has no reachable producer in this slice. Canonical path/ambiguity checks and reachable explicit-path protocol tests do not establish full instanced-file support.
+The current catalog omits UVs, multiple-face gestures, GUI Export, native-UI material assignment, material rendering beyond the flat base colour, animation, simulation and scripting. Face mode and one full canonical face target are exposed through the same operations as native Center selection. Its single material-data edit is the bounded existing Phong diffuse scalar described above. `extrude_face` exposes the existing bounded single-quad operation through an explicit current target; native face-extrusion UI remains unsupported. Core-only APIs and unsupported controls do not imply an advertised MCP tool. The current binary decoder refuses shared-instance MB input, and the native UI cannot create instances; SDK ambiguity behavior has no reachable producer in this slice. Canonical path/ambiguity checks and reachable explicit-path protocol tests do not establish full instanced-file support.
 
 Nine verified tools establish the initial server foundation, not catch-up with every existing operation. Existing capabilities without tools need reviewed follow-up slices; their absence does not defer MCP support for new applicable features, including the native face slice.
 
@@ -398,7 +409,7 @@ Nine verified tools establish the initial server foundation, not catch-up with e
 | Native Save/Save As | Provisional `save_scene`/`save_scene_as` and matching pending Save; source-bound Unix binary only, current integration/native Save QA remains pending |
 | Core OBJ export | No tool; file authority and create-new/no-clobber behavior need a dedicated slice |
 | Polygon cylinder and cone creation | `create_primitive` with `cylinder` or `cone` dispatches the same `Operation::Create` as Create > Polygon cylinder/cone; the new node, its inspected counts, and face view, pick, select (including the true 20-gon caps through the same ViewScene n-gon path) and refused cap extrusion are covered by actual Editor protocol tests; provisional topology |
-| Native Hierarchy/Face/Center selection | `set_selection_mode` (`object`, `face`, `vertex`, `hierarchy`), `select_face`, `select_vertex` and selection inspection (`remembered_face`, `remembered_vertex`) share authoritative typed state; `select_node` stays exact and is not mode-limited. Native Vertex mode has no user surface yet, so `select_vertex` is MCP-only for now; Edge, UV and Vertex Face masks and multi-component gestures are unsupported |
+| Native Hierarchy/Face/Center selection | `set_selection_mode` (`object`, `face`, `vertex`, `edge`, `hierarchy`), `select_face`, `select_vertex`, `select_edge` and selection inspection (`remembered_face`, `remembered_vertex`, `remembered_edge`) share authoritative typed state; `select_node` stays exact and is not mode-limited. Native Vertex and Edge modes have no user surface yet, so `select_vertex` and `select_edge` are MCP-only for now; UV and Vertex Face masks and multi-component gestures are unsupported |
 | Core mesh extrusion | `extrude_face` exposes the checked single-quad History command with an explicit current face target; native face-extrusion UI remains unsupported |
 | Native Select/Move tool and World-axis object translation | Four typed Move tools share the native transaction and guards; bounded tool/active preview/capture state is inspectable. Candidate native/SDK verification remains pending |
 | Native Tool Box Select and Move buttons | The icon-only Select (Q) and Move (W) buttons dispatch `Operation::SetActiveTool`, the same typed operation as `set_active_tool` (`select` or `move`), with the same closing and modal guards |

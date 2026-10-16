@@ -4684,6 +4684,21 @@ fn inspection_charges_the_remembered_vertex_and_refuses_an_overlong_path() {
 }
 
 #[test]
+fn inspection_charges_the_remembered_edge_and_refuses_an_overlong_path() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let mut edge = selected_edge(&editor, 0);
+    editor.remembered_edge = Some(edge.clone());
+    assert!(editor.inspect(false).unwrap().remembered_edge.is_some());
+    edge.path = vec![edge.shape; azteccraft::native_scene::MAX_TRANSFORM_DEPTH + 2];
+    editor.remembered_edge = Some(edge);
+    assert!(matches!(
+        editor.inspect(false),
+        Err(OperationError::TooLarge)
+    ));
+}
+
+#[test]
 fn overlong_vertex_and_edge_paths_are_rejected_without_mutation() {
     let mut editor = Editor::default();
     editor.create(Primitive::Cube);
