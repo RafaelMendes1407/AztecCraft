@@ -60,7 +60,7 @@ Call `inspect_scene` first. Every other tool requires `scene_token`, a UUID stri
 | `begin_move` | `node_id`, full `instance_path` (1 to 256 decimal IDs), `axis`: `x`, `y` or `z` | Begin a remote-owned translation of the exact selected transform; returns `move_id` |
 | `update_move` | `move_id`: decimal string; `distance`: finite absolute f64 | Preview World distance from begin in declared linear units |
 | `finish_move` | `move_id`; `finish`: `commit` or `cancel` | One Undo at commit, or exact begin-state restoration |
-| `create_primitive` | `primitive`: `cube`, `plane` or `sphere` (provisional 20x20 radius-1 polygon sphere, triangles at the poles); optional `name` | Created `node_id`; selects the new node |
+| `create_primitive` | `primitive`: `cube`, `plane`, `sphere`, `cylinder` or `cone` (provisional radius-1 polygon solids: 20x20 sphere with pole triangles; cylinder with two 20-gon caps; cone with a 20-gon base); optional `name` | Created `node_id`; selects the new node |
 | `select_node` | Optional `node_id` and `instance_path`, at most 256 decimal NativeId strings | Full root-to-transform prefix; ambiguous objects require a path. Null or omitted node clears selection and cannot include a path |
 | `set_selection_mode` | Required `mode`: `object` or `face` | Changes the transient selection mask; a valid remembered face remains inactive in Object mode |
 | `select_face` | Required `target`: complete target object or null | In Face mode, selects that exact owning instance and canonical face; null clears only the face |
@@ -339,6 +339,7 @@ Nine verified tools establish the initial server foundation, not catch-up with e
 | Native Close | `request_close` and matching pending resolution use the native close guard and response-delivery barrier |
 | Native Save/Save As | Provisional `save_scene`/`save_scene_as` and matching pending Save; source-bound Unix binary only, current integration/native Save QA remains pending |
 | Core OBJ export | No tool; file authority and create-new/no-clobber behavior need a dedicated slice |
+| Polygon cylinder and cone creation | `create_primitive` with `cylinder` or `cone` dispatches the same `Operation::Create` as Create > Polygon cylinder/cone; the new node, its inspected counts, and face view, pick, select (including the true 20-gon caps through the same ViewScene n-gon path) and refused cap extrusion are covered by actual Editor protocol tests; provisional topology |
 | Native Face/Center selection | `set_selection_mode`, `select_face` and selection inspection share authoritative typed state; other component masks and multi-face gestures are unsupported |
 | Core mesh extrusion | `extrude_face` exposes the checked single-quad History command with an explicit current face target; native face-extrusion UI remains unsupported |
 | Native Select/Move tool and World-axis object translation | Four typed Move tools share the native transaction and guards; bounded tool/active preview/capture state is inspectable. Candidate native/SDK verification remains pending |

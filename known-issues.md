@@ -324,3 +324,21 @@ The World ring treats the channel that moves most as intended and snaps changes
 below 1e-12 rad on the other channels back to the baseline. That is a heuristic: with
 a parent rotated 45 degrees about Z, a World X ring of 1e-11 degrees changes
 rotateX and rotateY by about the same amount, and one of them is snapped away.
+
+## Poly Cylinder and Poly Cone are provisional (#43)
+
+Create > Polygon cylinder and cone, and `create_primitive` with `cylinder` or `cone`,
+build radius-1, height-2 (y from -1 to 1), Y-axis solids with 20 axis divisions,
+1 height division and no cap subdivisions. The cylinder is the sc=0 variant (node-page
+default) with 40 points, 60 edges, 22 faces and two true 20-gon caps; the command page
+lists sz 1 instead, so a Maya-default cylinder may have different counts, and the
+cap topology of both solids is derived, not verified against Maya 2026 (#5). The cone
+has 21 points, 40 edges and 21 faces (20 side triangles and a 20-gon base) with its apex
+at (0, 1, 0) and its base at y=-1. Vertex and face order and winding are not claimed to
+match Maya. Edges are hard, so the viewport looks faceted. There is no options dialog,
+no UVs or normals, and new nodes are not persisted. Caps and cone side triangles cannot
+be extruded; cylinder side quads can. A pick on any cap triangle selects the whole cap,
+and its centre marker is the corner average. New nodes are named `pCylinder1` and
+`pCone1` with shapes `pCylinder1Shape` and `pCone1Shape`, whereas Maya names the shapes
+`pCylinderShape1` and `pConeShape1`. The legacy quad-only JSON/OBJ scene refuses both
+with a typed error. No shelf icons exist for them.

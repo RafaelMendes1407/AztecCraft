@@ -2,7 +2,7 @@
 
 AztecCraft is a Rust desktop 3D authoring project with the objective of reproducing Autodesk Maya 2026's interface and behavior, including modeling, animation, rigging, simulation, rendering, scripting and existing plug-in compatibility.
 
-The current prototype has a native desktop window for cube/plane/sphere creation, selection, numeric transforms, undo/redo and perspective navigation. Open stages Maya binary scenes or legacy JSON documents into the authoritative native model. This candidate adds Unix Maya binary Save/Save As for supported existing-record edits through the ordinary vendored writer; current application checks and native Save QA remain pending. Overall Maya coverage is unmeasured.
+The current prototype has a native desktop window for cube/plane/sphere/cylinder/cone creation, selection, numeric transforms, undo/redo and perspective navigation. Open stages Maya binary scenes or legacy JSON documents into the authoritative native model. This candidate adds Unix Maya binary Save/Save As for supported existing-record edits through the ordinary vendored writer; current application checks and native Save QA remain pending. Overall Maya coverage is unmeasured.
 
 [Current capabilities](#current-capabilities) · [Build and test](#build-and-test) · [Roadmap](#roadmap-and-publication) · [Project documentation](.project-docs/INDEX.md)
 
@@ -16,7 +16,7 @@ The current prototype has a native desktop window for cube/plane/sphere creation
 | History | Undo/redo create, remove, rename, transform and single-face extrusion commands, with failed/no-op edits preserving history | [History workflow tests](tests/history_workflows.rs) |
 | Native scene files | Bounded Maya binary decoding with retained source bytes; legacy JSON reads retained; provisional Unix existing-record binary writing | [Document adapter](src/document.rs) and [binary codec](src/native_scene/binary.rs); document-layer repeat-save checks are separate from pending native Save QA |
 | Camera math | Orbit/pan/dolly, perspective projection, rays, nearest-geometry picking and framing | [Viewport workflow tests](tests/viewport_workflows.rs) |
-| Desktop shell and viewport | Create/select cube, plane or sphere, edit name/transform channels, undo/redo, delete and frame selected, with depth-tested opaque geometry | [Native shell](src/app/mod.rs) and [viewport UI](src/viewport_ui.rs) |
+| Desktop shell and viewport | Create/select cube, plane, sphere, cylinder or cone, edit name/transform channels, undo/redo, delete and frame selected, with depth-tested opaque geometry | [Native shell](src/app/mod.rs) and [viewport UI](src/viewport_ui.rs) |
 | Face selection | F11/Face menu and F8 Object/Face toggle, visible center markers, exact-face feedback and face framing | Shared typed operations and [Center selection policy](.project-docs/development.md#face-center-selection); native/Maya comparison remains separate |
 | File actions in the window | New/Open and provisional eligible Save/Save As, unsaved-change Save/Discard/Cancel, source-change guards and uncertain-write reconciliation | [File integration tests](src/file_ui.rs); current integration and native Save verification pending |
 | OBJ export | Library API writes world-space polygon geometry to a new file | [OBJ workflow tests](tests/obj_workflows.rs), with GUI Export still disabled |
