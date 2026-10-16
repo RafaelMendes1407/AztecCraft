@@ -3,7 +3,8 @@ use super::*;
 impl Editor {
     pub(super) fn native_operation(&mut self, operation: Operation) {
         if self.selection_mode == SelectionMode::Face && matches!(operation, Operation::Delete(_)) {
-            self.status = "Face deletion is unsupported; switch to Object selection".into();
+            self.status =
+                "Face deletion is unsupported; switch to Object or Hierarchy selection".into();
             self.error = true;
             return;
         }

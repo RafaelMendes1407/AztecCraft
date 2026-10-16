@@ -1204,6 +1204,6 @@ fn native_operation_refuses_face_mode_delete_before_the_pipeline() {
     assert!(editor.error);
     assert_eq!(
         editor.status,
-        "Face deletion is unsupported; switch to Object selection"
+        "Face deletion is unsupported; switch to Object or Hierarchy selection"
     );
 }

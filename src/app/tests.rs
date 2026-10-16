@@ -3654,32 +3654,41 @@ fn cylinder_and_cone_names_count_up_and_skip_collisions() {
 /// A group (translate x = 2) holding a child transform that owns one triangle mesh.
 /// Mirrored by `grouped_scene_bytes()` in src/mcp_tests/official_client/selection.rs; this module builds without the mcp feature, so the builder cannot be shared.
 fn group_editor() -> Editor {
+    nested_group_editor(&[b"child"])
+}
+
+/// Like `group_editor()` but with the transform chain group > mid > child above the shape.
+fn deep_group_editor() -> Editor {
+    nested_group_editor(&[b"mid", b"child"])
+}
+
+/// A group (translate x = 2) holding the chain `names` of transforms; the last owns one triangle mesh.
+fn nested_group_editor(names: &[&[u8]]) -> Editor {
     use material_wire as wire;
-    let bytes = wire::scene(
+    let mut parent: &[u8] = b"group";
+    let mut chain = wire::group(
+        b"XFRM",
         &[
-            wire::group(
-                b"XFRM",
-                &[
-                    wire::creation(b"group", None),
-                    wire::triple(b"t", [2.0, 0.0, 0.0]),
-                ]
-                .concat(),
-                4,
-            ),
-            wire::group(b"XFRM", &wire::creation(b"child", Some(b"group")), 4),
-            wire::group(
-                b"DMSH",
-                &[
-                    wire::creation(b"shape", Some(b"child")),
-                    wire::chunk(b"MESH", &wire::mesh_payload(&[0, 1, 0x6000_0002]), 8),
-                ]
-                .concat(),
-                4,
-            ),
+            wire::creation(b"group", None),
+            wire::triple(b"t", [2.0, 0.0, 0.0]),
         ]
         .concat(),
+        4,
     );
-    let scene = azteccraft::native_scene::binary::decode(bytes).unwrap();
+    for name in names {
+        chain.extend(wire::group(b"XFRM", &wire::creation(name, Some(parent)), 4));
+        parent = name;
+    }
+    chain.extend(wire::group(
+        b"DMSH",
+        &[
+            wire::creation(b"shape", Some(parent)),
+            wire::chunk(b"MESH", &wire::mesh_payload(&[0, 1, 0x6000_0002]), 8),
+        ]
+        .concat(),
+        4,
+    ));
+    let scene = azteccraft::native_scene::binary::decode(wire::scene(&chain)).unwrap();
     Editor {
         history: History::new(scene),
         ..Editor::default()
@@ -3763,6 +3772,26 @@ fn hierarchy_click_on_a_descendant_selects_the_root_and_object_click_the_leaf() 
     );
 
     let mut editor = group_editor();
+    click_first_instance(&mut editor);
+    assert_eq!(editor.selected, Some(child.node));
+    assert_eq!(editor.selected_path, child.path);
+}
+
+#[test]
+fn hierarchy_click_in_a_three_level_chain_selects_the_root_not_the_parent() {
+    let mut editor = deep_group_editor();
+    let paths = editor.history.scene().transform_paths().unwrap();
+    let (root, child) = (&paths[0], &paths[2]);
+    assert_eq!(
+        (root.path.len(), paths[1].path.len(), child.path.len()),
+        (1, 2, 3)
+    );
+    editor.native_operation(Operation::SetSelectionMode(SelectionMode::Hierarchy));
+    click_first_instance(&mut editor);
+    assert_eq!(editor.selected, Some(root.node));
+    assert_eq!(editor.selected_path, root.path);
+
+    let mut editor = deep_group_editor();
     click_first_instance(&mut editor);
     assert_eq!(editor.selected, Some(child.node));
     assert_eq!(editor.selected_path, child.path);

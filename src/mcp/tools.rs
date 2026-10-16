@@ -192,7 +192,8 @@ impl ServerHandler for EditorServer {
 mod tests {
     use super::*;
     use crate::editor_operations::{
-        AttributeEditorTab, FileDecision, MAX_NAME_BYTES, MoveDistance, Operation, SidebarPanel,
+        AttributeEditorTab, FileDecision, MAX_NAME_BYTES, MoveDistance, Operation, SelectionMode,
+        SidebarPanel,
     };
     use crate::mcp::tool_names;
     use rmcp::model::{ErrorCode, JsonObject};
@@ -406,14 +407,20 @@ mod tests {
                 .to_string()
                 .contains("null")
         );
-        for mode in ["object", "face"] {
+        for (mode, expected) in [
+            ("object", SelectionMode::Object),
+            ("face", SelectionMode::Face),
+            ("hierarchy", SelectionMode::Hierarchy),
+        ] {
             let args = json!({"scene_token":token,"mode":mode});
-            assert!(matches!(
+            let Operation::SetSelectionMode(parsed) =
                 parse_request("set_selection_mode", args.as_object().unwrap().clone())
                     .unwrap()
-                    .operation,
-                Operation::SetSelectionMode(_)
-            ));
+                    .operation
+            else {
+                panic!("{mode} did not parse to SetSelectionMode");
+            };
+            assert_eq!(parsed, expected);
         }
         for mode in [json!(null), json!(false), json!("vertex"), json!("Face")] {
             let args = json!({"scene_token":token,"mode":mode});
