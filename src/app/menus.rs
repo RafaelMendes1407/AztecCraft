@@ -132,9 +132,9 @@ impl Editor {
             });
         });
         ui.separator();
+        self.status_line(ui);
+        ui.separator();
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Modeling").strong());
-            ui.separator();
             if crate::tool_icons::button(ui, "Cube", UiIcon::PolyCube, authoring).clicked() {
                 self.create(Primitive::Cube);
             }

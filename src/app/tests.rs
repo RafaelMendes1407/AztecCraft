@@ -1939,17 +1939,26 @@ fn key(key: Key) -> egui::Event {
 }
 
 fn frame(editor: &mut Editor, ctx: &egui::Context, events: Vec<egui::Event>) -> egui::FullOutput {
-    let mut output = ctx.run_ui(
-        egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(1440.0, 900.0),
-            )),
-            events,
-            ..Default::default()
-        },
-        |ui| editor.render(ui),
-    );
+    frame_with(editor, ctx, egui::vec2(1440.0, 900.0), 1.0, events)
+}
+
+/// `size` is in points; `ppp` is the native pixels per point reported to egui.
+pub(in crate::app) fn frame_with(
+    editor: &mut Editor,
+    ctx: &egui::Context,
+    size: egui::Vec2,
+    ppp: f32,
+    events: Vec<egui::Event>,
+) -> egui::FullOutput {
+    let mut input = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+        events,
+        ..Default::default()
+    };
+    if let Some(viewport) = input.viewports.get_mut(&egui::ViewportId::ROOT) {
+        viewport.native_pixels_per_point = Some(ppp);
+    }
+    let mut output = ctx.run_ui(input, |ui| editor.render(ui));
     output.textures_delta.clear();
     output
 }
