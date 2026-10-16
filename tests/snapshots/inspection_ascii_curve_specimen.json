@@ -115,6 +115,9 @@
     "selected_node": null,
     "selection_mode": "object",
     "shapes": [],
+    "sidebar_panels": {
+      "channel_box": true
+    },
     "source_appearance": {
       "checked_source_bindings": 0,
       "issues": {

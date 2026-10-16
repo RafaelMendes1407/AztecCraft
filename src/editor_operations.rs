@@ -14,6 +14,12 @@ use std::path::PathBuf;
 #[cfg(feature = "mcp")]
 use rmcp::schemars;
 
+/// Sidebar panels the editor implements; the dock shows at most one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SidebarPanel {
+    ChannelBox,
+}
+
 #[derive(Clone, Copy, Debug, Serialize)]
 #[cfg(any(test, feature = "mcp"))]
 pub struct TransformInput {
@@ -162,6 +168,10 @@ pub enum Operation {
     SetGridVisible {
         visible: bool,
     },
+    SetSidebarPanelVisible {
+        panel: SidebarPanel,
+        visible: bool,
+    },
     Orbit {
         radians: [f32; 2],
     },
@@ -241,6 +251,7 @@ pub struct SceneInspection {
     pub viewport_backend: &'static str,
     pub viewport_error: Option<crate::viewport_renderer::ViewportError>,
     pub grid_visible: bool,
+    pub sidebar_panels: SidebarPanelsInspection,
     pub depth_complete: bool,
     pub clipping_complete: bool,
     pub appearance_incomplete: bool,
@@ -350,6 +361,11 @@ impl From<NativeTransform> for AuthoringTransformInspection {
             scale: value.scale,
         }
     }
+}
+#[derive(Debug, Serialize)]
+#[cfg(any(test, feature = "mcp"))]
+pub struct SidebarPanelsInspection {
+    pub channel_box: bool,
 }
 #[derive(Debug, Serialize)]
 #[cfg(any(test, feature = "mcp"))]

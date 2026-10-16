@@ -522,6 +522,10 @@ fn seeds(t: &Targets) -> Vec<Operation> {
         Operation::Redo,
         Operation::FrameSelected,
         Operation::SetGridVisible { visible: false },
+        Operation::SetSidebarPanelVisible {
+            panel: crate::editor_operations::SidebarPanel::ChannelBox,
+            visible: false,
+        },
         Operation::Orbit {
             radians: [0.1, 0.0],
         },
@@ -782,6 +786,13 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
             "set_grid_visible(false)",
             Operation::SetGridVisible { visible: false },
         )],
+        Operation::SetSidebarPanelVisible { .. } => vec![sample(
+            "set_sidebar_panel_visible(channel_box,false)",
+            Operation::SetSidebarPanelVisible {
+                panel: crate::editor_operations::SidebarPanel::ChannelBox,
+                visible: false,
+            },
+        )],
         Operation::Orbit { .. } => vec![sample(
             "orbit",
             Operation::Orbit {
@@ -845,6 +856,13 @@ fn observe(editor: &Editor, roots: &[&std::path::Path]) -> Observed {
         ),
         ("active_tool", format!("{:?}", editor.active_tool)),
         ("grid", editor.grid_visible.to_string()),
+        (
+            "sidebar_panels",
+            format!(
+                "channel_box={}",
+                editor.sidebar_panel_visible(crate::editor_operations::SidebarPanel::ChannelBox)
+            ),
+        ),
         ("camera", format!("{:?}", editor.camera)),
         (
             "status",

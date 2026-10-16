@@ -201,6 +201,9 @@ impl Editor {
             },
             viewport_error,
             grid_visible: self.grid_visible,
+            sidebar_panels: SidebarPanelsInspection {
+                channel_box: self.sidebar_panel_visible(SidebarPanel::ChannelBox),
+            },
             depth_complete: gpu_healthy,
             clipping_complete: gpu_healthy,
             appearance_incomplete: self.history.scene().appearance_incomplete(),

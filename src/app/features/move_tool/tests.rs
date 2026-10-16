@@ -1,4 +1,5 @@
 use super::*;
+use crate::editor_operations::SidebarPanel;
 use eframe::egui::{self, Event, Key, Modifiers, PointerButton, Pos2, Rect, Shape};
 
 fn raw(size: egui::Vec2, origin: Pos2, scale: f32, events: Vec<Event>) -> egui::RawInput {
@@ -1349,6 +1350,10 @@ fn native_face_mode_switch_cancels_an_active_native_move_and_remote_move_blocks_
         Operation::SetSelectionMode(SelectionMode::Face),
         Operation::SelectFace { target: None },
         Operation::SetGridVisible { visible: false },
+        Operation::SetSidebarPanelVisible {
+            panel: SidebarPanel::ChannelBox,
+            visible: false,
+        },
     ] {
         assert!(matches!(
             editor.apply_operation_guarded(ManipulationProvenance::Remote, operation, &|| true),
@@ -1361,6 +1366,16 @@ fn native_face_mode_switch_cancels_an_active_native_move_and_remote_move_blocks_
     assert!(
         editor.grid_visible,
         "native Grid toggle is refused during a Move"
+    );
+    assert!(editor.sidebar_panel_visible(SidebarPanel::ChannelBox));
+    editor.status.clear();
+    editor.native_operation(Operation::SetSidebarPanelVisible {
+        panel: SidebarPanel::ChannelBox,
+        visible: false,
+    });
+    assert!(
+        editor.sidebar_panel_visible(SidebarPanel::ChannelBox),
+        "native sidebar toggle is refused during a Move"
     );
     assert_eq!(editor.status, OperationError::BusyManipulation.to_string());
 }

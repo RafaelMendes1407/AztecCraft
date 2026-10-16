@@ -6,11 +6,11 @@
 ## idle / native
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene edited" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
-    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
-    dirty=true can_undo=true can_redo=true
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene edited"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=false closing=false pending_action=- dirty=true can_undo=true can_redo=true
   save_scene => Err(NativeSave: this native scene or platform cannot be written) | no state change
   save_scene_as => Err(NativeSave: this native scene or platform cannot be written) | no state change
   resolve_file_action(save) => Err(StalePendingAction: pending file action is absent or stale; inspect before deciding) | no state change
@@ -18,11 +18,11 @@
 ## idle / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene edited" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
-    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
-    dirty=true can_undo=true can_redo=true
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene edited"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=false closing=false pending_action=- dirty=true can_undo=true can_redo=true
   save_scene => Err(NativeSave: this native scene or platform cannot be written) | no state change
   save_scene_as => Err(NativeSave: this native scene or platform cannot be written) | no state change
   resolve_file_action(save) => Err(StalePendingAction: pending file action is absent or stale; inspect before deciding) | no state change
@@ -30,11 +30,11 @@
 ## closing / native
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene edited" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
-    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=true pending_action=-
-    dirty=true can_undo=true can_redo=true
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene edited"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=false closing=true pending_action=- dirty=true can_undo=true can_redo=true
   save_scene => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   save_scene_as => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   resolve_file_action(save) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -42,11 +42,11 @@
 ## closing / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene edited" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
-    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=true pending_action=-
-    dirty=true can_undo=true can_redo=true
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene edited"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=false closing=true pending_action=- dirty=true can_undo=true can_redo=true
   save_scene => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   save_scene_as => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   resolve_file_action(save) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -54,11 +54,11 @@
 ## modal / native
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene edited" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
-    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=true closing=false
-    pending_action=New dirty=true can_undo=true can_redo=true
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene edited"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=true closing=false pending_action=New dirty=true can_undo=true can_redo=true
   save_scene => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   save_scene_as => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   resolve_file_action(save) => Err(NativeSave: this native scene or platform cannot be written) | no state change
@@ -66,11 +66,11 @@
 ## modal / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene edited" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
-    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=true closing=false
-    pending_action=New dirty=true can_undo=true can_redo=true
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene edited"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=true closing=false pending_action=New dirty=true can_undo=true can_redo=true
   save_scene => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   save_scene_as => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   resolve_file_action(save) => Err(NativeSave: this native scene or platform cannot be written) | no state change
@@ -78,11 +78,11 @@
 ## local_move / native
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Move grid=true status="Scene edited" status_is_error=false active_move=native
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
-    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
-    dirty=true can_undo=true can_redo=true
+    active_tool=Move grid=true sidebar_panels=channel_box=true status="Scene edited"
+    status_is_error=false active_move=native native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=false closing=false pending_action=- dirty=true can_undo=true can_redo=true
   save_scene => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   save_scene_as => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   resolve_file_action(save) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
@@ -90,11 +90,11 @@
 ## local_move / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Move grid=true status="Scene edited" status_is_error=false active_move=native
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
-    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
-    dirty=true can_undo=true can_redo=true
+    active_tool=Move grid=true sidebar_panels=channel_box=true status="Scene edited"
+    status_is_error=false active_move=native native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=false closing=false pending_action=- dirty=true can_undo=true can_redo=true
   save_scene => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   save_scene_as => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   resolve_file_action(save) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
@@ -102,11 +102,11 @@
 ## remote_move / native
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Move grid=true status="Scene edited" status_is_error=false active_move=remote
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
-    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
-    dirty=true can_undo=true can_redo=true
+    active_tool=Move grid=true sidebar_panels=channel_box=true status="Scene edited"
+    status_is_error=false active_move=remote native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=false closing=false pending_action=- dirty=true can_undo=true can_redo=true
   save_scene => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   save_scene_as => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   resolve_file_action(save) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
@@ -114,11 +114,11 @@
 ## remote_move / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Move grid=true status="Scene edited" status_is_error=false active_move=remote
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
-    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
-    dirty=true can_undo=true can_redo=true
+    active_tool=Move grid=true sidebar_panels=channel_box=true status="Scene edited"
+    status_is_error=false active_move=remote native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=false closing=false pending_action=- dirty=true can_undo=true can_redo=true
   save_scene => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   save_scene_as => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
   resolve_file_action(save) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
@@ -126,11 +126,11 @@
 ## name_draft / native
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene edited" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=true
-    has_channel_draft=true name_intent=false material_draft=- name_field="draft name"
-    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
-    dirty=true can_undo=true can_redo=true
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene edited"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=true has_channel_draft=true name_intent=false
+    material_draft=- name_field="draft name" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=false closing=false pending_action=- dirty=true can_undo=true can_redo=true
   save_scene => Err(InvalidInput: new names require the supported ASCII identifier subset) | status: "Scene edited" -> "new names require the supported ASCII identifier subset"; status_is_error: false -> true
   save_scene_as => Err(InvalidInput: new names require the supported ASCII identifier subset) | status: "Scene edited" -> "new names require the supported ASCII identifier subset"; status_is_error: false -> true
   resolve_file_action(save) => Err(StalePendingAction: pending file action is absent or stale; inspect before deciding) | no state change
@@ -138,11 +138,11 @@
 ## name_draft / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene edited" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=true
-    has_channel_draft=true name_intent=false material_draft=- name_field="draft name"
-    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
-    dirty=true can_undo=true can_redo=true
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene edited"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=true has_channel_draft=true name_intent=false
+    material_draft=- name_field="draft name" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=false closing=false pending_action=- dirty=true can_undo=true can_redo=true
   save_scene => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   save_scene_as => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   resolve_file_action(save) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -150,12 +150,12 @@
 ## material_draft / native
   baseline:
     nodes=2 selected=object selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Ready | Create a cube, plane or sphere to start"
-    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
-    pointer_suppress_primary=false has_draft=true has_channel_draft=false name_intent=false
-    material_draft=text=0.5 intent=false name_field="object" channel_fields=1,2,3,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=false pending_action=- dirty=true can_undo=false
-    can_redo=false
+    active_tool=Select grid=true sidebar_panels=channel_box=true
+    status="Ready | Create a cube, plane or sphere to start" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=true
+    has_channel_draft=false name_intent=false material_draft=text=0.5 intent=false name_field="object"
+    channel_fields=1,2,3,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
+    dirty=true can_undo=false can_redo=false
   save_scene => Err(NativeSave: this native scene or platform cannot be written) | scene changed; status: "Ready | Create a cube, plane or sphere to start" -> "Material data edited"; has_draft: true -> false; can_undo: false -> true
   save_scene_as => Err(NativeSave: this native scene or platform cannot be written) | scene changed; status: "Ready | Create a cube, plane or sphere to start" -> "Material data edited"; has_draft: true -> false; can_undo: false -> true
   resolve_file_action(save) => Err(StalePendingAction: pending file action is absent or stale; inspect before deciding) | no state change
@@ -163,12 +163,12 @@
 ## material_draft / remote
   baseline:
     nodes=2 selected=object selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Ready | Create a cube, plane or sphere to start"
-    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
-    pointer_suppress_primary=false has_draft=true has_channel_draft=false name_intent=false
-    material_draft=text=0.5 intent=false name_field="object" channel_fields=1,2,3,0,0,0,1,1,1
-    channel_intents=000000000 modal=false closing=false pending_action=- dirty=true can_undo=false
-    can_redo=false
+    active_tool=Select grid=true sidebar_panels=channel_box=true
+    status="Ready | Create a cube, plane or sphere to start" status_is_error=false active_move=none
+    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=true
+    has_channel_draft=false name_intent=false material_draft=text=0.5 intent=false name_field="object"
+    channel_fields=1,2,3,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
+    dirty=true can_undo=false can_redo=false
   save_scene => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   save_scene_as => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   resolve_file_action(save) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -176,11 +176,11 @@
 ## channel_draft / native
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene edited" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=true
-    has_channel_draft=true name_intent=false material_draft=- name_field="pCube1"
-    channel_fields=5,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
-    dirty=true can_undo=true can_redo=true
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene edited"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=true has_channel_draft=true name_intent=false
+    material_draft=- name_field="pCube1" channel_fields=5,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=false closing=false pending_action=- dirty=true can_undo=true can_redo=true
   save_scene => Err(NativeSave: this native scene or platform cannot be written) | scene changed; has_draft: true -> false; has_channel_draft: true -> false; can_redo: true -> false
   save_scene_as => Err(NativeSave: this native scene or platform cannot be written) | scene changed; has_draft: true -> false; has_channel_draft: true -> false; can_redo: true -> false
   resolve_file_action(save) => Err(StalePendingAction: pending file action is absent or stale; inspect before deciding) | no state change
@@ -188,11 +188,11 @@
 ## channel_draft / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene edited" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=true
-    has_channel_draft=true name_intent=false material_draft=- name_field="pCube1"
-    channel_fields=5,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
-    dirty=true can_undo=true can_redo=true
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene edited"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=true has_channel_draft=true name_intent=false
+    material_draft=- name_field="pCube1" channel_fields=5,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=false closing=false pending_action=- dirty=true can_undo=true can_redo=true
   save_scene => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   save_scene_as => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   resolve_file_action(save) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -200,11 +200,11 @@
 ## text_focus / native
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene edited" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
-    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
-    dirty=true can_undo=true can_redo=true
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene edited"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=false closing=false pending_action=- dirty=true can_undo=true can_redo=true
   save_scene => Err(NativeSave: this native scene or platform cannot be written) | no state change
   save_scene_as => Err(NativeSave: this native scene or platform cannot be written) | no state change
   resolve_file_action(save) => Err(StalePendingAction: pending file action is absent or stale; inspect before deciding) | no state change
@@ -212,11 +212,11 @@
 ## text_focus / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene edited" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
-    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
-    dirty=true can_undo=true can_redo=true
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene edited"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=false closing=false pending_action=- dirty=true can_undo=true can_redo=true
   save_scene => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   save_scene_as => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   resolve_file_action(save) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -224,11 +224,11 @@
 ## native_input_pending / native
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene edited" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
-    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
-    dirty=true can_undo=true can_redo=true
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene edited"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=false closing=false pending_action=- dirty=true can_undo=true can_redo=true
   save_scene => Err(NativeSave: this native scene or platform cannot be written) | no state change
   save_scene_as => Err(NativeSave: this native scene or platform cannot be written) | no state change
   resolve_file_action(save) => Err(StalePendingAction: pending file action is absent or stale; inspect before deciding) | no state change
@@ -236,11 +236,11 @@
 ## native_input_pending / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene edited" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
-    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
-    dirty=true can_undo=true can_redo=true
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene edited"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=false closing=false pending_action=- dirty=true can_undo=true can_redo=true
   save_scene => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   save_scene_as => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   resolve_file_action(save) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
@@ -248,11 +248,11 @@
 ## stale_token / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene edited" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
-    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
-    dirty=true can_undo=true can_redo=true
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene edited"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=false closing=false pending_action=- dirty=true can_undo=true can_redo=true
   save_scene => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   save_scene_as => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   resolve_file_action(save) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
@@ -260,11 +260,11 @@
 ## stale_token+local_move / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Move grid=true status="Scene edited" status_is_error=false active_move=native
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
-    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
-    dirty=true can_undo=true can_redo=true
+    active_tool=Move grid=true sidebar_panels=channel_box=true status="Scene edited"
+    status_is_error=false active_move=native native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=false closing=false pending_action=- dirty=true can_undo=true can_redo=true
   save_scene => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   save_scene_as => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   resolve_file_action(save) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
@@ -272,11 +272,11 @@
 ## stale_token+remote_move / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Move grid=true status="Scene edited" status_is_error=false active_move=remote
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
-    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
-    dirty=true can_undo=true can_redo=true
+    active_tool=Move grid=true sidebar_panels=channel_box=true status="Scene edited"
+    status_is_error=false active_move=remote native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=false closing=false pending_action=- dirty=true can_undo=true can_redo=true
   save_scene => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   save_scene_as => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   resolve_file_action(save) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
@@ -284,11 +284,11 @@
 ## stale_token+closing / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene edited" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
-    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=true pending_action=-
-    dirty=true can_undo=true can_redo=true
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene edited"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=false closing=true pending_action=- dirty=true can_undo=true can_redo=true
   save_scene => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   save_scene_as => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   resolve_file_action(save) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
@@ -296,11 +296,11 @@
 ## stale_token+modal / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene edited" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
-    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=true closing=false
-    pending_action=New dirty=true can_undo=true can_redo=true
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene edited"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=true closing=false pending_action=New dirty=true can_undo=true can_redo=true
   save_scene => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   save_scene_as => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   resolve_file_action(save) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
@@ -308,11 +308,11 @@
 ## stale_token+name_draft / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene edited" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=true
-    has_channel_draft=true name_intent=false material_draft=- name_field="draft name"
-    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
-    dirty=true can_undo=true can_redo=true
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene edited"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=true has_channel_draft=true name_intent=false
+    material_draft=- name_field="draft name" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=false closing=false pending_action=- dirty=true can_undo=true can_redo=true
   save_scene => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   save_scene_as => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   resolve_file_action(save) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
@@ -320,11 +320,11 @@
 ## stale_token+native_input_pending / remote
   baseline:
     nodes=1 selected=pCube1 selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene edited" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="pCube1"
-    channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false pending_action=-
-    dirty=true can_undo=true can_redo=true
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene edited"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=false closing=false pending_action=- dirty=true can_undo=true can_redo=true
   save_scene => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   save_scene_as => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
   resolve_file_action(save) => Err(StaleScene: Scene token is stale; inspect the current document) | no state change
@@ -332,11 +332,11 @@
 ## read_only_ascii / native
   baseline:
     nodes=1 selected=curve selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene ready" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="curve"
-    channel_fields=12,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false
-    pending_action=- dirty=false can_undo=false can_redo=false
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene ready"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="curve" channel_fields=12,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=false closing=false pending_action=- dirty=false can_undo=false can_redo=false
   save_scene => Err(NativeSave: this native scene or platform cannot be written) | no state change
   save_scene_as => Err(NativeSave: this native scene or platform cannot be written) | no state change
   resolve_file_action(save) => Err(StalePendingAction: pending file action is absent or stale; inspect before deciding) | no state change
@@ -344,11 +344,11 @@
 ## read_only_ascii / remote
   baseline:
     nodes=1 selected=curve selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene ready" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="curve"
-    channel_fields=12,0,0,0,0,0,1,1,1 channel_intents=000000000 modal=false closing=false
-    pending_action=- dirty=false can_undo=false can_redo=false
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene ready"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="curve" channel_fields=12,0,0,0,0,0,1,1,1 channel_intents=000000000
+    modal=false closing=false pending_action=- dirty=false can_undo=false can_redo=false
   save_scene => Err(NativeSave: this native scene or platform cannot be written) | no state change
   save_scene_as => Err(NativeSave: this native scene or platform cannot be written) | no state change
   resolve_file_action(save) => Err(StalePendingAction: pending file action is absent or stale; inspect before deciding) | no state change
@@ -356,11 +356,12 @@
 ## binary_dirty / native
   baseline:
     nodes=1 selected=object selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene ready" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="object"
-    channel_fields=16777218.125,-2,3,0,0,14.32394487827058,1,1,1 channel_intents=000000000 modal=false
-    closing=false pending_action=- dirty=true can_undo=true can_redo=false
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene ready"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="object" channel_fields=16777218.125,-2,3,0,0,14.32394487827058,1,1,1
+    channel_intents=000000000 modal=false closing=false pending_action=- dirty=true can_undo=true
+    can_redo=false
   save_scene => Ok(saved) | status: "Scene ready" -> "Scene saved"; dirty: true -> false
   save_scene_as => Ok(saved) | status: "Scene ready" -> "Scene saved"; dirty: true -> false
   resolve_file_action(save) => Err(StalePendingAction: pending file action is absent or stale; inspect before deciding) | no state change
@@ -368,11 +369,12 @@
 ## binary_dirty / remote
   baseline:
     nodes=1 selected=object selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene ready" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="object"
-    channel_fields=16777218.125,-2,3,0,0,14.32394487827058,1,1,1 channel_intents=000000000 modal=false
-    closing=false pending_action=- dirty=true can_undo=true can_redo=false
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene ready"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="object" channel_fields=16777218.125,-2,3,0,0,14.32394487827058,1,1,1
+    channel_intents=000000000 modal=false closing=false pending_action=- dirty=true can_undo=true
+    can_redo=false
   save_scene => Ok(saved) | status: "Scene ready" -> "Scene saved"; dirty: true -> false
   save_scene_as => Ok(saved) | status: "Scene ready" -> "Scene saved"; dirty: true -> false
   resolve_file_action(save) => Err(StalePendingAction: pending file action is absent or stale; inspect before deciding) | no state change
@@ -380,11 +382,12 @@
 ## no_install / native
   baseline:
     nodes=1 selected=object selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene ready" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="object"
-    channel_fields=16777218.125,-2,3,0,0,14.32394487827058,1,1,1 channel_intents=000000000 modal=false
-    closing=false pending_action=- dirty=true can_undo=true can_redo=false
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene ready"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="object" channel_fields=16777218.125,-2,3,0,0,14.32394487827058,1,1,1
+    channel_intents=000000000 modal=false closing=false pending_action=- dirty=true can_undo=true
+    can_redo=false
   save_scene => Err(NativeSave: save cancelled before installation) | no state change
   save_scene_as => Err(NativeSave: save cancelled before installation) | no state change
   resolve_file_action(save) => Err(StalePendingAction: pending file action is absent or stale; inspect before deciding) | no state change
@@ -392,11 +395,12 @@
 ## no_install / remote
   baseline:
     nodes=1 selected=object selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene ready" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="object"
-    channel_fields=16777218.125,-2,3,0,0,14.32394487827058,1,1,1 channel_intents=000000000 modal=false
-    closing=false pending_action=- dirty=true can_undo=true can_redo=false
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene ready"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="object" channel_fields=16777218.125,-2,3,0,0,14.32394487827058,1,1,1
+    channel_intents=000000000 modal=false closing=false pending_action=- dirty=true can_undo=true
+    can_redo=false
   save_scene => Err(NativeSave: save cancelled before installation) | no state change
   save_scene_as => Err(NativeSave: save cancelled before installation) | no state change
   resolve_file_action(save) => Err(StalePendingAction: pending file action is absent or stale; inspect before deciding) | no state change
@@ -404,11 +408,12 @@
 ## no_install_modal / native
   baseline:
     nodes=1 selected=object selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene ready" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="object"
-    channel_fields=16777218.125,-2,3,0,0,14.32394487827058,1,1,1 channel_intents=000000000 modal=true
-    closing=false pending_action=New dirty=true can_undo=true can_redo=false
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene ready"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="object" channel_fields=16777218.125,-2,3,0,0,14.32394487827058,1,1,1
+    channel_intents=000000000 modal=true closing=false pending_action=New dirty=true can_undo=true
+    can_redo=false
   save_scene => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   save_scene_as => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   resolve_file_action(save) => Err(NativeSave: save cancelled before installation) | no state change
@@ -416,11 +421,12 @@
 ## no_install_modal / remote
   baseline:
     nodes=1 selected=object selected_path_len=1 selection_mode=Object face_remembered=false
-    active_tool=Select grid=true status="Scene ready" status_is_error=false active_move=none
-    native_move_drag=false pointer_consumed_frame=false pointer_suppress_primary=false has_draft=false
-    has_channel_draft=false name_intent=false material_draft=- name_field="object"
-    channel_fields=16777218.125,-2,3,0,0,14.32394487827058,1,1,1 channel_intents=000000000 modal=true
-    closing=false pending_action=New dirty=true can_undo=true can_redo=false
+    active_tool=Select grid=true sidebar_panels=channel_box=true status="Scene ready"
+    status_is_error=false active_move=none native_move_drag=false pointer_consumed_frame=false
+    pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
+    material_draft=- name_field="object" channel_fields=16777218.125,-2,3,0,0,14.32394487827058,1,1,1
+    channel_intents=000000000 modal=true closing=false pending_action=New dirty=true can_undo=true
+    can_redo=false
   save_scene => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   save_scene_as => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
   resolve_file_action(save) => Err(NativeSave: save cancelled before installation) | no state change

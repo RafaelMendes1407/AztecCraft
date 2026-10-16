@@ -1,6 +1,6 @@
 use super::*;
 use crate::app::tests::frame_with;
-use crate::editor_operations::SelectionMode;
+use crate::editor_operations::{SelectionMode, SidebarPanel};
 use azteccraft::scene::NodeId;
 use eframe::egui::{Event, Key, Modifiers, PointerButton, Pos2, Rect, Vec2, accesskit};
 
@@ -11,6 +11,7 @@ const MODES: [&str; 3] = [
     "Component selection",
 ];
 const HIERARCHY: &str = "Hierarchy selection";
+const CHANNEL_BOX: &str = "Channel Box / Layer Editor";
 const TOGGLES: [&str; 5] = [
     "Modeling Toolkit",
     "HumanIK",
@@ -190,10 +191,9 @@ fn clicking_disabled_strip_buttons_changes_nothing() {
     frame_with(&mut editor, &context, SIZE, 1.0, vec![]);
     let output = frame_with(&mut editor, &context, SIZE, 1.0, vec![]);
     let before = snapshot(&editor);
-    for control in strip(&output)
-        .iter()
-        .filter(|c| c.label == HIERARCHY || TOGGLES.contains(&c.label.as_str()))
-    {
+    for control in strip(&output).iter().filter(|c| {
+        c.label == HIERARCHY || (TOGGLES.contains(&c.label.as_str()) && c.label != CHANNEL_BOX)
+    }) {
         assert!(control.disabled, "{}", control.label);
         click(&mut editor, &context, control.rect.center());
         assert_eq!(snapshot(&editor), before, "{}", control.label);
@@ -245,7 +245,7 @@ fn every_strip_control_has_its_label_and_disabled_state() {
         assert_eq!(control.role, accesskit::Role::Button, "{name}");
         assert_eq!(
             control.disabled,
-            *name == HIERARCHY || TOGGLES.contains(name),
+            *name == HIERARCHY || (TOGGLES.contains(name) && *name != CHANNEL_BOX),
             "{name}"
         );
     }
@@ -269,7 +269,10 @@ fn tab_to_combo(editor: &mut Editor, context: &egui::Context) {
         let focused = found.iter().find(|c| Some(c.id) == focus);
         match focused {
             Some(c) if c.role == accesskit::Role::ComboBox => return,
-            Some(c) if c.label == HIERARCHY || TOGGLES.contains(&c.label.as_str()) => {
+            Some(c)
+                if c.label == HIERARCHY
+                    || (TOGGLES.contains(&c.label.as_str()) && c.label != CHANNEL_BOX) =>
+            {
                 panic!("Tab focused disabled strip button {}", c.label)
             }
             Some(_) => {}
@@ -295,7 +298,8 @@ fn keyboard_activates_the_enabled_combo_and_skips_disabled_buttons() {
         let focused = controls(&output).into_iter().find(|c| Some(c.id) == focus);
         if let Some(c) = focused {
             assert!(
-                c.label != HIERARCHY && !TOGGLES.contains(&c.label.as_str()),
+                c.label != HIERARCHY
+                    && (!TOGGLES.contains(&c.label.as_str()) || c.label == CHANNEL_BOX),
                 "Tab focused disabled {}",
                 c.label
             );
@@ -603,4 +607,80 @@ fn strip_click_with_a_popup_open_is_dropped_like_the_menu_path() {
     assert_eq!(editor.selection_mode, SelectionMode::Object);
     assert!(!editor.error);
     assert_eq!(snapshot(&editor).3, before.3);
+}
+
+fn channel_panel_drawn(output: &egui::FullOutput) -> bool {
+    output.shapes.iter().any(|shape| {
+        matches!(&shape.shape, egui::Shape::Text(text) if text.galley.job.text == "Channel Box")
+    })
+}
+
+#[test]
+fn channel_box_toggle_hides_and_shows_the_panel_after_the_click_frame() {
+    let (mut editor, context) = setup();
+    let output = strip_output(&mut editor, &context);
+    assert!(channel_panel_drawn(&output));
+    let at = button_center(&output, CHANNEL_BOX);
+    let token = editor.scene_token;
+    for visible in [false, true] {
+        click(&mut editor, &context, at);
+        assert_eq!(
+            editor.sidebar_panel_visible(SidebarPanel::ChannelBox),
+            visible
+        );
+        let output = frame_with(&mut editor, &context, SIZE, 1.0, vec![]);
+        assert_eq!(channel_panel_drawn(&output), visible);
+        let control = strip(&output)
+            .into_iter()
+            .find(|c| c.label == CHANNEL_BOX)
+            .unwrap();
+        assert_eq!(control.selected, Some(visible));
+        assert!(!control.disabled);
+        assert_eq!(editor.scene_token, token);
+        assert!(editor.sidebar_panel_request.is_none());
+    }
+}
+
+#[test]
+fn channel_box_toggle_is_disabled_for_modal_closing_and_move() {
+    for blocked in 0..3 {
+        let (mut editor, context) = setup();
+        match blocked {
+            0 => {
+                editor.new_document().unwrap();
+            }
+            1 => {
+                editor.close_document().unwrap();
+            }
+            _ => {
+                let target = editor.selected_move_target().unwrap();
+                editor
+                    .apply_operation(crate::editor_operations::Operation::BeginMove {
+                        target,
+                        axis: azteccraft::native_scene::WorldAxis::X,
+                    })
+                    .unwrap();
+            }
+        }
+        let output = strip_output(&mut editor, &context);
+        let toggle = &SIDEBAR_TOGGLES[4];
+        let expected = ["a dialog is open", "a dialog is open", "a Move is active"];
+        assert_eq!(
+            editor.sidebar_toggle_hover(toggle),
+            format!(
+                "Channel Box / Layer Editor: unavailable while {}",
+                expected[blocked]
+            )
+        );
+        let control = strip(&output)
+            .into_iter()
+            .find(|c| c.label == CHANNEL_BOX)
+            .unwrap();
+        assert!(control.disabled, "blocked {blocked}");
+        click(&mut editor, &context, control.rect.center());
+        assert!(
+            editor.sidebar_panel_visible(SidebarPanel::ChannelBox),
+            "blocked {blocked}"
+        );
+    }
 }
