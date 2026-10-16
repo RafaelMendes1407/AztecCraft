@@ -28,7 +28,7 @@ Menu bar draws File, Edit, Create, Select, Modify, Mesh, UV, Windows, Render and
 | Edit menu | [menus] | Supported | src/app.rs:1135 "Edit" (Undo, Redo, Delete only) | `undo`, `redo`, `delete_node` | P1 | S6 Menu content (#66) |
 | Create menu | [menus] | Supported | src/app.rs:1170 "Create" (Polygon cube, plane and provisional sphere, cylinder and cone; other primitives at :1179 "Other primitives" are Visible-unsupported, source-verified; current main also disables these for read-only curve scenes (after ef86b64)) | `create_primitive` | P1 | S6 Menu content (#66) |
 | Select menu | [menus] | Supported | src/app.rs:1181 "Select" (Object/Component F8, Face F11) | `set_selection_mode`, `select_node`, `select_face` | P1 | S3 Component modes (#29) |
-| Select > Components: Vertex, Edge, UV | [select] | Visible-unsupported | src/app.rs:1194 "Vertices" (single disabled entry; source-verified) | none | P1 | S3 Component modes (#29) |
+| Select > Components: Vertex, Edge, UV | [select] | Visible-unsupported | src/app.rs:1194 "Vertices" (single disabled entry; source-verified) | `set_selection_mode` `vertex` and `select_vertex` (MCP only; no native control yet) | P1 | S3 Component modes (#29) |
 | Modify menu | [menus] | Visible-unsupported | src/app.rs:1197-1199 "Modify" (disabled placeholder entry; source-verified) | none | P1 | S6 Menu content (#66) |
 | Display menu | [menus] | Missing | absent from the menu label list at src/app.rs:1197 | none | P2 | S6 Menu content (#66) |
 | Display menu items (Heads-up display, UI Elements and others) | source not yet researched | Missing | absent; no Display menu is drawn | none | P2 | S6 Menu content (#66) |
@@ -262,7 +262,7 @@ Editor::shortcuts at src/app.rs:953 handles Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z, F, Cmd
 | Y Last Used tool | [toolbox] | Missing | no key handler | none | P2 | S5 Hotkeys (#32) |
 | F8 toggle Object/Component | [select] | Partial | src/app.rs:1577 "Key::F8" (toggles Object and Face; from Hierarchy it goes to Face, PROVISIONAL) | `set_selection_mode` | P1 | S1 Status Line strip (#59) |
 | B soft selection | [select] | Missing | no key handler | none | P2 | S3 Component modes (#29) |
-| F9 Vertex | [select-2025] FALLBACK 2025; UNCONFIRMED for 2026 | Missing | no key handler | none | P1 | S3 Component modes (#29) |
+| F9 Vertex | [select-2025] FALLBACK 2025; UNCONFIRMED for 2026 | Missing | no key handler | `set_selection_mode` `vertex` and `select_vertex` (MCP only) | P1 | S3 Component modes (#29) |
 | F10 Edge | [select-2025] FALLBACK 2025; UNCONFIRMED for 2026 | Missing | no key handler | none | P1 | S3 Component modes (#29) |
 | F11 Face | [select-2025] FALLBACK 2025; UNCONFIRMED for 2026 | Supported | src/app.rs:1577 "Key::F11" | `set_selection_mode`, `select_face` | P1 | S3 Component modes (#29) |
 | Alt+F9 Vertex Face | [select-2025] FALLBACK 2025; UNCONFIRMED for 2026 | Missing | no key handler | none | P2 | S3 Component modes (#29) |

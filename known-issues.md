@@ -184,6 +184,17 @@ tolerance and preselection defaults are UNCONFIRMED for 2026. Candidates are
 ranked by pointer distance, then depth, then source order, which is also an
 application policy.
 
+## Inspection budget for remembered component paths lacks a regression test
+
+**Severity:** low
+**Area:** MCP inspection
+
+`Editor::inspect` adds the `remembered_face` and `remembered_vertex` path bytes
+to the path total before comparing against the inspection limit. The per-pick
+path cap (`MAX_TRANSFORM_DEPTH + 1`) is tested for the vertex. The aggregate
+sum term is not tested for either type (pre-existing for the face, now also for
+the vertex), so dropping it fails no test.
+
 ## Static ASCII curves have bounded read-only coverage
 
 **Severity:** high

@@ -117,6 +117,7 @@
     },
     "read_only_reason": null,
     "remembered_face": null,
+    "remembered_vertex": null,
     "retained_source_bytes": 0,
     "retained_source_records": 0,
     "save_as_available": false,

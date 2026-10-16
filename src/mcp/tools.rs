@@ -342,7 +342,7 @@ mod tests {
                 "create_primitive" => json!({"scene_token":token,"primitive":"cube"}),
                 "select_node" => json!({"scene_token":token,"node_id":null}),
                 "set_selection_mode" => json!({"scene_token":token,"mode":"face"}),
-                "select_face" => json!({"scene_token":token,"target":null}),
+                "select_face" | "select_vertex" => json!({"scene_token":token,"target":null}),
                 "rename_node" => json!({"scene_token":token,"node_id":"1","name":"cube"}),
                 "edit_node" => json!({"scene_token":token,"node_id":"1"}),
                 "set_material_diffuse" => json!({"scene_token":token,"shape_id":"2","value":1.25}),
@@ -461,6 +461,7 @@ mod tests {
                     | "set_selection_mode"
                     | "select_face"
                     | "set_session_material_color"
+                    | "select_vertex"
             );
             assert_eq!(
                 tool.annotations.unwrap().idempotent_hint == Some(true),
@@ -499,6 +500,7 @@ mod tests {
             ("object", SelectionMode::Object),
             ("face", SelectionMode::Face),
             ("hierarchy", SelectionMode::Hierarchy),
+            ("vertex", SelectionMode::Vertex),
         ] {
             let args = json!({"scene_token":token,"mode":mode});
             let Operation::SetSelectionMode(parsed) =
@@ -510,7 +512,13 @@ mod tests {
             };
             assert_eq!(parsed, expected);
         }
-        for mode in [json!(null), json!(false), json!("vertex"), json!("Face")] {
+        for mode in [
+            json!(null),
+            json!(false),
+            json!("uv"),
+            json!("edge"),
+            json!("Face"),
+        ] {
             let args = json!({"scene_token":token,"mode":mode});
             assert!(
                 parse_request("set_selection_mode", args.as_object().unwrap().clone()).is_err()
@@ -588,6 +596,104 @@ mod tests {
         let mut boundary = valid;
         boundary["target"]["instance_path"] = json!(vec!["1"; 257]);
         assert!(parse_request("select_face", boundary.as_object().unwrap().clone()).is_ok());
+    }
+
+    #[test]
+    fn vertex_selection_schema_and_parser_require_complete_target_or_null() {
+        let token = Uuid::new_v4().to_string();
+        let tools = catalog();
+        let vertex = tools
+            .iter()
+            .find(|tool| tool.name == "select_vertex")
+            .unwrap();
+        assert_eq!(
+            vertex.input_schema["required"],
+            json!(["scene_token", "target"])
+        );
+        let target_schema = &vertex.input_schema["$defs"]["VertexSelectionTarget"];
+        assert_eq!(target_schema["additionalProperties"], false);
+        assert_eq!(target_schema["properties"]["instance_path"]["minItems"], 2);
+        assert_eq!(
+            target_schema["properties"]["instance_path"]["maxItems"],
+            257
+        );
+        assert!(
+            vertex.input_schema["properties"]["target"]
+                .to_string()
+                .contains("null")
+        );
+        let parse = |args: &serde_json::Value| {
+            parse_request("select_vertex", args.as_object().unwrap().clone())
+        };
+        assert!(matches!(
+            parse(&json!({"scene_token":token,"target":null}))
+                .unwrap()
+                .operation,
+            Operation::SelectVertex { target: None }
+        ));
+        let valid = json!({"scene_token":token,"target":{"node_id":"1","shape_id":"2","instance_path":["1","2"],"vertex_index":7}});
+        let Operation::SelectVertex {
+            target: Some(target),
+        } = parse(&valid).unwrap().operation
+        else {
+            panic!("expected vertex target")
+        };
+        assert_eq!(target.transform.to_decimal(), "1");
+        assert_eq!(target.shape.to_decimal(), "2");
+        assert_eq!(
+            target
+                .path
+                .iter()
+                .map(|id| id.to_decimal())
+                .collect::<Vec<_>>(),
+            ["1", "2"]
+        );
+        assert_eq!(target.vertex_index, 7);
+        for (field, values) in [
+            (
+                "node_id",
+                vec![json!(1), json!("+1"), json!("18446744073709551616")],
+            ),
+            ("shape_id", vec![json!(null), json!(""), json!("-1")]),
+            (
+                "instance_path",
+                vec![
+                    json!([]),
+                    json!(["1"]),
+                    json!(vec!["1"; 258]),
+                    json!(["1", 2]),
+                    json!(["1", "+2"]),
+                ],
+            ),
+            (
+                "vertex_index",
+                vec![json!(-1), json!(0.5), json!("0"), json!(null), json!(1e20)],
+            ),
+        ] {
+            for value in values {
+                let mut args = valid.clone();
+                args["target"][field] = value;
+                assert!(parse(&args).is_err(), "{field}");
+            }
+        }
+        for field in ["node_id", "shape_id", "instance_path", "vertex_index"] {
+            let mut args = valid.clone();
+            args["target"].as_object_mut().unwrap().remove(field);
+            assert!(parse(&args).is_err(), "missing {field}");
+        }
+        let mut face_field = valid.clone();
+        face_field["target"]["face_index"] = json!(0);
+        for args in [
+            json!({"scene_token":token}),
+            json!({"scene_token":token,"target":null,"extra":true}),
+            json!({"scene_token":token,"target":{"node_id":"1","shape_id":"2","instance_path":["1","2"],"vertex_index":0,"extra":true}}),
+            face_field,
+        ] {
+            assert!(parse(&args).is_err());
+        }
+        let mut boundary = valid;
+        boundary["target"]["instance_path"] = json!(vec!["1"; 257]);
+        assert!(parse(&boundary).is_ok());
     }
 
     #[test]

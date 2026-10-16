@@ -178,10 +178,10 @@ pub enum Operation {
         target: Option<FaceTarget>,
     },
     #[cfg_attr(
-        not(test),
+        not(any(test, feature = "mcp")),
         expect(
             dead_code,
-            reason = "no user surface selects vertices until MCP and the viewport click land"
+            reason = "only the MCP tool selects vertices until the viewport click lands"
         )
     )]
     SelectVertex {
@@ -348,6 +348,7 @@ pub struct SceneInspection {
     pub selected_instance_path: Vec<String>,
     pub selection_mode: SelectionMode,
     pub remembered_face: Option<FaceSelectionTarget>,
+    pub remembered_vertex: Option<VertexSelectionTarget>,
     pub face_selection_policy: FaceSelectionPolicy,
     pub can_undo: bool,
     pub can_redo: bool,
@@ -369,6 +370,18 @@ pub struct FaceSelectionTarget {
     #[cfg_attr(feature = "mcp", schemars(length(min = 2, max = 257)))]
     pub instance_path: Vec<String>,
     pub face_index: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+#[cfg(any(test, feature = "mcp"))]
+pub struct VertexSelectionTarget {
+    pub node_id: String,
+    pub shape_id: String,
+    #[cfg_attr(feature = "mcp", schemars(length(min = 2, max = 257)))]
+    pub instance_path: Vec<String>,
+    pub vertex_index: usize,
 }
 
 #[derive(Debug, Serialize)]

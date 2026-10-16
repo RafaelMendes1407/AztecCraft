@@ -2,7 +2,7 @@
 
 Generated from the tool registry in `src/mcp/registry.rs`; do not edit by hand. Regenerate with `UPDATE_DOCS=1 cargo test --features mcp registry::tests::tool_doc`. Argument schemas are served by `tools/list`; see [mcp.md](mcp.md) for behaviour and limits.
 
-34 tools.
+35 tools.
 
 | Tool | Access | Idempotent | Description |
 |---|---|---|---|
@@ -13,8 +13,9 @@ Generated from the tool registry in `src/mcp/registry.rs`; do not edit by hand. 
 | `finish_move` | mutating | no | Commit one undoable Move edit or cancel to the exact begin authoring state. Only the matching remote-owned Move ID may finish |
 | `create_primitive` | mutating | no | Create a cube, plane, sphere, cylinder or cone in the live editor |
 | `select_node` | mutating | yes | Select an object using an optional full transform instance_path; ambiguous objects require a path. Null node_id clears selection without a path |
-| `set_selection_mode` | mutating | yes | Set Object, Face or Hierarchy (Root sub-mask only) selection mode without editing the scene; a valid remembered face stays inactive outside Face mode |
+| `set_selection_mode` | mutating | yes | Set Object, Face, Vertex or Hierarchy (Root sub-mask only) selection mode without editing the scene; a valid remembered face or vertex stays inactive outside its own mode |
 | `select_face` | mutating | yes | Select a complete canonical face target in Face mode, or clear it with null; explicit targets need not be visible and select their owning instance |
+| `select_vertex` | mutating | yes | Select a complete canonical vertex target in Vertex mode, or clear it with null; explicit targets need not be visible and select their owning instance |
 | `rename_node` | mutating | no | Rename an existing object |
 | `set_transform` | mutating | no | Set f64 translation in declared scene units, rotation in XYZ degrees, and scale |
 | `edit_node` | mutating | no | Edit optional name and individual f64 channels in one undo entry. Omitted arrays and null components are untouched; translation uses declared scene units and supplied rotations use degrees. Does not change selection |

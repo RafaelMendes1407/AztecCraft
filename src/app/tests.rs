@@ -4669,6 +4669,21 @@ fn selecting_a_vertex_on_another_node_replaces_it_and_clears_other_picks() {
 }
 
 #[test]
+fn inspection_charges_the_remembered_vertex_and_refuses_an_overlong_path() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let mut vertex = selected_vertex(&editor, 0);
+    editor.remembered_vertex = Some(vertex.clone());
+    assert!(editor.inspect(false).unwrap().remembered_vertex.is_some());
+    vertex.path = vec![vertex.shape; azteccraft::native_scene::MAX_TRANSFORM_DEPTH + 2];
+    editor.remembered_vertex = Some(vertex);
+    assert!(matches!(
+        editor.inspect(false),
+        Err(OperationError::TooLarge)
+    ));
+}
+
+#[test]
 fn overlong_vertex_and_edge_paths_are_rejected_without_mutation() {
     let mut editor = Editor::default();
     editor.create(Primitive::Cube);
