@@ -74,7 +74,8 @@ Call `inspect_scene` first. Every other tool requires `scene_token`, a UUID stri
 | `redo` | None | Changed or unchanged history state |
 | `frame_selected` | None | Frames the selected object in Object mode or selected face corners in Face mode; no active face returns `no_selection` |
 | `set_grid_visibility` | `visible`: required boolean | Changed or unchanged grid visibility in this window's viewport |
-| `set_sidebar_panel_visibility` | `panel`: required, `"channel_box"` only; `visible`: required boolean | Changed or unchanged visibility of that sidebar panel in this window |
+| `set_sidebar_panel_visibility` | `panel`: required, `"channel_box"` or `"attribute_editor"`; `visible`: required boolean | Changed or unchanged visibility of that sidebar panel in this window; the dock shows one panel, so showing one hides the other |
+| `select_attribute_editor_tab` | `tab`: required `{kind, id}`; `kind`: `"transform"`, `"shape"` or `"material"`; `id`: decimal id (the selected node for `transform`, a direct shape for `shape` and `material`) | Changed or unchanged Attribute Editor tab; refused as `invalid_input` unless `attribute_editor` is the active panel or when the tab does not resolve for the current selection |
 | `orbit_camera` | `radians`: two finite numbers, yaw and pitch deltas | Changed or unchanged camera; pitch clamps near the poles |
 | `pan_camera` | `world_units`: two finite numbers, camera right and up displacement in scene world units | Changed or unchanged camera target and eye |
 | `dolly_camera` | `factor`: positive finite distance multiplier | Changed or unchanged camera distance; below one moves closer |
@@ -200,16 +201,37 @@ global or additional panels, persistence and a default shortcut are unsupported.
 This scope does not establish Maya grid appearance or behavior parity.
 
 `set_sidebar_panel_visibility` requires the current scene token, a `panel` and an
-explicit JSON boolean `visible`. `panel` accepts only `channel_box`; any other
+explicit JSON boolean `visible`. `panel` accepts `channel_box` and `attribute_editor`; any other
 value, and missing, null, string, numeric and unknown fields, are refused as
 `invalid_params` before dispatch, with no mutation and the token unchanged.
 `true` makes the panel the active sidebar dock panel; `false` hides the dock when
 that panel is active. Repeating a value returns unchanged. Inspection reports the
-authoritative state as `sidebar_panels.channel_box`. The setting is session-only,
+authoritative state as `sidebar_panels.channel_box` and `sidebar_panels.attribute_editor` (at most one is true). The setting is session-only,
 survives New/Open, and does not edit NativeScene, create an undo entry, mark the
 document dirty or change the token. It shares the native Status Line toggle's
 typed setter and guards: native clicks may first commit a valid human draft;
 remote calls reject drafts, modals and pending close.
+
+The native dock transition table applies to every caller. With the current dock panel in the
+rows: from Channel Box, `(channel_box,true)` and `(attribute_editor,false)` are unchanged,
+`(channel_box,false)` hides the dock, and `(attribute_editor,true)` switches to the Attribute
+Editor (changed, implicitly hiding the Channel Box). From Attribute Editor the cells mirror
+this. From a hidden dock, `true` shows that panel and `false` is unchanged. Native Ctrl+A
+(explicit Ctrl, never Command; documented in Maya as Ctrl+A on every platform, macOS Cmd
+versus Ctrl unverified) dispatches the same setter with the next panel: Channel Box to
+Attribute Editor, Attribute Editor to Channel Box, hidden to Attribute Editor (an approximation;
+this is not Maya dock or tab parity).
+
+`select_attribute_editor_tab` takes the scene token and `tab` with `kind` and a decimal `id`;
+unknown kinds, missing or extra fields and non-decimal ids are `invalid_params`. A tab
+that does not resolve (a node other than the selected one, a shape that is not a direct shape
+of the selected transform, a material without a supported shader) or a call while the
+Attribute Editor is not the active panel is `invalid_input` with no change. The tab is
+view state only: it never enters history, resets to the transform tab on selection change, scene
+replacement, node deletion, shape removal or when it stops resolving, and is reported as
+`inspect_scene` `attribute_editor_tab` (`{kind, id}`, null while the Attribute Editor is hidden
+or nothing is selected). Shape and material tabs drive the same single `material_shape`
+selection as the native Materials shape choice. Guards match `set_sidebar_panel_visibility`.
 
 Example create arguments after inspection:
 
@@ -347,7 +369,8 @@ Nine verified tools establish the initial server foundation, not catch-up with e
 | Native Tool Box Lasso, Paint Selection, Rotate, Scale and Last Used | Visibly disabled and unsupported in the native UI ("not implemented yet" hover text); no operation and no MCP tool, and none is advertised. Last Used dynamic behaviour is also unsupported |
 | Interactive camera orbit/pan/dolly | Three navigation tools use the same typed operations as native captured gestures; live camera state is inspectable |
 | Viewport Grid visibility | `set_grid_visibility` shares the checkable native Grid button's typed setter; `grid_visible` exposes the authoritative session state. Fixed grid only; options, global/additional panels and persistence are unsupported |
-| Status Line sidebar and selection toggles | The Channel Box toggle is supported through `set_sidebar_panel_visibility` (state in `inspect_scene` `sidebar_panels`); the Hierarchy (Root sub-mask only), Object and Component selection modes use `set_selection_mode` (Component is Face). The menu-set selector is native-only and has no state, so no tool (only Modeling is active). The selection mode menu (presets) is native-only, disabled, stateless and has no tool. Modeling Toolkit, HumanIK, Attribute Editor and Tool Settings are visibly unsupported and have no tool |
+| Status Line sidebar and selection toggles | The Channel Box and Attribute Editor toggles are supported through `set_sidebar_panel_visibility` (state in `inspect_scene` `sidebar_panels`); the Hierarchy (Root sub-mask only), Object and Component selection modes use `set_selection_mode` (Component is Face). The menu-set selector is native-only and has no state, so no tool (only Modeling is active). The selection mode menu (presets) is native-only, disabled, stateless and has no tool. Modeling Toolkit, HumanIK and Tool Settings are visibly unsupported and have no tool |
+| Attribute Editor panel, tabs and Ctrl+A | The panel (transform, direct shape and material tabs; Transform tab shares the Channel Box drafts and edits) is switched by `set_sidebar_panel_visibility` and its tab by `select_attribute_editor_tab`; state is `sidebar_panels.attribute_editor` and `attribute_editor_tab`. Transform and Diffuse edits use `edit_node`, `set_transform` and `set_material_diffuse`. Pin Tab, connected-node tabs, Notes, Extra Attributes, Add/Show/Hide Attributes, Presets and the other attribute sections are visibly unsupported and have no tool; Ctrl+A is a native key event dispatching the same setter |
 | Status Line file buttons | New, Open and Save use the existing `new_scene`, `open_scene` and `save_scene` tools; the buttons and the File menu share one native handler. Save As has no strip button |
 | Status Line absent groups | Selection masks, snaps, symmetry, construction history, render buttons, Hypershade and the input box are not drawn, so there is nothing to expose and no tool |
 | GPU geometry viewport | `inspect_scene` exposes live backend/error/depth/clipping/appearance state; camera and object selection share the native frame consumer. Materials and complete appearance remain unsupported |

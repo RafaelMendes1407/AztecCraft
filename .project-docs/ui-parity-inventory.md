@@ -69,7 +69,7 @@ The AztecCraft window draws a partial Status Line strip, from `Editor::status_li
 | Workspace selector | [overview] | Missing | absent from the window; checked the menu and shelf rows at src/app.rs:1209 | none | P2 | S14 Docking and workspaces (#67) |
 | Sidebar toggle: Modeling Toolkit | [statusline] | Visible-unsupported | `src/app/features/status_line.rs:55 "Modeling Toolkit: not implemented yet"` | none | P2 | S1 Status Line strip (#59) |
 | Sidebar toggle: HumanIK | [statusline] | Visible-unsupported | `src/app/features/status_line.rs:61 "HumanIK: not implemented yet"` | none | P3 | S1 Status Line strip (#59) |
-| Sidebar toggle: Attribute Editor | [statusline] | Visible-unsupported | `src/app/features/status_line.rs:67 "Attribute Editor: not implemented yet"` | none | P1 | S1 Status Line strip (#59) |
+| Sidebar toggle: Attribute Editor | [statusline] | Supported | `src/app/features/status_line.rs:67 "Show or hide the Attribute Editor"`; shows the Attribute Editor and hides the Channel Box; disabled during an active Move | `set_sidebar_panel_visibility` | P1 | S1 Status Line strip (#59) |
 | Sidebar toggle: Tool Settings | [statusline] | Visible-unsupported | `src/app/features/status_line.rs:73 "Tool Settings: not implemented yet"` | none | P2 | S1 Status Line strip (#59) |
 | Sidebar toggle: Channel Box / Layer Editor | [statusline] | Partial | `src/app/features/status_line.rs:79 "Show or hide the Channel Box / Layer Editor"`; no Layer Editor exists, so it shows or hides the Channel Box only; disabled during an active Move | `set_sidebar_panel_visibility` | P1 | S1 Status Line strip (#59) |
 
@@ -156,14 +156,14 @@ The Channel Box panel docks right at src/app.rs:1636 and draws from Editor::chan
 
 ## 7. Attribute Editor
 
-No Attribute Editor exists. The Channel Box carries the transform and diffuse edits only.
+A first-slice Attribute Editor exists (#60): a right dock panel that replaces the Channel Box. It is an approximation, not Maya dock or tab parity. The Transform Attributes list comes only from the Maya 2023 documentation page and is provisional.
 
 | Maya 2026 element | Source | AztecCraft status | Evidence | MCP | Priority | Proposed slice |
 | --- | --- | --- | --- | --- | --- | --- |
-| Attribute Editor panel (Ctrl+A toggles with Channel Box) | [attr] | Missing | absent | none | P1 | S4 Attribute Editor and Channel Box (#60) |
-| Node tabs across the top | [attr] | Missing | absent | none | P1 | S4 Attribute Editor and Channel Box (#60) |
-| Attribute list | [attr] | Missing | absent; only Translate/Rotate/Scale and Diffuse are editable | `edit_node`, `set_material_diffuse` | P1 | S4 Attribute Editor and Channel Box (#60) |
-| Pin Tab icon | [attr] | Missing | absent | none | P3 | S4 Attribute Editor and Channel Box (#60) |
+| Attribute Editor panel (Ctrl+A toggles with Channel Box) | [attr] | Partial | `Editor::attribute_editor` draws one dock panel; Ctrl+A is wired with an explicit Ctrl modifier (macOS Cmd-vs-Ctrl unverified) | `set_sidebar_panel_visibility` | P1 | S4 Attribute Editor and Channel Box (#60) |
+| Node tabs across the top | [attr] | Partial | tabs for the selected transform, its direct mesh shapes and their supported materials; connected-node tabs absent | `select_attribute_editor_tab` | P1 | S4 Attribute Editor and Channel Box (#60) |
+| Attribute list | [attr] | Partial | Transform tab: name, Translate/Rotate/Scale and a read-only Visibility row (shared Channel Box drafts); Material tab: Diffuse. Other attributes, sections, Shear, Rotate Order, Rotate Axis, pivots and limits are absent | `edit_node`, `set_transform`, `set_material_diffuse` | P1 | S4 Attribute Editor and Channel Box (#60) |
+| Pin Tab icon | [attr] | Visible-unsupported | drawn disabled with "Pin Tab: not implemented yet" | none | P3 | S4 Attribute Editor and Channel Box (#60) |
 | Default dock position (not stated for 2026) | [attr] UNCONFIRMED; [rearrange-2016] FALLBACK 2016 | Missing | absent | none | P3 | S4 Attribute Editor and Channel Box (#60) |
 | Tool Settings panel (default position UNCONFIRMED for 2026) | [rearrange-2016] FALLBACK 2016; UNCONFIRMED | Missing | absent | none | P2 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
 
@@ -273,7 +273,7 @@ Editor::shortcuts at src/app.rs:953 handles Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z, F, Cmd
 | Shift+A Frame All in all views | [hotkeys-2025] FALLBACK 2025 | Missing | single view only | none | P3 | S5 Hotkeys (#32) |
 | Shift+M panel menus; Ctrl+Shift+M Panel Toolbar | [panelvis] | Missing | no key handler | none | P3 | S5 Hotkeys (#32) |
 | Tap Space single/multi-pane; Ctrl+Space full-screen | [hotkeys-2025] FALLBACK 2025 | Missing | no key handler | none | P3 | S8 Panels and quick layouts (#48 / #69) |
-| Ctrl+A Attribute Editor / Channel Box | [attr] | Missing | no key handler | none | P1 | S4 Attribute Editor and Channel Box (#60) |
+| Ctrl+A Attribute Editor / Channel Box | [attr] | Partial | `shortcuts` dispatches the next dock panel for an explicit Ctrl+A; skipped while text, a popup or a dialog has the keyboard | `set_sidebar_panel_visibility` | P1 | S4 Attribute Editor and Channel Box (#60) |
 | Space-hold hotbox; Alt+M hotbox style | [hotkeys-2025] FALLBACK 2025 | Missing | no hotbox | none | P3 | S5 Hotkeys (#32) |
 | Undo, Redo, Save, Save As, Delete shortcuts (Maya key map UNCONFIRMED in the report) | UNCONFIRMED | Supported | src/app.rs:960-964 "Key::Z", :1577 "Key::Delete" | `undo`, `redo`, `save_scene`, `save_scene_as`, `delete_node` | P1 | S5 Hotkeys (#32) |
 

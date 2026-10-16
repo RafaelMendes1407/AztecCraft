@@ -96,7 +96,9 @@ The matrix records these asymmetries; treat a change as a behavior change that n
   `set_sidebar_panel_visible(attribute_editor,true)` is `Changed` from the default state. The
   matrix has 3 new samples per state: `set_sidebar_panel_visible(attribute_editor,true)`,
   `select_attribute_editor_tab(shape)` (Attribute Editor active) and
-  `select_attribute_editor_tab(shape,panel_hidden)`.
+  `select_attribute_editor_tab(shape,panel_hidden)`. MCP reaches them as
+  `set_sidebar_panel_visibility` (`panel` `attribute_editor`) and `select_attribute_editor_tab`,
+  covered cell by cell in `src/mcp_tests/official_client/attribute_editor.rs`.
 - The File menu and the Status Line file buttons share `file_actions` (`src/app/menus.rs`), the one
   native caller of `Operation::SaveScene`; New and Open go through `request_new` and `open_dialog`.
   Enable state, disabled reason and handler come from the same helper, so the guards are those of
