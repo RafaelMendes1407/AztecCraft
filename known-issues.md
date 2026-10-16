@@ -301,7 +301,7 @@ mutating operation, Grid toggle and selection-mode change reports
 `busy_manipulation`. Replacing the scene (New or Open) also resets the active tool
 to Select; Maya keeps the current tool across scene changes.
 
-If the baseline or source of an active Move cannot be validated at finish or
+If the baseline or source of an active manipulation cannot be validated at finish or
 cancel (believed unreachable), the transaction is still cleared first, so the
 history is not left busy. The scene then keeps its preview values and the
 baseline is lost: the document is dirty rather than silently restored, and the
@@ -324,7 +324,7 @@ cluster therefore follows the last drawn group.
 
 - The F2 to F6 menu-set hotkeys are deferred.
 - No Layer Editor exists, so the toggle shows or hides only the Channel Box.
-- The toggle is disabled during an active Move, including a Move with no native gesture, like other edits.
+- The toggle is disabled during an active manipulation, including a remote one with no native gesture, like other edits.
 - Save As has no strip button and stays in the File menu.
 - Open's native dialog calls `rfd` directly and cannot be click-tested, so equivalence between the strip
   and menu Open is checked only for enable state and hover text.

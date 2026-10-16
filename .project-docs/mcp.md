@@ -55,7 +55,7 @@ Call `inspect_scene` first. Every other tool requires `scene_token`, a UUID stri
 
 | Tool | Arguments besides `scene_token` | Result |
 | --- | --- | --- |
-| `inspect_scene` | No arguments; no token required | Committed mesh/curve metadata including Move preview, typed document origin, retained-source counts/read-only reason, units, instance paths, selected identity, history, pending action, dirty/draft/focus/modal/closing flags and camera |
+| `inspect_scene` | No arguments; no token required | Committed mesh/curve metadata including the active manipulation preview, typed document origin, retained-source counts/read-only reason, units, instance paths, selected identity, history, pending action, dirty/draft/focus/modal/closing flags and camera |
 | `set_active_tool` | `tool`: `select`, `move`, `rotate` or `scale` | Activate a supported native tool through shared guards |
 | `begin_manipulation` | `oneOf` by `kind`, each branch closed. `move`: `node_id`, full `instance_path` (1 to 256 decimal IDs), `axis` (`x`, `y` or `z`, World). `rotate`: the same plus `axis` and `space` (`object` or `world`). `scale`: the same plus `handle` (`x`, `y`, `z` or `uniform`) and `space` | Begin a remote-owned Move, Rotate or Scale of the exact selected transform; returns `manipulation_id`. A field of another kind (`handle` on a rotate, `space` on a move) is a protocol error |
 | `update_manipulation` | `manipulation_id`: decimal string; exactly one of `distance`, `angle` or `factor` (`oneOf`, closed branches) | Preview an absolute value from begin. `distance` (Move) is in the scene linear unit, `angle` (Rotate) in the scene angular unit (degrees or radians), `factor` (Scale) is unitless and greater than zero. A factor of zero or less is rejected at the schema/parser layer as `invalid_params` (the schema declares `exclusiveMinimum: 0`), so the core's zero-scale refusal is reachable only from a native drag. A parameter that does not match the active kind returns `manipulation_kind_mismatch` and leaves the preview unchanged |
@@ -412,7 +412,7 @@ Nine verified tools establish the initial server foundation, not catch-up with e
 | Native Hierarchy/Face/Center selection | `set_selection_mode` (`object`, `face`, `vertex`, `edge`, `hierarchy`), `select_face`, `select_vertex`, `select_edge` and selection inspection (`remembered_face`, `remembered_vertex`, `remembered_edge`) share authoritative typed state; `select_node` stays exact and is not mode-limited. Native Vertex and Edge modes have no user surface yet, so `select_vertex` and `select_edge` are MCP-only for now; UV and Vertex Face masks and multi-component gestures are unsupported |
 | Core mesh extrusion | `extrude_face` exposes the checked single-quad History command with an explicit current face target; native face-extrusion UI remains unsupported |
 | Native Select/Move tool and World-axis object translation | `begin_manipulation` (`kind` `move`), `update_manipulation` (`distance`) and `finish_manipulation` share the native transaction and guards; bounded tool/active preview/capture state is inspectable. Candidate native/SDK verification remains pending |
-| Native Tool Box Select and Move buttons | The icon-only Select (Q) and Move (W) buttons dispatch `Operation::SetActiveTool`, the same typed operation as `set_active_tool` (`select` or `move`), with the same closing and modal guards |
+| Native Tool Box Select, Move, Rotate and Scale buttons | The icon-only Select (Q), Move (W), Rotate (E) and Scale (R) buttons dispatch `Operation::SetActiveTool`, the same typed operation as `set_active_tool` (`select`, `move`, `rotate` or `scale`), with the same closing and modal guards |
 | Native Tool Box Rotate (E) and Scale (R) | Object and World ring/box drags and a numeric row in the native UI. `set_active_tool` accepts `rotate` and `scale`; `begin_manipulation` (`kind` `rotate` or `scale`), `update_manipulation` (`angle` or `factor`) and `finish_manipulation` use the same typed operations, guards and history entry; `inspect_scene` `manipulation` reports the kind, space, axis or handle, baseline and current channels, units and the last refusal. Component rotate/scale, pivots, Gimbal/Parent/Normal/Custom spaces, view ring and free rotate are unsupported with no tool. Covered by Editor protocol and official SDK tests; native visual verification is pending |
 | Native Tool Box Lasso, Paint Selection and Last Used | Visibly disabled and unsupported in the native UI ("not implemented yet" hover text); no operation and no MCP tool, and none is advertised. Last Used dynamic behaviour is also unsupported |
 | Interactive camera orbit/pan/dolly | Three navigation tools use the same typed operations as native captured gestures; live camera state is inspectable |
@@ -456,7 +456,7 @@ During a gesture, inspection reads the live authoritative preview. Unrelated
 remote mutations, Save, Undo/Redo and camera operations return
 `busy_manipulation`. Only matching remote-owned updates/finish are accepted;
 remote calls cannot finish a native drag. Viewport Grid visibility, shading mode, sidebar panel visibility, selection mode and
-Face selection are likewise refused with `busy_manipulation` while any Move is
+Face selection are likewise refused with `busy_manipulation` while any manipulation is
 active. Human Escape, tool/selection/selection-mode/lifecycle
 changes cancel a native drag before their existing native guard path. Move is
 Object-mode only: while Face selection is active `begin_manipulation` returns
@@ -473,7 +473,7 @@ applies a substitute motion.
 kind with `available` and the core's `unavailable_reason` (a kind is available
 when any of its handles could begin in Object space); the `active` manipulation
 with `manipulation_id`, `kind`, node and instance path, `space`, `axis` or
-`handle`, `provenance`, the `parameter` name, its `value` and `unit`, `channels`
+`handle`, `provenance`, the `parameter` name, its `value` and `unit` (after a remote update, `value` is the requested number exactly as given, in scene units; after a native drag it is derived from the internal parameter), `channels`
 (`translate`, `rotate` or `scale`) with the stored `baseline_channels` at begin
 and the live `current_channels`; and `refusal`, the reason the scene refused the
 last update of the active manipulation (the preview is unchanged), cleared by the
