@@ -23,6 +23,8 @@ pub enum HandleError {
     ParallelAxis,
     BehindRay,
     InvalidSolve,
+    Degenerate,
+    ZeroBeginParameter,
 }
 
 impl From<InvalidCameraInput> for HandleError {
@@ -45,6 +47,8 @@ impl fmt::Display for HandleError {
             Self::ParallelAxis => "Move axis is too close to parallel with the camera ray",
             Self::BehindRay => "Move closest point lies behind the camera ray origin",
             Self::InvalidSolve => "Move axis distance cannot be represented",
+            Self::Degenerate => "Rotate ring is edge-on to the camera",
+            Self::ZeroBeginParameter => "Scale handle was grabbed too close to the pivot",
         })
     }
 }
@@ -61,6 +65,7 @@ pub struct ViewportCapture {
     logical_size: Vec2,
     aspect: f32,
     view_projection: DMat4,
+    focal_pixels: f64,
 }
 
 impl ViewportCapture {
@@ -92,9 +97,10 @@ impl ViewportCapture {
             return Err(HandleError::InvalidCapture);
         }
         let aspect = physical_size[0] as f32 / physical_size[1] as f32;
-        let view_projection =
-            camera.projection_matrix(aspect)?.as_dmat4() * camera.view_matrix().as_dmat4();
-        if !view_projection.is_finite() {
+        let projection = camera.projection_matrix(aspect)?.as_dmat4();
+        let view_projection = projection * camera.view_matrix().as_dmat4();
+        let focal_pixels = projection.y_axis.y * f64::from(physical_size[1]) * 0.5;
+        if !view_projection.is_finite() || !focal_pixels.is_finite() || focal_pixels <= 0.0 {
             return Err(HandleError::InvalidCapture);
         }
         Ok(Self {
@@ -106,6 +112,7 @@ impl ViewportCapture {
             logical_size,
             aspect,
             view_projection,
+            focal_pixels,
         })
     }
 
@@ -156,6 +163,29 @@ impl ViewportCapture {
 
     pub(crate) fn contains(&self, pixel: DVec2) -> bool {
         pixel.is_finite() && pixel.cmpge(DVec2::ZERO).all() && pixel.cmple(self.size()).all()
+    }
+
+    pub(crate) fn eye(&self) -> DVec3 {
+        self.camera.eye().as_dvec3()
+    }
+
+    /// Viewport pixel of a point in front of the camera; it may lie outside the viewport.
+    pub(crate) fn project_point(&self, point: DVec3) -> Option<DVec2> {
+        let clip = self.view_projection * point.extend(1.0);
+        if !clip.is_finite() || clip.w <= 1e-9 {
+            return None;
+        }
+        let size = self.size();
+        let pixel = DVec2::new(
+            (clip.x / clip.w + 1.0) * size.x * 0.5,
+            (1.0 - clip.y / clip.w) * size.y * 0.5,
+        );
+        pixel.is_finite().then_some(pixel)
+    }
+
+    /// World length that spans `pixels` on screen at the depth `clip_w`.
+    pub(crate) fn world_length(&self, pixels: f64, clip_w: f64) -> f64 {
+        pixels * clip_w / self.focal_pixels
     }
 
     /// Clip-space position and viewport pixel of a handle origin, which must be visible.
