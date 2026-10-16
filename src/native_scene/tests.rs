@@ -850,3 +850,18 @@ fn binary_candidate_finishes_once_preserving_source_and_runtime_identity() {
         assert!(NativeScene::from_binary_candidate(invalid).is_err());
     }
 }
+
+#[test]
+fn local_visibility_reports_explicit_values_and_none_when_unproved() {
+    use super::test_fixtures::{hidden_group, hidden_shape};
+    let (scene, id) = hidden_shape();
+    assert_eq!(scene.shapes()[0].local_visibility(), Some(false));
+    assert_eq!(scene.node(id).unwrap().local_visibility(), Some(true));
+    let (mut scene, root, child, _) = hidden_group();
+    assert_eq!(scene.node(root).unwrap().local_visibility(), Some(false));
+    assert_eq!(scene.node(child).unwrap().local_visibility(), Some(true));
+    scene.nodes[0].view.local_visibility = None;
+    scene.shapes[0].view.local_visibility = None;
+    assert_eq!(scene.node(root).unwrap().local_visibility(), None);
+    assert_eq!(scene.shapes()[0].local_visibility(), None);
+}

@@ -377,6 +377,10 @@ impl NativeTransformNode {
     pub fn transform(&self) -> NativeTransform {
         NativeTransform::from_values(self.channels.each_ref().map(|v| v.value))
     }
+    /// This node's own `.v`; `None` when the source did not prove it. Not the effective visibility.
+    pub fn local_visibility(&self) -> Option<bool> {
+        self.view.local_visibility
+    }
 }
 
 impl fmt::Debug for NativeTransformNode {
@@ -409,6 +413,10 @@ impl fmt::Debug for NativeMeshShape {
 }
 
 impl NativeMeshShape {
+    /// This shape's own `.v`; `None` when the source did not prove it.
+    pub fn local_visibility(&self) -> Option<bool> {
+        self.view.local_visibility
+    }
     pub fn id(&self) -> NativeId {
         self.id
     }

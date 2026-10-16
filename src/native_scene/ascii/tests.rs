@@ -385,3 +385,19 @@ fn private_genuine_ma_decodes_exact_curves_and_preserves_every_source_byte() {
         4
     );
 }
+
+#[test]
+fn ascii_reports_local_visibility_for_transform_and_curve_shape() {
+    let scene = decode(input(&specimen())).unwrap();
+    assert_eq!(scene.nodes()[0].local_visibility(), Some(true));
+    assert_eq!(scene.curves()[0].local_visibility(), Some(true));
+    let scene = decode(input(&format!(
+        "createNode transform -n \"curve1\"; setAttr \".v\" no; createNode nurbsCurve -n \"curveShape1\" -p \"curve1\"; {CC}"
+    )))
+    .unwrap();
+    assert_eq!(scene.nodes()[0].local_visibility(), Some(false));
+    assert_eq!(scene.curves()[0].local_visibility(), Some(true));
+    let scene = decode(input(&format!("{CREATE} setAttr \".v\" no; {CC}"))).unwrap();
+    assert_eq!(scene.nodes()[0].local_visibility(), Some(true));
+    assert_eq!(scene.curves()[0].local_visibility(), Some(false));
+}

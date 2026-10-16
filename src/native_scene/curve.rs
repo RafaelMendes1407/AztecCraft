@@ -59,6 +59,10 @@ impl fmt::Debug for NativeCurveShape {
 }
 
 impl NativeCurveShape {
+    /// This shape's own `.v`; `None` when the source did not prove it.
+    pub fn local_visibility(&self) -> Option<bool> {
+        self.view.local_visibility
+    }
     pub fn id(&self) -> NativeId {
         self.id
     }
