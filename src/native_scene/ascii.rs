@@ -1,6 +1,6 @@
 use super::{
     DagEdge, GeometryViewFacts, NativeCurveShape, NativeError, NativeId, NativeScene,
-    NativeTransform, NativeTransformNode, Scalar, Units,
+    NativeTransform, NativeTransformNode, Scalar, TransformExtras, Units,
     admission::Budget,
     curve::CurveSource,
     source::{SourceFormat, SourceRetention},
@@ -424,6 +424,7 @@ impl Builder<'_, '_> {
                     scale_pivot: [0.0; 3].map(Scalar::new),
                     restrictions: Vec::new(),
                     unsupported_transform: Vec::new(),
+                    extras: TransformExtras::default(),
                     view: GeometryViewFacts::authored(),
                 });
                 self.scene.dag.push(DagEdge {
@@ -621,6 +622,35 @@ impl Builder<'_, '_> {
                             ".s" => node.channels[6..].clone_from_slice(&value),
                             ".rp" => node.rotate_pivot = value,
                             _ => node.scale_pivot = value,
+                        }
+                    }
+                    ".ro" => {
+                        flags.plain(c)?;
+                        let order = u8::try_from(c.integer()?)
+                            .ok()
+                            .filter(|order| *order <= 5)
+                            .ok_or_else(|| error(ErrorKind::Malformed, c.offset))?;
+                        c.done()?;
+                        self.mark(owner, 64, c)?;
+                        self.scene.nodes[index].extras.rotate_order = Some(order);
+                    }
+                    ".ra" | ".sh" | ".rpt" | ".spt" => {
+                        flags.typed("double3", c)?;
+                        let value = c.triple()?;
+                        c.done()?;
+                        let bit = match attribute {
+                            ".ra" => 128,
+                            ".sh" => 256,
+                            ".rpt" => 512,
+                            _ => 1024,
+                        };
+                        self.mark(owner, bit, c)?;
+                        let extras = &mut self.scene.nodes[index].extras;
+                        match attribute {
+                            ".ra" => extras.rotate_axis = Some(value),
+                            ".sh" => extras.shear = Some(value),
+                            ".rpt" => extras.rotate_pivot_translate = Some(value),
+                            _ => extras.scale_pivot_translate = Some(value),
                         }
                     }
                     ".v" => {

@@ -165,9 +165,10 @@ fn unknown_effects_nodes_owners_and_connections_refuse_the_whole_candidate() {
         assert!(error.offset().is_none_or(|offset| offset <= before.len()));
     }
     for effect in [
-        "setAttr \".sh\" -type \"double3\" 1 0 0;",
-        "setAttr \".ro\" 1;",
         "setAttr \".rotateOrder\" 1;",
+        "setAttr \".it\" no;",
+        "setAttr \".it\" yes;",
+        "setAttr \".opm\" -type \"matrix\" 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1;",
         "setAttr \".tx\" 1;",
     ] {
         assert_eq!(
@@ -407,9 +408,6 @@ fn transform_attributes_outside_the_modeled_channels_are_refused_at_open() {
     for attribute in [
         "setAttr \".it\" no;",
         "setAttr \".it\" yes;",
-        "setAttr \".ro\" 2;",
-        "setAttr \".ra\" -type \"double3\" 10 0 0;",
-        "setAttr \".sh\" -type \"double3\" 0.5 0 0;",
         "setAttr \".opm\" -type \"matrix\" 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1;",
     ] {
         let body = format!(
@@ -419,6 +417,88 @@ fn transform_attributes_outside_the_modeled_channels_are_refused_at_open() {
             decode(input(&body)).unwrap_err().kind(),
             ErrorKind::Unsupported,
             "{attribute}"
+        );
+    }
+}
+
+fn transform_extras(attrs: &str) -> Result<crate::native_scene::NativeScene, AsciiError> {
+    decode(input(&format!(
+        "createNode transform -n \"ancestor\"; {attrs} {CREATE} {CC}"
+    )))
+}
+
+#[test]
+fn rotate_order_axis_shear_and_pivot_translations_are_read_into_extras() {
+    let scene = transform_extras(
+        "setAttr \".ro\" 4; setAttr \".ra\" -type \"double3\" 10 20 -30; \
+         setAttr \".sh\" -type \"double3\" 0.5 0 0.25; \
+         setAttr \".rpt\" -type \"double3\" 1 2 3; setAttr \".spt\" -type \"double3\" -1 0 2;",
+    )
+    .unwrap();
+    let extras = scene.nodes()[0].extras();
+    assert_eq!(extras.rotate_order, Some(4));
+    assert_eq!(extras.rotate_axis, Some([10.0, 20.0, -30.0]));
+    assert_eq!(extras.shear, Some([0.5, 0.0, 0.25]));
+    assert_eq!(extras.rotate_pivot_translate, Some([1.0, 2.0, 3.0]));
+    assert_eq!(extras.scale_pivot_translate, Some([-1.0, 0.0, 2.0]));
+    let absent = transform_extras("").unwrap();
+    assert_eq!(absent.nodes()[0].extras(), &Default::default());
+    let internal = scene.internal_transform(scene.nodes()[0].id()).unwrap();
+    assert!(internal.extras.is_some());
+}
+
+#[test]
+fn extras_follow_scene_units_when_the_scene_units_differ() {
+    let mut scene = transform_extras(
+        "setAttr \".ra\" -type \"double3\" 1 0 0; setAttr \".rpt\" -type \"double3\" 1 0 0; \
+         setAttr \".sh\" -type \"double3\" 0.5 0 0;",
+    )
+    .unwrap();
+    scene.units.angular = crate::native_scene::AngularUnit::Radian;
+    scene.units.linear = crate::native_scene::LinearUnit::Meter;
+    let id = scene.nodes()[0].id();
+    let e = scene.internal_transform(id).unwrap().extras.unwrap();
+    assert_eq!(e.rotate_axis_radians, [1.0, 0.0, 0.0]);
+    assert_eq!(e.rotate_pivot_translate_cm, [100.0, 0.0, 0.0]);
+    assert_eq!(e.shear, [0.5, 0.0, 0.0]);
+}
+
+#[test]
+fn malformed_or_unsupported_extras_are_typed_refusals() {
+    let malformed = [
+        "setAttr \".ro\" 6;",
+        "setAttr \".ro\" -1;",
+        "setAttr \".ro\" 1.5;",
+        "setAttr \".ro\" x;",
+        "setAttr \".sh\" -type \"double3\" 1 0;",
+        "setAttr \".sh\" -type \"double3\" nan 0 0;",
+        "setAttr \".ra\" -type \"double3\" inf 0 0;",
+        "setAttr \".rpt\" -type \"double3\" 1 0 abc;",
+    ];
+    for attrs in malformed {
+        assert_eq!(
+            transform_extras(attrs).unwrap_err().kind(),
+            ErrorKind::Malformed,
+            "{attrs}"
+        );
+    }
+    let unsupported = [
+        "setAttr \".ro\" 1 2;",
+        "setAttr \".spt\" -type \"double3\" 1 0 0 0;",
+        "setAttr \".sh\" 1 0 0;",
+        "setAttr \".sh\" -type \"float3\" 1 0 0;",
+        "setAttr \".ro\" -type \"double3\" 1;",
+        "setAttr \".ro\" 1; setAttr \".ro\" 2;",
+        "setAttr \".ra\" -type \"double3\" 1 0 0; setAttr \".ra\" -type \"double3\" 1 0 0;",
+        "setAttr \".sh\" -type \"double3\" 1 0 0; setAttr \".sh\" -type \"double3\" 0 0 0;",
+        "setAttr \".rpt\" -type \"double3\" 1 0 0; setAttr \".rpt\" -type \"double3\" 1 0 0;",
+        "setAttr \".spt\" -type \"double3\" 1 0 0; setAttr \".spt\" -type \"double3\" 1 0 0;",
+    ];
+    for attrs in unsupported {
+        assert_eq!(
+            transform_extras(attrs).unwrap_err().kind(),
+            ErrorKind::Unsupported,
+            "{attrs}"
         );
     }
 }

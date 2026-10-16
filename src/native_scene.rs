@@ -8,6 +8,7 @@ mod move_translation;
 mod rotate_frame;
 mod scale_frame;
 mod source;
+mod transform_extras;
 pub use appearance::{
     AppearanceIssue, AppearanceIssues, AppearanceState, AppearanceSummary, MaterialInspection,
     MaterialShader,
@@ -19,6 +20,7 @@ pub use move_translation::{ChannelLeaf, WorldAxis, WorldMoveFrame, WorldMoveUnsu
 pub use rotate_frame::{RotateAxis, RotateFrame, RotateSpace, RotateUnsupported};
 pub use scale_frame::{ScaleFrame, ScaleHandle, ScaleSpace, ScaleUnsupported};
 use source::{ScalarOrigin, SourceFormat, SourceRetention, TransformField};
+pub use transform_extras::{InternalExtras, TransformExtras};
 
 use crate::scene::{NodeId, Primitive, Scene, SceneError, Transform};
 use glam::{DMat4, DVec3, Vec3};
@@ -341,6 +343,7 @@ pub struct NativeTransformNode {
     scale_pivot: [Scalar; 3],
     restrictions: Vec<String>,
     unsupported_transform: Vec<String>,
+    extras: TransformExtras,
     view: GeometryViewFacts,
 }
 
@@ -374,6 +377,9 @@ impl NativeTransformNode {
     }
     pub fn unsupported_transform_effects(&self) -> &[String] {
         &self.unsupported_transform
+    }
+    pub fn extras(&self) -> &TransformExtras {
+        &self.extras
     }
     pub fn edit_restrictions(&self) -> &[String] {
         &self.restrictions
@@ -504,10 +510,22 @@ pub struct InternalTransform {
     pub scale: [f64; 3],
     pub rotate_pivot_cm: [f64; 3],
     pub scale_pivot_cm: [f64; 3],
+    /// `None` when every extra is default; the matrix then takes the unchanged path.
+    pub extras: Option<InternalExtras>,
 }
 
 impl InternalTransform {
     pub(crate) fn matrix(self) -> Option<DMat4> {
+        if let Some(extras) = self.extras {
+            let matrix = extras.matrix(
+                DVec3::from_array(self.translation_cm),
+                self.rotation_radians,
+                DVec3::from_array(self.scale),
+                DVec3::from_array(self.rotate_pivot_cm),
+                DVec3::from_array(self.scale_pivot_cm),
+            )?;
+            return matrix.is_finite().then_some(matrix);
+        }
         let translate = DVec3::from_array(self.translation_cm);
         let rp = DVec3::from_array(self.rotate_pivot_cm);
         let sp = DVec3::from_array(self.scale_pivot_cm);
@@ -758,6 +776,7 @@ impl NativeScene {
             scale: vector(TransformField::Scale)?,
             rotate_pivot_cm: vector(TransformField::RotatePivot)?,
             scale_pivot_cm: vector(TransformField::ScalePivot)?,
+            extras: node.extras.internal(&self.units)?,
         })
     }
     pub fn shapes(&self) -> &[NativeMeshShape] {
@@ -894,6 +913,7 @@ impl NativeScene {
             scale_pivot: [0.0; 3].map(Scalar::new),
             restrictions: Vec::new(),
             unsupported_transform: Vec::new(),
+            extras: TransformExtras::default(),
             view: GeometryViewFacts::authored(),
         });
         self.shapes.push(NativeMeshShape {
@@ -1175,6 +1195,7 @@ impl NativeScene {
         let mut nodes = Vec::with_capacity(self.nodes.len());
         for node in &self.nodes {
             if !node.unsupported_transform.is_empty()
+                || !node.extras.is_default()
                 || !node.restrictions.is_empty()
                 || node
                     .rotate_pivot()
@@ -1242,6 +1263,7 @@ impl NativeScene {
             {
                 return Err(NativeError::NonFinite);
             }
+            node.extras.validate()?;
         }
         for shape in &self.shapes {
             if shape.id.0 == 0 || shape.id.0 >= self.next_native_id || !native_ids.insert(shape.id)
@@ -1388,6 +1410,7 @@ pub enum NativeError {
     InvalidRetention,
     InvalidTopology,
     InvalidCurve,
+    InvalidTransformExtras,
     ResourceLimit,
     MissingShape(NativeId),
     InvalidInstancePath,
@@ -1420,6 +1443,9 @@ impl fmt::Display for NativeError {
             Self::InvalidRetention => f.write_str("invalid retained source ranges"),
             Self::InvalidTopology => f.write_str("invalid native polygon connectivity"),
             Self::InvalidCurve => f.write_str("invalid supported native cubic curve"),
+            Self::InvalidTransformExtras => {
+                f.write_str("rotate order must be 0 through 5 for supported transform extras")
+            }
             Self::ResourceLimit => f.write_str("native validation resource limit exceeded"),
             Self::MissingShape(id) => {
                 write!(f, "native mesh shape {} does not exist", id.to_decimal())
