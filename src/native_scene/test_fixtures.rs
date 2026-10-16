@@ -26,6 +26,22 @@ pub(crate) fn cube() -> (NativeScene, NodeId) {
     (scene, id)
 }
 
+/// One transform with two identical direct shapes; the second has the larger path.
+pub(crate) fn twin_shapes() -> (NativeScene, NodeId) {
+    let (mut scene, id) = cube();
+    let mut twin = scene.shapes[0].clone();
+    twin.id = NativeId(scene.next_native_id);
+    twin.uuid = None;
+    scene.next_native_id += 1;
+    scene.dag.push(DagEdge {
+        parent: Some(scene.node(id).unwrap().transform_id),
+        child: twin.id,
+    });
+    scene.shapes.push(twin);
+    scene.validate().unwrap();
+    (scene, id)
+}
+
 pub(crate) fn shared_shape() -> (NativeScene, NodeId, NodeId, NativeId) {
     let (mut scene, first) = cube();
     let second = scene.create(Primitive::Plane, "instance").unwrap();

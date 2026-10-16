@@ -171,6 +171,19 @@ pinned popup routing; separate menu+F8 and F11+F8+viewport-click tests do not pr
 that combined journey. Native window, other-platform input and Maya comparison
 remain separate verification requirements. See [selection policy](.project-docs/development.md#face-center-selection).
 
+## Vertex and Edge picking constants are provisional
+
+**Severity:** low
+**Area:** component input and viewport
+
+`Camera::pick_vertex` and `pick_edge` exist, but no native control or MCP tool
+reaches them yet (#29). The 10 px vertex click box, the 6 px edge click distance
+and the 1e-4 relative view-depth tolerance shared by vertex and edge visibility
+are original provisional values, not verified Maya defaults; Maya's click
+tolerance and preselection defaults are UNCONFIRMED for 2026. Candidates are
+ranked by pointer distance, then depth, then source order, which is also an
+application policy.
+
 ## Static ASCII curves have bounded read-only coverage
 
 **Severity:** high

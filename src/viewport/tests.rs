@@ -1,4 +1,7 @@
 use super::*;
+use crate::native_scene::NativeScene;
+use crate::native_scene::test_fixtures;
+use crate::view_scene::ViewScene;
 
 fn frame(pointer: Vec2, pixels: [u32; 2], ppp: f32) -> Result<PickFrame, ViewError> {
     Camera::default().pick_frame(pointer, pixels, ppp)
@@ -54,4 +57,419 @@ fn pick_frame_rejects_empty_and_non_finite_input() {
     }
     assert!(refused(pointer, [200, 100], 0.0));
     assert!(refused(pointer, [200, 100], -1.0));
+}
+
+const SIZE: [u32; 2] = [800, 600];
+
+fn camera() -> Camera {
+    Camera::new(Vec3::ZERO, 0.0, 0.0, 5.0, 45_f32.to_radians(), 0.01, 100.0).unwrap()
+}
+
+/// World units per screen pixel at the z = 0 plane for `camera()`.
+fn unit(pixels: f32) -> f32 {
+    pixels * 5.0 * (22.5_f32.to_radians()).tan() / 300.0
+}
+
+fn world(x_px: f32, y_px: f32, z: f32) -> [f64; 3] {
+    [unit(x_px).into(), unit(y_px).into(), z.into()]
+}
+
+fn pixel_of(point: Vec3) -> Vec2 {
+    let ndc = camera().project(point, 800.0 / 600.0).unwrap().unwrap();
+    Vec2::new(ndc.x + 1.0, 1.0 - ndc.y) * 0.5 * Vec2::new(800.0, 600.0)
+}
+
+struct Fixture {
+    native: NativeScene,
+    view: ViewScene,
+    owner: NodeId,
+    path: Vec<NativeId>,
+}
+
+impl Fixture {
+    fn new(points: Vec<[f64; 3]>, loops: &[Vec<usize>], loose_edges: &[[usize; 2]]) -> Self {
+        let (mut native, owner) = test_fixtures::polygon_shape(points, loops);
+        for &endpoints in loose_edges {
+            test_fixtures::add_loose_edge_unvalidated(&mut native, endpoints);
+        }
+        let view = ViewScene::from_native(&native, 1 << 28).unwrap();
+        let path = vec![native.node(owner).unwrap().transform_id()];
+        Self {
+            native,
+            view,
+            owner,
+            path,
+        }
+    }
+    fn vertex_at(&self, pointer: Vec2) -> Result<Option<usize>, ViewError> {
+        camera()
+            .pick_vertex(
+                &self.view,
+                Some((self.owner, &self.path)),
+                pointer,
+                SIZE,
+                1.0,
+            )
+            .map(|target| {
+                target.map(|target| {
+                    assert!(self.native.resolve_vertex_target(&target).is_ok());
+                    target.vertex_index
+                })
+            })
+    }
+    fn edge_at(&self, pointer: Vec2) -> Result<Option<usize>, ViewError> {
+        camera()
+            .pick_edge(
+                &self.view,
+                Some((self.owner, &self.path)),
+                pointer,
+                SIZE,
+                1.0,
+            )
+            .map(|target| {
+                target.map(|target| {
+                    assert!(self.native.resolve_edge_target(&target).is_ok());
+                    target.edge_index
+                })
+            })
+    }
+    fn vertex(&self, index: usize) -> Vec2 {
+        pixel_of(self.view.instances()[0].world_vertices()[index])
+    }
+}
+
+/// World point that projects to the given pixel offset from the screen center at height `z`.
+fn world_at(x_px: f32, y_px: f32, z: f32) -> [f64; 3] {
+    let scale = (5.0 - z) / 5.0;
+    [
+        (unit(x_px) * scale).into(),
+        (unit(y_px) * scale).into(),
+        z.into(),
+    ]
+}
+
+fn near(a: f32, b: f32) -> Vec2 {
+    Vec2::new(a, b)
+}
+
+#[test]
+fn depth_tolerances_are_pinned_independently() {
+    assert_eq!(FACE_CENTER_DEPTH_TOLERANCE, 1e-4);
+    assert_eq!(VERTEX_MARKER_DEPTH_TOLERANCE, 1e-4);
+}
+
+#[test]
+fn vertex_pick_uses_the_click_box_and_reaches_loose_vertices() {
+    let points = vec![
+        world(-100.0, -100.0, 0.0),
+        world(100.0, -100.0, 0.0),
+        world(0.0, 100.0, 0.0),
+        world(-250.0, 0.0, 0.0),
+    ];
+    let fixture = Fixture::new(points, &[vec![0, 1, 2]], &[]);
+    let loose = fixture.vertex(3);
+    assert_eq!(fixture.vertex_at(loose), Ok(Some(3)));
+    assert_eq!(fixture.vertex_at(loose + near(4.9, -4.9)), Ok(Some(3)));
+    assert_eq!(fixture.vertex_at(loose + near(5.2, 0.0)), Ok(None));
+    assert_eq!(fixture.vertex_at(loose + near(0.0, -5.2)), Ok(None));
+    assert_eq!(fixture.vertex_at(fixture.vertex(2)), Ok(Some(2)));
+}
+
+#[test]
+fn vertex_pick_prefers_the_nearest_to_the_pointer_then_the_lowest_index() {
+    let points = vec![
+        world(-100.0, -100.0, 0.0),
+        world(100.0, -100.0, 0.0),
+        world(0.0, 100.0, 0.0),
+        world(-250.0, 0.0, 0.0),
+        world(-244.0, 0.0, 0.0),
+        world(250.0, 0.0, 0.0),
+        world(250.0, 0.0, 0.0),
+    ];
+    let fixture = Fixture::new(points, &[vec![0, 1, 2]], &[]);
+    let (a, b) = (fixture.vertex(3), fixture.vertex(4));
+    assert_eq!(fixture.vertex_at(a + near(2.0, 0.0)), Ok(Some(3)));
+    assert_eq!(fixture.vertex_at(b - near(2.0, 0.0)), Ok(Some(4)));
+    assert_eq!(fixture.vertex_at(fixture.vertex(5)), Ok(Some(5)));
+}
+
+#[test]
+fn vertex_pick_skips_an_occluded_vertex_and_uses_its_own_tolerance() {
+    let quad = |z: f32| {
+        vec![
+            world(-100.0, -100.0, 0.0),
+            world(100.0, -100.0, 0.0),
+            world(100.0, 100.0, 0.0),
+            world(-100.0, 100.0, 0.0),
+            world(0.0, 0.0, z),
+        ]
+    };
+    for (z, expected) in [
+        (-0.5, None),
+        (0.5, Some(4)),
+        (-0.0003, Some(4)),
+        (-0.0015, None),
+    ] {
+        let fixture = Fixture::new(quad(z), &[vec![0, 1, 2, 3]], &[]);
+        assert_eq!(fixture.vertex_at(fixture.vertex(4)), Ok(expected), "z {z}");
+    }
+}
+
+#[test]
+fn component_picks_need_an_active_object_and_a_valid_viewport() {
+    let points = vec![world(0.0, 0.0, 0.0), world(60.0, 0.0, 0.0)];
+    let fixture = Fixture::new(points, &[], &[[0, 1]]);
+    let center = fixture.vertex(0);
+    let pick = |pointer, size: [u32; 2], ppp| {
+        (
+            camera().pick_vertex(&fixture.view, None, pointer, size, ppp),
+            camera().pick_edge(&fixture.view, None, pointer, size, ppp),
+        )
+    };
+    assert_eq!(pick(center, SIZE, 1.0), (Ok(None), Ok(None)));
+    let other = [NativeId::from_decimal("424242").unwrap()];
+    assert_eq!(
+        camera().pick_vertex(
+            &fixture.view,
+            Some((fixture.owner, &other)),
+            center,
+            SIZE,
+            1.0
+        ),
+        Ok(None)
+    );
+    let invalid = ViewError::Camera(InvalidCameraInput);
+    for (pointer, size, ppp) in [
+        (center, [0, 600], 1.0),
+        (center, [800, 0], 1.0),
+        (near(f32::NAN, 1.0), SIZE, 1.0),
+        (center, SIZE, f32::NAN),
+        (center, SIZE, 0.0),
+    ] {
+        assert_eq!(
+            pick(pointer, size, ppp),
+            (Err(invalid.clone()), Err(invalid.clone()))
+        );
+    }
+}
+
+#[test]
+fn edge_pick_uses_screen_distance_and_reaches_face_less_edges() {
+    let points = vec![
+        world(-100.0, -100.0, 0.0),
+        world(100.0, -100.0, 0.0),
+        world(0.0, 100.0, 0.0),
+        world(-300.0, 50.0, 0.0),
+        world(-300.0, 150.0, 0.0),
+    ];
+    let fixture = Fixture::new(points, &[vec![0, 1, 2]], &[[3, 4]]);
+    let bottom = (fixture.vertex(0) + fixture.vertex(1)) * 0.5;
+    assert_eq!(fixture.edge_at(bottom), Ok(Some(0)));
+    assert_eq!(fixture.edge_at(bottom + near(0.0, 5.9)), Ok(Some(0)));
+    assert_eq!(fixture.edge_at(bottom + near(0.0, -5.9)), Ok(Some(0)));
+    assert_eq!(fixture.edge_at(bottom + near(0.0, 6.2)), Ok(None));
+    let loose = (fixture.vertex(3) + fixture.vertex(4)) * 0.5;
+    assert_eq!(fixture.edge_at(loose), Ok(Some(3)));
+}
+
+#[test]
+fn edge_pick_clips_at_the_near_plane_and_the_viewport_border() {
+    let points = vec![
+        [0.3, 0.0, 0.0],
+        [0.3, 0.0, 20.0],
+        world(0.0, -100.0, 0.0),
+        world(5000.0, -100.0, 0.0),
+        [0.0001, 0.0, 4.996],
+        [0.0002, 0.0, 4.998],
+    ];
+    let fixture = Fixture::new(points, &[], &[[0, 1], [2, 3], [4, 5]]);
+    // Between the eye and the near plane: ahead of the eye, but never drawn.
+    assert_eq!(fixture.edge_at(near(418.0, 300.0)), Ok(None));
+    let frame_for = |pointer| camera().pick_frame(pointer, SIZE, 1.0).unwrap();
+    let on_edge = pixel_of(Vec3::new(0.3, 0.0, 3.0));
+    let hit = edge_candidate(
+        &frame_for(on_edge),
+        Vec3::new(0.3, 0.0, 0.0),
+        Vec3::new(0.3, 0.0, 20.0),
+    )
+    .unwrap()
+    .unwrap();
+    assert!((hit.point.z - 3.0).abs() < 1e-2, "{:?}", hit.point);
+    assert_eq!(fixture.edge_at(on_edge), Ok(Some(0)));
+    assert_eq!(
+        fixture.edge_at(pixel_of(Vec3::new(0.3, 0.0, 0.0))),
+        Ok(Some(0))
+    );
+    let visible = pixel_of(Vec3::new(unit(100.0), unit(-100.0), 0.0));
+    assert_eq!(fixture.edge_at(visible), Ok(Some(1)));
+}
+
+#[test]
+fn zero_length_edges_degrade_to_a_point_test() {
+    let points = vec![world(0.0, 0.0, 0.0), world(100.0, 0.0, 0.0)];
+    let fixture = Fixture::new(points, &[], &[[0, 0]]);
+    let at = fixture.vertex(0);
+    assert_eq!(fixture.edge_at(at), Ok(Some(0)));
+    assert_eq!(fixture.edge_at(at + near(7.0, 0.0)), Ok(None));
+    let p = Vec3::ZERO;
+    let hit = edge_candidate(&camera().pick_frame(at, SIZE, 1.0).unwrap(), p, p)
+        .unwrap()
+        .unwrap();
+    assert!(hit.pixels == 0.0 && hit.point.is_finite() && hit.ndc.is_finite());
+}
+
+#[test]
+fn coincident_edges_resolve_to_the_lowest_edge_index() {
+    let points = vec![
+        world(-100.0, 0.0, 0.0),
+        world(100.0, 0.0, 0.0),
+        world(0.0, 100.0, 0.0),
+        world(0.0, 200.0, 0.0),
+        world(0.0, 300.0, 0.0),
+    ];
+    let loops = [vec![0, 1, 2], vec![0, 1, 3], vec![0, 1, 4]];
+    let fixture = Fixture::new(points.clone(), &loops, &[]);
+    let middle = (fixture.vertex(0) + fixture.vertex(1)) * 0.5;
+    assert_eq!(fixture.edge_at(middle), Ok(Some(0)));
+    let duplicated = Fixture::new(points, &[], &[[0, 1], [0, 1]]);
+    assert_eq!(duplicated.edge_at(middle), Ok(Some(0)));
+}
+
+#[test]
+fn edge_pick_returns_the_perspective_correct_point() {
+    let (a, b) = (Vec3::new(0.3, 0.0, 4.0), Vec3::new(0.3, 0.0, -40.0));
+    let pointer = (pixel_of(a) + pixel_of(b)) * 0.5;
+    let hit = edge_candidate(&camera().pick_frame(pointer, SIZE, 1.0).unwrap(), a, b)
+        .unwrap()
+        .unwrap();
+    assert!((pixel_of(hit.point) - pointer).length() < 0.05);
+    assert!(hit.pixels < 0.05);
+    assert!(
+        hit.point.z > -10.0,
+        "naive midpoint z is -18: {:?}",
+        hit.point
+    );
+}
+
+#[test]
+fn edge_pick_skips_an_occluded_edge() {
+    let edge_at = |z: f32| {
+        vec![
+            world(-100.0, -100.0, 0.0),
+            world(100.0, -100.0, 0.0),
+            world(100.0, 100.0, 0.0),
+            world(-100.0, 100.0, 0.0),
+            world(-50.0, 0.0, z),
+            world(50.0, 0.0, z),
+        ]
+    };
+    for (z, expected) in [(-0.5, None), (0.5, Some(4))] {
+        let fixture = Fixture::new(edge_at(z), &[vec![0, 1, 2, 3]], &[[4, 5]]);
+        assert_eq!(fixture.edge_at(near(400.0, 300.0)), Ok(expected), "z {z}");
+    }
+}
+
+#[test]
+fn pick_work_is_bounded_by_candidates_times_scene_triangles() {
+    let build = |corners: usize| {
+        let mut points: Vec<[f64; 3]> = (0..corners)
+            .map(|i| {
+                let angle = std::f64::consts::TAU * i as f64 / corners as f64;
+                [50.0 * angle.cos(), 80.0 + 50.0 * angle.sin(), 0.0]
+            })
+            .collect();
+        let shared = points.len();
+        points.extend((0..1000).map(|_| world(0.0, -200.0, 0.0)));
+        let loops = [(0..corners).collect()];
+        let loose: Vec<[usize; 2]> = (0..1000).map(|_| [shared, shared]).collect();
+        Fixture::new(points, &loops, &loose)
+    };
+    let admitted = build(1002);
+    let click = pixel_of(Vec3::new(0.0, unit(-200.0), 0.0));
+    assert_eq!(admitted.vertex_at(click), Ok(Some(1002)));
+    assert_eq!(admitted.edge_at(click), Ok(Some(1002)));
+    let refused = build(1003);
+    assert_eq!(refused.vertex_at(click), Err(ViewError::ResourceLimit));
+    assert_eq!(refused.edge_at(click), Err(ViewError::ResourceLimit));
+}
+
+#[test]
+fn vertex_ranking_prefers_pixel_distance_over_depth() {
+    let points = vec![world_at(20.0, 0.0, -1.0), world_at(23.0, 0.0, 1.0)];
+    let fixture = Fixture::new(points, &[], &[]);
+    let (far_but_close, near_but_far) = (fixture.vertex(0), fixture.vertex(1));
+    assert!((far_but_close - near_but_far).abs().max_element() < 5.0);
+    let pointer = far_but_close + near(0.5, 0.0);
+    assert_eq!(fixture.vertex_at(pointer), Ok(Some(0)));
+    assert_eq!(
+        fixture.vertex_at(near_but_far - near(0.5, 0.0)),
+        Ok(Some(1))
+    );
+}
+
+#[test]
+fn vertex_pick_rejects_points_just_outside_the_frustum() {
+    let fixture = Fixture::new(vec![world_at(401.5, 0.0, 0.0), [0.0, 0.0, 4.995]], &[], &[]);
+    // Right viewport border at pixel x = 800: a vertex 1.5 px outside is not on screen.
+    assert_eq!(fixture.vertex_at(near(800.0, 300.0)), Ok(None));
+    // On the view axis between the eye and the near plane.
+    assert_eq!(fixture.vertex_at(near(400.0, 300.0)), Ok(None));
+}
+
+#[test]
+fn vertex_and_edge_thresholds_include_their_exact_limit() {
+    let fixture = Fixture::new(
+        vec![
+            world(0.0, 0.0, 0.0),
+            world(-100.0, 0.0, 0.0),
+            world(100.0, 0.0, 0.0),
+        ],
+        &[],
+        &[[1, 2]],
+    );
+    assert_eq!(fixture.vertex(0), near(400.0, 300.0));
+    assert_eq!(fixture.vertex_at(near(405.0, 300.0)), Ok(Some(0)));
+    assert_eq!(fixture.vertex_at(near(400.0, 305.0)), Ok(Some(0)));
+    assert_eq!(fixture.vertex_at(near(405.01, 300.0)), Ok(None));
+    assert_eq!(fixture.edge_at(near(400.0, 306.0)), Ok(Some(0)));
+    assert_eq!(fixture.edge_at(near(400.0, 306.01)), Ok(None));
+}
+
+#[test]
+fn edge_crossing_the_viewport_border_is_picked_at_the_border() {
+    for y in [-200.0, -100.0, -37.0, 61.0, 123.0] {
+        let points = vec![world(-100.0, y, 0.0), world(5000.0, y, 0.0)];
+        let fixture = Fixture::new(points, &[], &[[0, 1]]);
+        let pointer = near(800.0, 300.0 - y);
+        assert_eq!(fixture.edge_at(pointer), Ok(Some(0)), "y {y}");
+    }
+}
+
+#[test]
+fn equal_candidates_in_two_instances_resolve_to_the_lower_path() {
+    let (native, owner) = test_fixtures::twin_shapes();
+    let view = ViewScene::from_native(&native, 1 << 28).unwrap();
+    let path = [native.node(owner).unwrap().transform_id()];
+    assert_eq!(view.instances().len(), 2);
+    let first = view.instances()[0].shape();
+    assert_eq!(first, native.shapes()[0].id());
+    let vertices = view.instances()[0].world_vertices();
+    let front = (0..vertices.len())
+        .rev()
+        .max_by(|&a, &b| vertices[a].z.total_cmp(&vertices[b].z))
+        .unwrap();
+    let pointer = pixel_of(vertices[front]);
+    let vertex = camera()
+        .pick_vertex(&view, Some((owner, &path)), pointer, SIZE, 1.0)
+        .unwrap()
+        .unwrap();
+    assert_eq!((vertex.shape, vertex.vertex_index), (first, front));
+    let front_edge = |edge: &&[usize; 2]| edge.iter().all(|&end| vertices[end].z > 0.4);
+    let first_edge = *view.instances()[0].edges().iter().find(front_edge).unwrap();
+    let midpoint = (vertices[first_edge[0]] + vertices[first_edge[1]]) * 0.5;
+    let edge = camera()
+        .pick_edge(&view, Some((owner, &path)), pixel_of(midpoint), SIZE, 1.0)
+        .unwrap()
+        .unwrap();
+    assert_eq!(edge.shape, first);
 }

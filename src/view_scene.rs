@@ -10,6 +10,10 @@ use std::mem::size_of;
 
 pub const FACE_CENTER_MARKER_PIXELS: f32 = 4.0;
 pub const FACE_CENTER_CLICK_PIXELS: f32 = 8.0;
+/// Provisional click box edge for a vertex marker (5 px marker), a policy value not a Maya default.
+pub const VERTEX_CLICK_PIXELS: f32 = 10.0;
+/// Provisional largest screen distance from the pointer to a picked edge.
+pub const EDGE_CLICK_PIXELS: f32 = 6.0;
 /// Allowed distance of a polygon's turning sum from a whole number of turns. A quarter turn
 /// separates integer windings; it is not a planarity check, so lifted vertices still display.
 /// Strongly skew (non-planar) n-gons may be accepted yet overlap in projection; display only.
