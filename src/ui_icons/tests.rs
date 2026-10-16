@@ -21,9 +21,12 @@ fn index(icon: UiIcon) -> usize {
         UiIcon::SidebarAttributeEditor => 12,
         UiIcon::SidebarToolSettings => 13,
         UiIcon::SidebarChannelBox => 14,
+        UiIcon::FileNew => 15,
+        UiIcon::FileOpen => 16,
+        UiIcon::FileSave => 17,
     }
 }
-const ICON_COUNT: usize = 15;
+const ICON_COUNT: usize = 18;
 
 struct Raster {
     w: usize,
@@ -327,6 +330,9 @@ fn golden(icon: UiIcon) -> [&'static str; 12] {
         UiIcon::SidebarAttributeEditor => GOLDEN_SIDEBAR_ATTRIBUTE_EDITOR,
         UiIcon::SidebarToolSettings => GOLDEN_SIDEBAR_TOOL_SETTINGS,
         UiIcon::SidebarChannelBox => GOLDEN_SIDEBAR_CHANNEL_BOX,
+        UiIcon::FileNew => GOLDEN_FILE_NEW,
+        UiIcon::FileOpen => GOLDEN_FILE_OPEN,
+        UiIcon::FileSave => GOLDEN_FILE_SAVE,
     }
 }
 
@@ -542,6 +548,49 @@ const GOLDEN_SIDEBAR_CHANNEL_BOX: [&str; 12] = [
     "............",
     ".##########.",
     ".##########.",
+    "............",
+];
+
+const GOLDEN_FILE_NEW: [&str; 12] = [
+    "............",
+    ".#######....",
+    ".########...",
+    ".#########..",
+    ".##########.",
+    ".#########..",
+    ".####...#...",
+    ".####...#...",
+    ".####.#####.",
+    ".####.####..",
+    ".####..##...",
+    "............",
+];
+const GOLDEN_FILE_OPEN: [&str; 12] = [
+    "............",
+    "..###.......",
+    ".####.......",
+    ".####.......",
+    ".##########.",
+    ".##########.",
+    "..#########.",
+    "...########.",
+    "..########..",
+    "..########..",
+    "..#######...",
+    "............",
+];
+const GOLDEN_FILE_SAVE: [&str; 12] = [
+    "............",
+    ".....##.....",
+    ".....##.....",
+    ".....##.....",
+    ".....##.....",
+    "....####....",
+    "..#..##..#..",
+    ".##..##..##.",
+    ".##......##.",
+    ".##########.",
+    "..########..",
     "............",
 ];
 

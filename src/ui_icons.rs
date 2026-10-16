@@ -26,6 +26,9 @@ pub enum UiIcon {
     SidebarAttributeEditor,
     SidebarToolSettings,
     SidebarChannelBox,
+    FileNew,
+    FileOpen,
+    FileSave,
 }
 
 /// Tool Box order.
@@ -45,6 +48,9 @@ pub const ALL: &[UiIcon] = &[
     UiIcon::SidebarAttributeEditor,
     UiIcon::SidebarToolSettings,
     UiIcon::SidebarChannelBox,
+    UiIcon::FileNew,
+    UiIcon::FileOpen,
+    UiIcon::FileSave,
 ];
 
 // Newly chosen values; not sampled from any Maya image.
@@ -145,8 +151,13 @@ fn along(origin: Pos2, dir: Vec2, pts: &[(f32, f32)]) -> Vec<Pos2> {
 
 /// Shaft and filled triangular head as one outline, starting at the tip.
 fn arrow(origin: Pos2, dir: Vec2, from: f32, to: f32) -> Vec<Pos2> {
+    arrow_with_shaft(origin, dir, from, to, SHAFT_HALF)
+}
+
+/// `arrow` with a chosen shaft half-width.
+fn arrow_with_shaft(origin: Pos2, dir: Vec2, from: f32, to: f32, shaft_half: f32) -> Vec<Pos2> {
     let b = to - HEAD_LEN;
-    let (w, h) = (SHAFT_HALF, HEAD_HALF);
+    let (w, h) = (shaft_half, HEAD_HALF);
     along(
         origin,
         dir,
@@ -618,6 +629,155 @@ fn sidebar_channel_box(fit: &Fit) -> Vec<Shape> {
     rects(fit, &list)
 }
 
+/// File Save tray edges, in grid units.
+const TRAY_LEFT: f32 = 3.0;
+const TRAY_RIGHT: f32 = 21.0;
+
+/// File New page edges and folded-corner size, in grid units.
+const NEW_LEFT: f32 = 3.0;
+const NEW_RIGHT: f32 = 21.0;
+const NEW_TOP: f32 = 1.5;
+const NEW_BOTTOM: f32 = 22.5;
+const NEW_FOLD: f32 = 5.5;
+/// File New plus badge: centre, arm half-length and bar half-thickness.
+const NEW_PLUS_CENTER: Pos2 = Pos2 { x: 16.5, y: 17.5 };
+const NEW_PLUS_ARM: f32 = 4.5;
+const NEW_PLUS_HALF: f32 = 1.6;
+/// Clearance between the plus badge and the page edges, wider than `REGION_GAP` so
+/// the cross stays separate from the page at 16 px.
+const NEW_NOTCH_CLEAR: f32 = 1.5;
+
+fn file_new(fit: &Fit) -> Vec<Shape> {
+    let g = REGION_GAP;
+    let (fold_x, fold_y) = (NEW_RIGHT - NEW_FOLD, NEW_TOP + NEW_FOLD);
+    let (cx, cy, arm, half) = (
+        NEW_PLUS_CENTER.x,
+        NEW_PLUS_CENTER.y,
+        NEW_PLUS_ARM,
+        NEW_PLUS_HALF,
+    );
+    let (notch_left, notch_top) = (cx - arm - NEW_NOTCH_CLEAR, cy - arm - NEW_NOTCH_CLEAR);
+    // Vertex 0 sits on the left edge, below the fold step and above the notch, so
+    // the fan reaches every corner of the L.
+    let start = pos2(NEW_LEFT, fold_y + 2.0 * g);
+    let page = [
+        start,
+        pos2(NEW_LEFT, NEW_TOP),
+        pos2(fold_x - g, NEW_TOP),
+        pos2(fold_x - g, fold_y + g),
+        pos2(NEW_RIGHT, fold_y + g),
+        pos2(NEW_RIGHT, notch_top),
+        pos2(notch_left, notch_top),
+        pos2(notch_left, NEW_BOTTOM),
+        pos2(NEW_LEFT, NEW_BOTTOM),
+    ];
+    let mut shapes = vec![fit.fill(&page, NEUTRAL_LIGHT)];
+    shapes.extend(rects(
+        fit,
+        &[
+            ([cx - arm, cy - half, cx + arm, cy + half], ACCENT),
+            ([cx - half, cy - arm, cx + half, cy - half - g], ACCENT),
+            ([cx - half, cy + half + g, cx + half, cy + arm], ACCENT),
+        ],
+    ));
+    shapes.push(fit.fill(
+        &[
+            pos2(fold_x, NEW_TOP),
+            pos2(NEW_RIGHT, fold_y),
+            pos2(fold_x, fold_y),
+        ],
+        NEUTRAL_MID,
+    ));
+    shapes
+}
+
+/// File Open folder: tab top and bottom, body bottom, and the slanted flap's lean.
+const FOLDER_TAB_TOP: f32 = 3.0;
+const FOLDER_TAB_BOTTOM: f32 = 7.5;
+const FOLDER_BODY_BOTTOM: f32 = 13.0;
+const FOLDER_BOTTOM: f32 = 21.5;
+const FOLDER_LEAN: f32 = 4.0;
+/// File Open body edges, tab width and how far the flap overhangs the body.
+const FOLDER_LEFT: f32 = 2.5;
+const FOLDER_RIGHT: f32 = 21.5;
+const FOLDER_TAB_RIGHT: f32 = 10.5;
+const FOLDER_FLAP_OVERHANG: f32 = 1.0;
+
+fn file_open(fit: &Fit) -> Vec<Shape> {
+    let (left, right, tab_right) = (FOLDER_LEFT, FOLDER_RIGHT, FOLDER_TAB_RIGHT);
+    let flap_right = right + FOLDER_FLAP_OVERHANG;
+    let g = REGION_GAP;
+    let body_top = FOLDER_TAB_BOTTOM + g;
+    let flap_top = FOLDER_BODY_BOTTOM + g;
+    let mut shapes = rects(
+        fit,
+        &[
+            (
+                [left, FOLDER_TAB_TOP, tab_right, FOLDER_TAB_BOTTOM],
+                NEUTRAL_MID,
+            ),
+            ([left, body_top, right, FOLDER_BODY_BOTTOM], NEUTRAL_LIGHT),
+        ],
+    );
+    shapes.push(fit.fill(
+        &[
+            pos2(left + FOLDER_LEAN, flap_top),
+            pos2(flap_right, flap_top),
+            pos2(flap_right - FOLDER_LEAN, FOLDER_BOTTOM),
+            pos2(left, FOLDER_BOTTOM),
+        ],
+        ACCENT,
+    ));
+    shapes
+}
+
+/// File Save tray: arm height and thickness, and where the arrow starts and ends.
+const TRAY_TOP: f32 = 12.5;
+const TRAY_BOTTOM: f32 = 21.5;
+const TRAY_THICK: f32 = 2.8;
+/// Half the File Save arrow's shaft width.
+const SAVE_SHAFT_HALF: f32 = 1.5;
+const SAVE_ARROW_TOP: f32 = 1.5;
+const SAVE_ARROW_TIP: f32 = 17.2;
+
+fn file_save(fit: &Fit) -> Vec<Shape> {
+    let (left, right, g) = (TRAY_LEFT, TRAY_RIGHT, REGION_GAP);
+    let mut shapes = rects(
+        fit,
+        &[
+            (
+                [left, TRAY_TOP, left + TRAY_THICK, TRAY_BOTTOM],
+                NEUTRAL_LIGHT,
+            ),
+            (
+                [
+                    left + TRAY_THICK + g,
+                    TRAY_BOTTOM - TRAY_THICK,
+                    right - TRAY_THICK - g,
+                    TRAY_BOTTOM,
+                ],
+                NEUTRAL_LIGHT,
+            ),
+            (
+                [right - TRAY_THICK, TRAY_TOP, right, TRAY_BOTTOM],
+                NEUTRAL_LIGHT,
+            ),
+        ],
+    );
+    let down = vec2(0.0, 1.0);
+    shapes.push(fit.fill(
+        &arrow_with_shaft(
+            pos2(GRID_CENTER.x, 0.0),
+            down,
+            SAVE_ARROW_TOP,
+            SAVE_ARROW_TIP,
+            SAVE_SHAFT_HALF,
+        ),
+        ACCENT,
+    ));
+    shapes
+}
+
 /// Geometry of `icon` fitted to `rect`, without needing a window. Disabled looks
 /// come from the host `Ui` (egui's disabled opacity); icons have no tone.
 pub fn shapes(icon: UiIcon, rect: Rect) -> Vec<Shape> {
@@ -656,6 +816,9 @@ pub fn shapes(icon: UiIcon, rect: Rect) -> Vec<Shape> {
         UiIcon::SidebarAttributeEditor => sidebar_attribute_editor(&fit),
         UiIcon::SidebarToolSettings => sidebar_tool_settings(&fit),
         UiIcon::SidebarChannelBox => sidebar_channel_box(&fit),
+        UiIcon::FileNew => file_new(&fit),
+        UiIcon::FileOpen => file_open(&fit),
+        UiIcon::FileSave => file_save(&fit),
     }
 }
 
