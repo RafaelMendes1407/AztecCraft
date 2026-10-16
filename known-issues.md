@@ -418,6 +418,8 @@ grid still draw. Hidden, not unfiltered, because unfiltered markers would show u
 the picker rejects. Picking is unaffected apart from its own budget error. A cache or spatial index
 would lift the limit.
 
+## Rotate exactness is partial (#128)
+
 A Rotate that changes exactly one channel by the requested delta stores `baseline + delta` in the scene's declared unit, bit for bit (object-space X ring, single-channel numeric entry, and Y/Z or world rotations whose decomposition changes one channel within the snap tolerance of that value). Two cases are computed rather than exact, and may differ from `baseline + requested` by about 1 ulp:
 
 - A radian scene: Rotate works internally in degrees, so a requested radian angle is converted to degrees and back.

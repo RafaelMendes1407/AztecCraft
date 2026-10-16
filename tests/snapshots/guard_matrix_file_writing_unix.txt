@@ -95,9 +95,9 @@
     material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
     session_materials=[] modal=false closing=false pending_action=- dirty=true can_undo=true
     can_redo=true
-  save_scene => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
-  save_scene_as => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
-  resolve_file_action(save) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
+  save_scene => Err(BusyManipulation: Finish or cancel the active manipulation) | no state change
+  save_scene_as => Err(BusyManipulation: Finish or cancel the active manipulation) | no state change
+  resolve_file_action(save) => Err(BusyManipulation: Finish or cancel the active manipulation) | no state change
 
 ## local_move / remote
   baseline:
@@ -109,9 +109,9 @@
     material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
     session_materials=[] modal=false closing=false pending_action=- dirty=true can_undo=true
     can_redo=true
-  save_scene => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
-  save_scene_as => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
-  resolve_file_action(save) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
+  save_scene => Err(BusyManipulation: Finish or cancel the active manipulation) | no state change
+  save_scene_as => Err(BusyManipulation: Finish or cancel the active manipulation) | no state change
+  resolve_file_action(save) => Err(BusyManipulation: Finish or cancel the active manipulation) | no state change
 
 ## remote_move / native
   baseline:
@@ -123,9 +123,9 @@
     material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
     session_materials=[] modal=false closing=false pending_action=- dirty=true can_undo=true
     can_redo=true
-  save_scene => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
-  save_scene_as => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
-  resolve_file_action(save) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
+  save_scene => Err(BusyManipulation: Finish or cancel the active manipulation) | no state change
+  save_scene_as => Err(BusyManipulation: Finish or cancel the active manipulation) | no state change
+  resolve_file_action(save) => Err(BusyManipulation: Finish or cancel the active manipulation) | no state change
 
 ## remote_move / remote
   baseline:
@@ -137,9 +137,9 @@
     material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
     session_materials=[] modal=false closing=false pending_action=- dirty=true can_undo=true
     can_redo=true
-  save_scene => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
-  save_scene_as => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
-  resolve_file_action(save) => Err(BusyManipulation: Finish or cancel the active Move manipulation) | no state change
+  save_scene => Err(BusyManipulation: Finish or cancel the active manipulation) | no state change
+  save_scene_as => Err(BusyManipulation: Finish or cancel the active manipulation) | no state change
+  resolve_file_action(save) => Err(BusyManipulation: Finish or cancel the active manipulation) | no state change
 
 ## name_draft / native
   baseline:
