@@ -51,6 +51,8 @@ enum SelectionModeIntent {
     Toggle,
     Object,
     Face,
+    Vertex,
+    Edge,
     Hierarchy,
 }
 

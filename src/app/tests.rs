@@ -4041,7 +4041,10 @@ fn delete_controls_are_enabled_in_hierarchy_mode_and_disabled_in_component_modes
         let ctx = egui::Context::default();
         ctx.enable_accesskit();
         let output = frame(&mut editor, &ctx, vec![]);
-        let expect_disabled = mode.is_component();
+        let expect_disabled = matches!(
+            mode,
+            SelectionMode::Face | SelectionMode::Vertex | SelectionMode::Edge
+        );
         assert_eq!(
             button_disabled(&output, "Delete selected"),
             expect_disabled,
@@ -4966,4 +4969,564 @@ fn frame_selected_in_object_mode_ignores_vertex_and_edge_picks() {
     expected.frame_view(&view, None, editor.aspect).unwrap();
     remote(&mut editor, Operation::FrameSelected).unwrap();
     assert_eq!(editor.camera, expected);
+}
+
+fn key_with(key: Key, modifiers: egui::Modifiers) -> egui::Event {
+    egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers,
+    }
+}
+
+/// A cube in front of a head-on camera, the first frame already run.
+fn component_click_editor() -> (Editor, egui::Context, egui::Rect) {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    editor.camera =
+        Camera::new(Vec3::ZERO, 0.0, 0.0, 5.0, 45_f32.to_radians(), 0.01, 100.0).unwrap();
+    let ctx = egui::Context::default();
+    let output = frame(&mut editor, &ctx, vec![]);
+    let rect = face_viewport_rect(&output);
+    (editor, ctx, rect)
+}
+
+fn screen_point(editor: &Editor, rect: egui::Rect, world: glam::Vec3) -> egui::Pos2 {
+    let ndc = editor
+        .camera
+        .project(world, editor.aspect)
+        .unwrap()
+        .unwrap();
+    egui::pos2(
+        rect.left() + (ndc.x + 1.0) * 0.5 * rect.width(),
+        rect.bottom() - (ndc.y + 1.0) * 0.5 * rect.height(),
+    )
+}
+
+/// Front-facing vertex indices (nearest to the eye) and the world position of each point.
+fn front_vertices(editor: &Editor) -> (Vec<usize>, Vec<glam::Vec3>) {
+    let points = world_points(editor, &(0..8).collect::<Vec<_>>());
+    let eye = editor.camera.eye();
+    let nearest = points
+        .iter()
+        .map(|point| point.distance(eye))
+        .fold(f32::MAX, f32::min);
+    let front = (0..points.len())
+        .filter(|&index| points[index].distance(eye) < nearest + 0.01)
+        .collect();
+    (front, points)
+}
+
+fn click_baseline(editor: &Editor) -> impl PartialEq + std::fmt::Debug + use<> {
+    (
+        editor.history.scene().clone(),
+        editor.selection_mode,
+        editor.selected,
+        editor.selected_path.clone(),
+        editor.remembered_face.clone(),
+        editor.remembered_vertex.clone(),
+        editor.remembered_edge.clone(),
+        editor.camera.clone(),
+        editor.scene_token,
+    )
+}
+
+#[test]
+fn f9_and_f10_switch_to_vertex_and_edge_modes_and_keep_each_remembered_pick() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let before = editor.history.scene().clone();
+    let ctx = egui::Context::default();
+    frame(&mut editor, &ctx, vec![]);
+    frame(&mut editor, &ctx, vec![key(Key::F9)]);
+    assert_eq!(editor.selection_mode, SelectionMode::Vertex);
+    pick_vertex(&mut editor, 2);
+    frame(&mut editor, &ctx, vec![key(Key::F10)]);
+    assert_eq!(editor.selection_mode, SelectionMode::Edge);
+    pick_edge(&mut editor, 3);
+    frame(&mut editor, &ctx, vec![key(Key::F9)]);
+    assert_eq!(editor.selection_mode, SelectionMode::Vertex);
+    assert_eq!(editor.remembered_vertex.as_ref().unwrap().vertex_index, 2);
+    frame(&mut editor, &ctx, vec![key(Key::F11)]);
+    assert_eq!(editor.selection_mode, SelectionMode::Face);
+    assert_eq!(editor.history.scene(), &before);
+}
+
+#[test]
+fn f9_and_f10_ignore_modified_keys() {
+    for pressed in [Key::F9, Key::F10] {
+        for modifiers in [
+            egui::Modifiers::SHIFT,
+            egui::Modifiers::CTRL,
+            egui::Modifiers::ALT,
+            egui::Modifiers::COMMAND,
+        ] {
+            let mut editor = Editor::default();
+            editor.create(Primitive::Cube);
+            let ctx = egui::Context::default();
+            frame(&mut editor, &ctx, vec![]);
+            let baseline = click_baseline(&editor);
+            frame(&mut editor, &ctx, vec![key_with(pressed, modifiers)]);
+            assert_eq!(
+                click_baseline(&editor),
+                baseline,
+                "{pressed:?} {modifiers:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn f9_and_f10_are_blocked_by_popups_modals_and_closing() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let ctx = egui::Context::default();
+    let output = frame(&mut editor, &ctx, vec![]);
+    let select = face_text_position(&output, "Select");
+    face_pointer_click(&mut editor, &ctx, select, egui::Modifiers::NONE, vec![]);
+    assert!(egui::Popup::is_any_open(&ctx));
+    let baseline = click_baseline(&editor);
+    frame(&mut editor, &ctx, vec![key(Key::F9), key(Key::F10)]);
+    assert_eq!(click_baseline(&editor), baseline, "popup");
+
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    editor.new_document().unwrap();
+    frame(&mut editor, &ctx, vec![]);
+    frame(&mut editor, &ctx, vec![]);
+    assert!(editor.files.is_modal());
+    let baseline = click_baseline(&editor);
+    frame(&mut editor, &ctx, vec![key(Key::F9), key(Key::F10)]);
+    assert_eq!(click_baseline(&editor), baseline, "modal");
+
+    let mut editor = Editor::default();
+    editor.close_document().unwrap();
+    assert!(editor.files.is_closing());
+    let baseline = click_baseline(&editor);
+    frame(&mut editor, &ctx, vec![key(Key::F9), key(Key::F10)]);
+    assert_eq!(click_baseline(&editor), baseline, "closing");
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Block {
+    Modal,
+    Closing,
+    Popup,
+}
+
+/// A cube editor whose first frame captured the viewport, in `mode`, then put into `block`.
+fn blocked_component_editor(
+    block: Option<Block>,
+    mode: SelectionMode,
+) -> (Editor, egui::Context, egui::Rect) {
+    let (mut editor, ctx, rect) = component_click_editor();
+    set_mode(&mut editor, mode);
+    match block {
+        None => {}
+        Some(block) => block_editor(&mut editor, &ctx, block),
+    }
+    (editor, ctx, rect)
+}
+
+fn block_editor(editor: &mut Editor, ctx: &egui::Context, block: Block) {
+    match block {
+        Block::Modal => {
+            editor.new_document().unwrap();
+            frame(editor, ctx, vec![]);
+            frame(editor, ctx, vec![]);
+            assert!(editor.files.is_modal());
+        }
+        Block::Closing => {
+            let Ok(OperationReply::PendingConfirmation {
+                pending_action_id, ..
+            }) = editor.close_document()
+            else {
+                panic!("a dirty scene must ask before closing");
+            };
+            editor
+                .apply_operation(Operation::ResolveFileAction {
+                    pending_id: Uuid::parse_str(&pending_action_id).unwrap(),
+                    decision: crate::editor_operations::FileDecision::Discard,
+                })
+                .unwrap();
+            frame(editor, ctx, vec![]);
+            assert!(editor.files.is_closing());
+            assert!(!editor.files.is_modal());
+        }
+        Block::Popup => {
+            let output = frame(editor, ctx, vec![]);
+            let select = face_text_position(&output, "Select");
+            face_pointer_click(editor, ctx, select, egui::Modifiers::NONE, vec![]);
+            assert!(egui::Popup::is_any_open(ctx));
+        }
+    }
+}
+
+#[test]
+fn vertex_and_edge_key_intents_are_dropped_while_blocked_with_the_viewport_captured() {
+    for block in [Block::Modal, Block::Closing, Block::Popup] {
+        for key_code in [Key::F9, Key::F10] {
+            let (mut editor, ctx, _) = blocked_component_editor(Some(block), SelectionMode::Object);
+            let baseline = click_baseline(&editor);
+            frame(&mut editor, &ctx, vec![key(key_code)]);
+            assert_eq!(click_baseline(&editor), baseline, "{block:?} {key_code:?}");
+        }
+    }
+}
+
+#[test]
+fn vertex_and_edge_clicks_are_dropped_while_blocked_with_the_viewport_captured() {
+    // A click outside an open popup first dismisses it, so only modal and closing can block it.
+    for block in [Block::Modal, Block::Closing] {
+        for mode in [SelectionMode::Vertex, SelectionMode::Edge] {
+            let (mut control, ctx, rect) = blocked_component_editor(None, mode);
+            let (front, points) = front_vertices(&control);
+            let at = screen_point(&control, rect, points[front[0]]);
+            face_pointer_click(&mut control, &ctx, at, egui::Modifiers::NONE, vec![]);
+            assert!(
+                control.remembered_vertex.is_some() || control.remembered_edge.is_some(),
+                "{mode:?} control click did not pick"
+            );
+            let (mut editor, ctx, rect) = blocked_component_editor(Some(block), mode);
+            let at = screen_point(&editor, rect, points[front[0]]);
+            let baseline = click_baseline(&editor);
+            face_pointer_click(&mut editor, &ctx, at, egui::Modifiers::NONE, vec![]);
+            assert_eq!(click_baseline(&editor), baseline, "{block:?} {mode:?}");
+        }
+    }
+}
+
+#[test]
+fn select_menu_vertex_and_edge_entries_do_nothing_while_modal_or_closing() {
+    for block in [Block::Modal, Block::Closing] {
+        for label in ["Vertex   F9", "Edge   F10"] {
+            let (mut editor, ctx, _) = blocked_component_editor(Some(block), SelectionMode::Object);
+            let baseline = click_baseline(&editor);
+            let output = frame(&mut editor, &ctx, vec![]);
+            let select = face_text_position(&output, "Select");
+            let output =
+                face_pointer_click(&mut editor, &ctx, select, egui::Modifiers::NONE, vec![]);
+            if matches!(block, Block::Modal) {
+                // The file modal covers the menu bar, so the entries cannot be reached at all.
+                assert!(!egui::Popup::is_any_open(&ctx), "{label}");
+                continue;
+            }
+            let components = face_text_position(&output, "Components");
+            let output =
+                face_pointer_click(&mut editor, &ctx, components, egui::Modifiers::NONE, vec![]);
+            let entry = face_text_position(&output, label);
+            face_pointer_click(&mut editor, &ctx, entry, egui::Modifiers::NONE, vec![]);
+            assert_eq!(click_baseline(&editor), baseline, "{block:?} {label}");
+        }
+    }
+}
+
+#[test]
+fn select_menu_vertex_and_edge_entries_switch_modes() {
+    for (label, mode) in [
+        ("Vertex   F9", SelectionMode::Vertex),
+        ("Edge   F10", SelectionMode::Edge),
+    ] {
+        let mut editor = Editor::default();
+        editor.create(Primitive::Cube);
+        let before = editor.history.scene().clone();
+        let ctx = egui::Context::default();
+        let output = frame(&mut editor, &ctx, vec![]);
+        let select = face_text_position(&output, "Select");
+        let output = face_pointer_click(&mut editor, &ctx, select, egui::Modifiers::NONE, vec![]);
+        let components = face_text_position(&output, "Components");
+        let output =
+            face_pointer_click(&mut editor, &ctx, components, egui::Modifiers::NONE, vec![]);
+        let entry = face_text_position(&output, label);
+        face_pointer_click(&mut editor, &ctx, entry, egui::Modifiers::NONE, vec![]);
+        assert_eq!(editor.selection_mode, mode, "{label}");
+        assert_eq!(editor.history.scene(), &before);
+    }
+}
+
+#[test]
+fn viewport_click_in_vertex_mode_replaces_then_clears_the_pick() {
+    let (mut editor, ctx, rect) = component_click_editor();
+    frame(&mut editor, &ctx, vec![key(Key::F9)]);
+    let (front, points) = front_vertices(&editor);
+    assert_eq!(front.len(), 4);
+    let before = editor.history.scene().clone();
+    for &index in &front[..2] {
+        let at = screen_point(&editor, rect, points[index]);
+        face_pointer_click(&mut editor, &ctx, at, egui::Modifiers::NONE, vec![]);
+        let target = editor.remembered_vertex.as_ref().unwrap();
+        assert_eq!(target.vertex_index, index);
+        assert_eq!(Some(target.transform), editor.selected);
+    }
+    face_pointer_click(
+        &mut editor,
+        &ctx,
+        rect.left_top() + egui::vec2(20.0, 20.0),
+        egui::Modifiers::NONE,
+        vec![],
+    );
+    assert_eq!(editor.remembered_vertex, None);
+    assert!(editor.selected.is_some());
+    assert_eq!(editor.history.scene(), &before);
+}
+
+#[test]
+fn viewport_click_in_edge_mode_replaces_then_clears_the_pick() {
+    let (mut editor, ctx, rect) = component_click_editor();
+    frame(&mut editor, &ctx, vec![key(Key::F10)]);
+    let (front, points) = front_vertices(&editor);
+    let shape = selected_edge(&editor, 0).shape;
+    let edges = editor
+        .history
+        .scene()
+        .shape(shape)
+        .unwrap()
+        .mesh()
+        .edges()
+        .to_vec();
+    let front_edges: Vec<_> = edges
+        .iter()
+        .enumerate()
+        .filter(|(_, edge)| edge.endpoints().iter().all(|end| front.contains(end)))
+        .map(|(index, _)| index)
+        .collect();
+    assert_eq!(front_edges.len(), 4);
+    let before = editor.history.scene().clone();
+    for &index in &front_edges[..2] {
+        let [a, b] = edges[index].endpoints();
+        let at = screen_point(&editor, rect, (points[a] + points[b]) * 0.5);
+        face_pointer_click(&mut editor, &ctx, at, egui::Modifiers::NONE, vec![]);
+        assert_eq!(editor.remembered_edge.as_ref().unwrap().edge_index, index);
+    }
+    face_pointer_click(
+        &mut editor,
+        &ctx,
+        rect.left_top() + egui::vec2(20.0, 20.0),
+        egui::Modifiers::NONE,
+        vec![],
+    );
+    assert_eq!(editor.remembered_edge, None);
+    assert_eq!(editor.history.scene(), &before);
+}
+
+#[test]
+fn modified_clicks_in_vertex_and_edge_modes_are_refused_without_changes() {
+    for key_code in [Key::F9, Key::F10] {
+        let (mut editor, ctx, rect) = component_click_editor();
+        frame(&mut editor, &ctx, vec![key(key_code)]);
+        let (front, points) = front_vertices(&editor);
+        let at = screen_point(&editor, rect, points[front[0]]);
+        face_pointer_click(&mut editor, &ctx, at, egui::Modifiers::NONE, vec![]);
+        let baseline = click_baseline(&editor);
+        for modifiers in [egui::Modifiers::SHIFT, egui::Modifiers::CTRL] {
+            face_pointer_click(&mut editor, &ctx, at, modifiers, vec![]);
+            assert!(editor.error && editor.status.contains("unsupported"));
+            assert_eq!(
+                click_baseline(&editor),
+                baseline,
+                "{key_code:?} {modifiers:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_mode_intent_in_the_click_frame_makes_the_click_use_the_new_mode() {
+    for (key_code, vertex) in [(Key::F9, true), (Key::F10, false)] {
+        let (mut editor, ctx, rect) = component_click_editor();
+        let (front, points) = front_vertices(&editor);
+        let at = screen_point(&editor, rect, points[front[0]]);
+        face_pointer_click(&mut editor, &ctx, at, egui::Modifiers::NONE, vec![]);
+        assert_eq!(editor.selection_mode, SelectionMode::Object);
+        face_pointer_click(
+            &mut editor,
+            &ctx,
+            at,
+            egui::Modifiers::NONE,
+            vec![key(key_code)],
+        );
+        assert_eq!(
+            editor.selection_mode,
+            if vertex {
+                SelectionMode::Vertex
+            } else {
+                SelectionMode::Edge
+            }
+        );
+        assert_eq!(editor.remembered_vertex.is_some(), vertex);
+        assert_eq!(editor.remembered_edge.is_some(), !vertex);
+    }
+}
+
+#[test]
+fn f8_leaves_vertex_and_edge_for_object_and_enters_face_from_object_and_hierarchy() {
+    for mode in [SelectionMode::Vertex, SelectionMode::Edge] {
+        let mut editor = Editor::default();
+        editor.create(Primitive::Cube);
+        let ctx = egui::Context::default();
+        frame(&mut editor, &ctx, vec![]);
+        set_mode(&mut editor, mode);
+        pick_vertex_or_edge(&mut editor, mode);
+        let remembered = (
+            editor.remembered_vertex.clone(),
+            editor.remembered_edge.clone(),
+        );
+        frame(&mut editor, &ctx, vec![key(Key::F8)]);
+        assert_eq!(editor.selection_mode, SelectionMode::Object, "{mode:?}");
+        assert_eq!(
+            (
+                editor.remembered_vertex.clone(),
+                editor.remembered_edge.clone()
+            ),
+            remembered
+        );
+    }
+    for mode in [SelectionMode::Object, SelectionMode::Hierarchy] {
+        let mut editor = Editor::default();
+        editor.create(Primitive::Cube);
+        let ctx = egui::Context::default();
+        frame(&mut editor, &ctx, vec![]);
+        set_mode(&mut editor, mode);
+        frame(&mut editor, &ctx, vec![key(Key::F8)]);
+        assert_eq!(editor.selection_mode, SelectionMode::Face, "{mode:?}");
+    }
+}
+
+fn pick_vertex_or_edge(editor: &mut Editor, mode: SelectionMode) {
+    if mode == SelectionMode::Vertex {
+        pick_vertex(editor, 1);
+    } else {
+        pick_edge(editor, 1);
+    }
+}
+
+#[test]
+fn delete_in_the_frame_of_a_vertex_or_edge_intent_sees_the_new_mode() {
+    for (key_code, noun) in [(Key::F9, "Vertex"), (Key::F10, "Edge")] {
+        let mut editor = Editor::default();
+        editor.create(Primitive::Cube);
+        let before = editor.history.scene().clone();
+        let ctx = egui::Context::default();
+        frame(&mut editor, &ctx, vec![]);
+        frame(&mut editor, &ctx, vec![key(key_code), key(Key::Delete)]);
+        assert!(
+            editor.error
+                && editor
+                    .status
+                    .contains(&format!("{noun} deletion is unsupported"))
+        );
+        assert_eq!(editor.history.scene(), &before);
+        assert!(editor.selected.is_some());
+    }
+}
+
+#[test]
+fn sync_fields_clears_a_pick_whose_owner_path_differs_from_the_selected_instance() {
+    // Instancing cannot be built from the bin crate, so the second instance is simulated by
+    // the same transform selected under a different path.
+    let mut editor = deep_group_editor();
+    let paths = editor.history.scene().transform_paths().unwrap();
+    let leaf = paths.last().unwrap().clone();
+    assert_eq!(leaf.path.len(), 3);
+    remote(
+        &mut editor,
+        Operation::Select {
+            node: Some(leaf.node),
+            instance_path: Some(leaf.path.clone()),
+        },
+    )
+    .unwrap();
+    set_mode(&mut editor, SelectionMode::Vertex);
+    pick_vertex(&mut editor, 0);
+    set_mode(&mut editor, SelectionMode::Edge);
+    pick_edge(&mut editor, 0);
+    editor.sync_fields();
+    assert!(editor.remembered_vertex.is_some() && editor.remembered_edge.is_some());
+    editor.selected_path = leaf.path[1..].to_vec();
+    editor.sync_fields();
+    assert_eq!(editor.remembered_vertex, None);
+    assert_eq!(editor.remembered_edge, None);
+}
+
+#[test]
+fn vertex_edge_and_mode_operations_refuse_modal_and_closing_without_changes() {
+    for (mode, pick_target) in [(SelectionMode::Vertex, true), (SelectionMode::Edge, false)] {
+        for closing in [false, true] {
+            let mut editor = Editor::default();
+            editor.create(Primitive::Cube);
+            set_mode(&mut editor, mode);
+            if pick_target {
+                pick_vertex(&mut editor, 3);
+            } else {
+                pick_edge(&mut editor, 5);
+            }
+            let vertex = selected_vertex(&editor, 4);
+            let edge = selected_edge(&editor, 6);
+            if closing {
+                let Ok(OperationReply::PendingConfirmation {
+                    pending_action_id, ..
+                }) = editor.close_document()
+                else {
+                    panic!("a dirty scene must ask before closing");
+                };
+                editor
+                    .apply_operation(Operation::ResolveFileAction {
+                        pending_id: Uuid::parse_str(&pending_action_id).unwrap(),
+                        decision: crate::editor_operations::FileDecision::Discard,
+                    })
+                    .unwrap();
+                assert!(editor.files.is_closing() && !editor.files.is_modal());
+            } else {
+                editor.new_document().unwrap();
+                assert!(editor.files.is_modal() && !editor.files.is_closing());
+            }
+            let state = |editor: &Editor| {
+                (
+                    editor.history.scene().clone(),
+                    editor.selected,
+                    editor.selected_path.clone(),
+                    editor.selection_mode,
+                    editor.remembered_vertex.clone(),
+                    editor.remembered_edge.clone(),
+                    editor.remembered_face.clone(),
+                    editor.scene_token,
+                )
+            };
+            let before = state(&editor);
+            let operations = || {
+                [
+                    Operation::SelectVertex {
+                        target: Some(vertex.clone()),
+                    },
+                    Operation::SelectVertex { target: None },
+                    Operation::SelectEdge {
+                        target: Some(edge.clone()),
+                    },
+                    Operation::SelectEdge { target: None },
+                    Operation::SetSelectionMode(SelectionMode::Object),
+                    Operation::SetSelectionMode(SelectionMode::Face),
+                ]
+            };
+            for index in 0..operations().len() {
+                assert!(matches!(
+                    remote(&mut editor, operations().into_iter().nth(index).unwrap()),
+                    Err(OperationError::BusyEditing)
+                ));
+                assert_eq!(state(&editor), before);
+                if closing {
+                    assert!(matches!(
+                        editor.apply_operation_guarded(
+                            ManipulationProvenance::Native,
+                            operations().into_iter().nth(index).unwrap(),
+                            &|| true,
+                        ),
+                        Err(OperationError::BusyEditing)
+                    ));
+                    assert_eq!(state(&editor), before);
+                }
+            }
+        }
+    }
 }

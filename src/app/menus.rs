@@ -191,13 +191,30 @@ impl Editor {
                 }
                 ui.menu_button("Components", |ui| {
                     if ui
+                        .selectable_label(
+                            self.selection_mode == SelectionMode::Vertex,
+                            "Vertex   F9",
+                        )
+                        .clicked()
+                    {
+                        *selection_intent = Some(SelectionModeIntent::Vertex);
+                        ui.close();
+                    }
+                    if ui
+                        .selectable_label(self.selection_mode == SelectionMode::Edge, "Edge   F10")
+                        .clicked()
+                    {
+                        *selection_intent = Some(SelectionModeIntent::Edge);
+                        ui.close();
+                    }
+                    if ui
                         .selectable_label(self.selection_mode == SelectionMode::Face, "Face   F11")
                         .clicked()
                     {
                         *selection_intent = Some(SelectionModeIntent::Face);
                         ui.close();
                     }
-                    unsupported(ui, "Vertices / edges / UVs");
+                    unsupported(ui, "UVs");
                 });
             });
             for label in ["Modify", "Mesh", "UV", "Windows", "Render"] {

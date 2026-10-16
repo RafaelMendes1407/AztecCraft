@@ -792,3 +792,144 @@ fn the_selected_edge_strip_sits_toward_the_eye_of_the_edge_itself() {
         assert!((nearest[2] / nearest[3] - biased.z).abs() < 1e-6);
     }
 }
+
+/// A cube with `extrusions` extrusions of face 1 plus `planes` two-triangle planes. At 123
+/// extrusions the cube has 500 vertices and 996 triangles, so 502 planes make the work exactly
+/// 500 * 2000 = 1_000_000, the occlusion budget.
+fn budget_scene(extrusions: usize, planes: usize) -> Scene {
+    let mut native = cube();
+    let shape = native.shapes()[0].id();
+    for _ in 0..extrusions {
+        native.extrude_face(shape, 1, 0.01).unwrap();
+    }
+    for index in 0..planes {
+        native
+            .create(Primitive::Plane, &format!("plane{index}"))
+            .unwrap();
+    }
+    Scene::new(native)
+}
+
+#[test]
+fn wireframe_vertex_markers_hide_exactly_when_vertices_times_triangles_exceed_the_budget() {
+    let camera = camera(0.01);
+    for (planes, hidden) in [(502, false), (503, true)] {
+        let scene = budget_scene(123, planes);
+        let triangles: usize = scene
+            .view
+            .instances()
+            .iter()
+            .flat_map(|instance| instance.faces())
+            .map(|face| face.triangles().count())
+            .sum();
+        let work = scene.instance().world_vertices().len() * triangles;
+        assert_eq!(work == 1_000_000, !hidden, "{planes}: {work}");
+        assert_eq!(work > 1_000_000, hidden, "{planes}: {work}");
+        let selection = vertex_feedback(&scene, None);
+        let wire = submit(&scene, &camera, selection, ShadingMode::Wireframe);
+        assert_eq!(wire.centers_degraded, hidden, "{planes}");
+        assert_eq!(wire.markers.is_empty(), hidden, "{planes}");
+        let flagged = renderer_handle()
+            .callback(
+                &scene.view,
+                &camera,
+                Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::splat(128.0)),
+                [SIZE; 2],
+                selection,
+                true,
+                ShadingMode::Wireframe,
+            )
+            .unwrap()
+            .1;
+        assert_eq!(flagged, hidden, "{planes}");
+    }
+}
+
+#[allow(dead_code)]
+mod binary_fixture {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/support/maya_binary.rs"
+    ));
+}
+
+/// A one-triangle mesh two transforms below a root whose X scale is -1.
+fn mirrored_parent_scene() -> Scene {
+    use binary_fixture::{chunk, creation, group, mesh_payload, scene, triple};
+    let bytes = scene(
+        &[
+            group(
+                b"XFRM",
+                &[
+                    creation(b"mirror", None),
+                    triple(b"t", [0.5, 0.0, 0.0]),
+                    triple(b"s", [-1.0, 1.0, 1.0]),
+                ]
+                .concat(),
+                4,
+            ),
+            group(b"XFRM", &creation(b"object", Some(b"mirror")), 4),
+            group(
+                b"DMSH",
+                &[
+                    creation(b"shape", Some(b"object")),
+                    chunk(b"MESH", &mesh_payload(&[0, 1, 0x6000_0002]), 8),
+                ]
+                .concat(),
+                4,
+            ),
+        ]
+        .concat(),
+    );
+    let native = azteccraft::native_scene::binary::decode(bytes).unwrap();
+    let view = ViewScene::from_native(&native, VIEW_BUDGET).unwrap();
+    let instance = &view.instances()[0];
+    let owner = instance.transform();
+    let path = instance.path()[..instance.path().len() - 1].to_vec();
+    assert_eq!(path.len(), 2, "the shape must sit below a parent");
+    Scene {
+        native,
+        view,
+        owner,
+        path,
+    }
+}
+
+#[test]
+fn vertex_markers_and_picks_follow_world_vertices_under_a_mirrored_parent() {
+    let scene = mirrored_parent_scene();
+    let camera = camera(0.01);
+    let points = scene.instance().world_vertices().to_vec();
+    assert_eq!(points.len(), 3);
+    // Local (1, 0, 0) lands at x = 0.5 - 1 = -0.5: only the mirror puts it left of the origin.
+    assert!(points[1].x < points[0].x, "{points:?}");
+    let submission = submit(
+        &scene,
+        &camera,
+        vertex_feedback(&scene, None),
+        ShadingMode::SmoothShadeAll,
+    );
+    let markers = vertices(&submission, &submission.markers);
+    assert_eq!(markers.len(), 3 * 6);
+    for (index, point) in points.iter().enumerate() {
+        let expected = camera
+            .project(camera.marker_biased(*point), 1.0)
+            .unwrap()
+            .unwrap();
+        let center = markers[index * 6..][..6]
+            .iter()
+            .map(pixels_of)
+            .sum::<Vec2>()
+            / 6.0;
+        assert!(
+            (center - expected.truncate() * (SIZE as f32 * 0.5)).length() < 1e-3,
+            "marker {index}"
+        );
+        let ndc = camera.project(*point, 1.0).unwrap().unwrap();
+        let pixel = Vec2::new(ndc.x + 1.0, 1.0 - ndc.y) * 0.5 * SIZE as f32;
+        let picked = camera
+            .pick_vertex(&scene.view, scene.active(), pixel, [SIZE; 2], 1.0)
+            .unwrap();
+        assert_eq!(picked.map(|target| target.vertex_index), Some(index));
+    }
+}

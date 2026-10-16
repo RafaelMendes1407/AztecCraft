@@ -8,7 +8,7 @@ impl Editor {
         self.attribute_editor_tab_request = None;
         let frame_admitted = !self.files.is_modal() && !self.files.is_closing();
         let keyboard_admitted = frame_admitted && !egui::Popup::is_any_open(ui.ctx());
-        let (face, toggle, delete) = ui.input(|input| {
+        let (face, vertex, edge, toggle, delete) = ui.input(|input| {
             let pressed = |key| {
                 input.events.iter().any(|event| {
                     matches!(event,
@@ -16,12 +16,22 @@ impl Editor {
                 if *event_key == key && modifiers.is_none())
                 })
             };
-            (pressed(Key::F11), pressed(Key::F8), pressed(Key::Delete))
+            (
+                pressed(Key::F11),
+                pressed(Key::F9),
+                pressed(Key::F10),
+                pressed(Key::F8),
+                pressed(Key::Delete),
+            )
         });
         let mut selection_intent = if !keyboard_admitted {
             None
         } else if face {
             Some(SelectionModeIntent::Face)
+        } else if vertex {
+            Some(SelectionModeIntent::Vertex)
+        } else if edge {
+            Some(SelectionModeIntent::Edge)
         } else if toggle {
             Some(SelectionModeIntent::Toggle)
         } else {
@@ -306,6 +316,8 @@ impl Editor {
             if let Some(intent) = selection_intent {
                 let mode = match intent {
                     SelectionModeIntent::Face => SelectionMode::Face,
+                    SelectionModeIntent::Vertex => SelectionMode::Vertex,
+                    SelectionModeIntent::Edge => SelectionMode::Edge,
                     SelectionModeIntent::Object => SelectionMode::Object,
                     SelectionModeIntent::Hierarchy => SelectionMode::Hierarchy,
                     SelectionModeIntent::Toggle => match self.selection_mode {
@@ -373,7 +385,28 @@ impl Editor {
                             .map_err(|e| OperationError::File(e.to_string()))?;
                         self.apply_operation(Operation::SelectFace { target })?;
                     }
-                    SelectionMode::Vertex | SelectionMode::Edge => {}
+                    SelectionMode::Vertex => {
+                        let target = input
+                            .pick_vertex(
+                                &self.camera,
+                                &view,
+                                self.selected
+                                    .map(|owner| (owner, self.selected_path.as_slice())),
+                            )
+                            .map_err(|e| OperationError::File(e.to_string()))?;
+                        self.apply_operation(Operation::SelectVertex { target })?;
+                    }
+                    SelectionMode::Edge => {
+                        let target = input
+                            .pick_edge(
+                                &self.camera,
+                                &view,
+                                self.selected
+                                    .map(|owner| (owner, self.selected_path.as_slice())),
+                            )
+                            .map_err(|e| OperationError::File(e.to_string()))?;
+                        self.apply_operation(Operation::SelectEdge { target })?;
+                    }
                 }
             }
             let painted = input.paint(

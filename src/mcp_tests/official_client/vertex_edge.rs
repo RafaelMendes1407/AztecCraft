@@ -82,6 +82,7 @@ async fn cube_with_target(
 type Baseline = (
     Option<azteccraft::scene::NodeId>,
     Vec<azteccraft::native_scene::NativeId>,
+    Option<azteccraft::native_scene::FaceTarget>,
     Option<azteccraft::native_scene::VertexTarget>,
     Option<azteccraft::native_scene::EdgeTarget>,
     SelectionMode,
@@ -91,6 +92,7 @@ fn baseline(editor: &Editor) -> Baseline {
     (
         editor.selected,
         editor.selected_path.clone(),
+        editor.remembered_face.clone(),
         editor.remembered_vertex.clone(),
         editor.remembered_edge.clone(),
         editor.selection_mode,

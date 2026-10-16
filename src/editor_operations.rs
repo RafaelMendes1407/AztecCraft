@@ -227,23 +227,9 @@ pub enum Operation {
     SelectFace {
         target: Option<FaceTarget>,
     },
-    #[cfg_attr(
-        not(any(test, feature = "mcp")),
-        expect(
-            dead_code,
-            reason = "only the MCP tool selects vertices until the viewport click lands"
-        )
-    )]
     SelectVertex {
         target: Option<VertexTarget>,
     },
-    #[cfg_attr(
-        not(any(test, feature = "mcp")),
-        expect(
-            dead_code,
-            reason = "only the MCP tool selects edges until the viewport click lands"
-        )
-    )]
     SelectEdge {
         target: Option<EdgeTarget>,
     },
