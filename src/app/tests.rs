@@ -1471,6 +1471,75 @@ fn shading_refuses_modal_and_closing_and_survives_new_scene() {
 }
 
 #[test]
+fn num4_and_num5_select_shading_and_num6_num7_only_set_status() {
+    use crate::editor_operations::ShadingMode;
+    let mut editor = Editor::default();
+    let ctx = egui::Context::default();
+    frame(&mut editor, &ctx, vec![]);
+    let token = editor.scene_token;
+    frame(&mut editor, &ctx, vec![key(Key::Num4)]);
+    assert_eq!(editor.shading, ShadingMode::Wireframe);
+    let shifted = egui::Event::Key {
+        key: Key::Num5,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::SHIFT,
+    };
+    let released = egui::Event::Key {
+        key: Key::Num5,
+        physical_key: None,
+        pressed: false,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    };
+    frame(&mut editor, &ctx, vec![shifted, released]);
+    assert_eq!(editor.shading, ShadingMode::Wireframe);
+    for (pressed, name) in [
+        (Key::Num6, "Shaded + Textured"),
+        (Key::Num7, "Use All Lights"),
+    ] {
+        frame(&mut editor, &ctx, vec![key(pressed)]);
+        assert_eq!(editor.shading, ShadingMode::Wireframe);
+        assert!(editor.status.contains(name) && editor.status.contains("not implemented"));
+        assert!(!editor.error && !editor.is_dirty());
+        assert_eq!(editor.scene_token, token);
+    }
+    frame(&mut editor, &ctx, vec![key(Key::Num5)]);
+    assert_eq!(editor.shading, ShadingMode::SmoothShadeAll);
+    assert!(!editor.is_dirty());
+    assert_eq!(editor.scene_token, token);
+}
+
+#[test]
+fn typing_digits_into_focused_fields_does_not_change_shading() {
+    use crate::editor_operations::ShadingMode;
+    for text_id in [name_edit_id(), channel_edit_id(0)] {
+        let mut editor = Editor::default();
+        editor.create(Primitive::Cube);
+        editor
+            .apply_operation(Operation::SetShadingMode(ShadingMode::Wireframe))
+            .unwrap();
+        let ctx = egui::Context::default();
+        frame(&mut editor, &ctx, vec![]);
+        ctx.memory_mut(|memory| memory.request_focus(text_id));
+        frame(&mut editor, &ctx, vec![]);
+        assert_eq!(ctx.memory(|memory| memory.focused()), Some(text_id));
+        frame(
+            &mut editor,
+            &ctx,
+            vec![
+                egui::Event::Text("5".into()),
+                key(Key::Num5),
+                key(Key::Num4),
+            ],
+        );
+        assert_eq!(editor.shading, ShadingMode::Wireframe);
+        assert!(ctx.egui_wants_keyboard_input());
+    }
+}
+
+#[test]
 fn grid_native_draft_policy_and_remote_draft_refusal_share_the_typed_setter() {
     let mut editor = Editor::default();
     editor.create(Primitive::Cube);

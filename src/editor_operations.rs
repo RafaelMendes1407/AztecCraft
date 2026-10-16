@@ -188,10 +188,6 @@ pub enum Operation {
     SetGridVisible {
         visible: bool,
     },
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the native UI constructs it in the next commit")
-    )]
     SetShadingMode(ShadingMode),
     SetSidebarPanelVisible {
         panel: SidebarPanel,

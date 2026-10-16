@@ -2093,3 +2093,88 @@ fn object_feedback_highlights_descendants_of_a_selected_root_only() {
     assert!(selected(feedback, flat));
     assert!(!selected(SelectionFeedback::Object(None), nested));
 }
+
+fn cube_submission(shading: ShadingMode) -> Submission {
+    let view = ViewScene::from_native(&cube(), VIEW_BUDGET).unwrap();
+    Submission::new(
+        &view,
+        &camera(0.01),
+        [SIZE; 2],
+        SelectionFeedback::Object(None),
+        true,
+        shading,
+        FORMAT,
+        u64::MAX,
+    )
+    .unwrap()
+}
+
+#[test]
+fn wireframe_draws_no_surface_fill_but_keeps_grid_edges_and_the_smooth_line_pass() {
+    let smooth = cube_submission(ShadingMode::SmoothShadeAll);
+    let wire = cube_submission(ShadingMode::Wireframe);
+    // 6 quad faces, 2 triangles each, 3 vertices each.
+    assert_eq!(smooth.surfaces, 0..36);
+    assert_eq!(wire.surfaces, 0..0);
+    assert_eq!(wire.lines.start, 0);
+    assert_eq!(
+        wire.lines.end - wire.lines.start,
+        smooth.lines.end - smooth.lines.start
+    );
+    assert_eq!(wire.bytes.len() + 36 * VERTEX_BYTES, smooth.bytes.len());
+    assert_eq!(
+        wire.bytes[..],
+        smooth.bytes[36 * VERTEX_BYTES..],
+        "wireframe is the smooth submission without the surface fill"
+    );
+}
+
+#[test]
+fn cpu_picking_and_face_centre_occlusion_are_independent_of_shading_mode() {
+    let view = ViewScene::from_native(&cube(), VIEW_BUDGET).unwrap();
+    let camera = camera(0.01);
+    let instance = &view.instances()[0];
+    let owner = instance.transform();
+    let path = &instance.path()[..instance.path().len() - 1];
+    let eye = camera.eye();
+    let mut centres: Vec<_> = instance
+        .faces()
+        .iter()
+        .map(|face| {
+            (
+                face.source_index(),
+                face.center(instance.world_vertices()).unwrap(),
+            )
+        })
+        .collect();
+    centres.sort_by(|a, b| a.1.distance(eye).total_cmp(&b.1.distance(eye)));
+    let (near, far) = (centres[0], centres[centres.len() - 1]);
+    let pixels = [SIZE; 2];
+    let pointer = |world: Vec3| {
+        let ndc = camera.project(world, 1.0).unwrap().unwrap();
+        Vec2::new(
+            (ndc.x * 0.5 + 0.5) * SIZE as f32,
+            (0.5 - ndc.y * 0.5) * SIZE as f32,
+        )
+    };
+    // The nearest and farthest face centres project to the same pixel; the filter keeps the near one.
+    assert!((pointer(near.1) - pointer(far.1)).abs().max_element() < 0.5);
+    for shading in [ShadingMode::Wireframe, ShadingMode::SmoothShadeAll] {
+        assert_eq!(
+            cube_submission(shading).surfaces.is_empty(),
+            shading == ShadingMode::Wireframe
+        );
+        let hit = camera
+            .pick_view(
+                &view,
+                camera.project(near.1, 1.0).unwrap().unwrap().truncate(),
+                1.0,
+            )
+            .unwrap();
+        assert_eq!(hit.map(|face| face.face_index), Some(near.0));
+        let centre = camera
+            .pick_face_center(&view, Some((owner, path)), pointer(far.1), pixels, 1.0)
+            .unwrap();
+        assert_eq!(centre.map(|face| face.face_index), Some(near.0));
+    }
+}
