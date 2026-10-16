@@ -129,6 +129,14 @@ enum ManipulationKind {
 }
 
 impl ManipulationKind {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::Move { .. } => "Move",
+            Self::Rotate { .. } => "Rotate",
+            Self::Scale { .. } => "Scale",
+        }
+    }
+
     fn initial_parameter(&self) -> f64 {
         match self {
             Self::Move { .. } | Self::Rotate { .. } => 0.0,
@@ -377,11 +385,14 @@ impl History {
                 EditOutcome::Changed
             });
         }
-        self.execute(Command::EditNode {
-            id: node,
-            name: None,
-            channels,
-        })
+        self.execute_labeled(
+            Command::EditNode {
+                id: node,
+                name: None,
+                channels,
+            },
+            active.kind.label(),
+        )
         .map_err(Into::into)
     }
 

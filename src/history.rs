@@ -53,6 +53,31 @@ pub enum Command {
     },
 }
 
+impl Command {
+    /// The name an Undo or Redo entry shows for this command.
+    fn label(&self) -> &'static str {
+        match self {
+            Self::Create { .. } => "Create",
+            Self::Remove(_) => "Delete",
+            Self::Rename { .. } => "Rename",
+            Self::SetTransform { .. } => "Transform",
+            Self::EditNode { .. } => "Edit",
+            Self::SetMaterialDiffuse { .. }
+            | Self::CreateSessionMaterial { .. }
+            | Self::AssignSessionMaterial { .. }
+            | Self::SetSessionMaterialColor { .. } => "Material",
+            Self::ExtrudeFace { .. } => "Extrude",
+        }
+    }
+}
+
+/// A saved scene and the name of the edit that separates it from its neighbour.
+#[derive(Clone, Debug, PartialEq)]
+struct Entry {
+    scene: NativeScene,
+    label: &'static str,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EditOutcome {
     Created(NodeId),
@@ -64,8 +89,8 @@ pub enum EditOutcome {
 #[derive(Default)]
 pub struct History {
     scene: NativeScene,
-    undo: Vec<NativeScene>,
-    redo: Vec<NativeScene>,
+    undo: Vec<Entry>,
+    redo: Vec<Entry>,
     active_manipulation: Option<MoveTransaction>,
     next_manipulation_id: u64,
 }
@@ -90,8 +115,25 @@ impl History {
     pub fn can_redo(&self) -> bool {
         !self.redo.is_empty()
     }
+    /// The name of the edit Undo would revert.
+    pub fn undo_label(&self) -> Option<&'static str> {
+        self.undo.last().map(|entry| entry.label)
+    }
+    /// The name of the edit Redo would reapply.
+    pub fn redo_label(&self) -> Option<&'static str> {
+        self.redo.last().map(|entry| entry.label)
+    }
 
     pub fn execute(&mut self, command: Command) -> Result<EditOutcome, NativeError> {
+        let label = command.label();
+        self.execute_labeled(command, label)
+    }
+
+    fn execute_labeled(
+        &mut self,
+        command: Command,
+        label: &'static str,
+    ) -> Result<EditOutcome, NativeError> {
         if self.active_manipulation.is_some() {
             return Err(NativeError::BusyManipulation);
         }
@@ -142,8 +184,10 @@ impl History {
         if self.scene == candidate {
             return Ok(EditOutcome::Unchanged);
         }
-        self.undo
-            .push(std::mem::replace(&mut self.scene, candidate));
+        self.undo.push(Entry {
+            scene: std::mem::replace(&mut self.scene, candidate),
+            label,
+        });
         self.redo.clear();
         Ok(outcome)
     }
@@ -155,8 +199,11 @@ impl History {
         let Some(previous) = self.undo.pop() else {
             return false;
         };
-        self.redo.push(self.scene.clone());
-        self.scene.restore_authoring(previous);
+        self.redo.push(Entry {
+            scene: self.scene.clone(),
+            label: previous.label,
+        });
+        self.scene.restore_authoring(previous.scene);
         true
     }
 
@@ -167,8 +214,11 @@ impl History {
         let Some(next) = self.redo.pop() else {
             return false;
         };
-        self.undo.push(self.scene.clone());
-        self.scene.restore_authoring(next);
+        self.undo.push(Entry {
+            scene: self.scene.clone(),
+            label: next.label,
+        });
+        self.scene.restore_authoring(next.scene);
         true
     }
 }
