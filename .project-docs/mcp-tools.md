@@ -2,7 +2,7 @@
 
 Generated from the tool registry in `src/mcp/registry.rs`; do not edit by hand. Regenerate with `UPDATE_DOCS=1 cargo test --features mcp registry::tests::tool_doc`. Argument schemas are served by `tools/list`; see [mcp.md](mcp.md) for behaviour and limits.
 
-31 tools.
+34 tools.
 
 | Tool | Access | Idempotent | Description |
 |---|---|---|---|
@@ -20,6 +20,9 @@ Generated from the tool registry in `src/mcp/registry.rs`; do not edit by hand. 
 | `edit_node` | mutating | no | Edit optional name and individual f64 channels in one undo entry. Omitted arrays and null components are untouched; translation uses declared scene units and supplied rotations use degrees. Does not change selection |
 | `extrude_face` | mutating | no | Extrude one current canonical quad along its local normal by distance in declared scene units. Requires node, shape and full root-to-shape path; shared-shape edits affect every instance. Zero distance changes topology; imported structural edits remain unsupported |
 | `set_material_diffuse` | mutating | no | Edit the checked saved Phong diffuse scalar for an exact shape through shared undo history. Requires complete shared-shader users; affects all those shapes. Values are finite and nonnegative, may exceed one, and do not enable rendered materials |
+| `create_session_material` | mutating | no | Create a session-only lambert material (not saved; Untitled scenes only, sourced and Maya ASCII scenes refuse) with a linear RGB colour, as its own undo step. Replies with its material_id. Material ids are decimal table indices valid only at the current history position: undo or redo can free and reuse them, so never cache one across edits |
+| `assign_session_material` | mutating | no | Assign a session material to a whole authored shape; every instance of the shape changes. Give material_id (existing) or color (creates a lambert in the same undo step). Replies with the material_id, or unchanged. Not saved; sourced and Maya ASCII scenes refuse. Material ids are decimal table indices valid only at the current history position: undo or redo can free and reuse them, so never cache one across edits |
+| `set_session_material_color` | mutating | yes | Set the linear RGB colour of a session material created in this session; the initial material 0 is locked. Not saved; unrelated to the saved Phong set_material_diffuse. Material ids are decimal table indices valid only at the current history position: undo or redo can free and reuse them, so never cache one across edits |
 | `delete_node` | mutating | no | Delete an object through editor undo history |
 | `undo` | mutating | no | Undo the last editor authoring operation |
 | `redo` | mutating | no | Redo the last undone authoring operation |

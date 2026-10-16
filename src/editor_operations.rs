@@ -631,7 +631,7 @@ mod tests {
             id: (materials - 1).to_string(),
             name: format!("sessionLambert{}", materials - 1),
             shading_group: format!("sessionLambert{}SG", materials - 1),
-            color: [0.30000000000000004; 3],
+            color: [-1.2345678901234567e-308; 3],
             editable: true,
         };
         assert!(

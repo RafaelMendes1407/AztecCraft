@@ -141,6 +141,19 @@
     ],
     "selected_node": "1",
     "selection_mode": "object",
+    "session_materials": [
+      {
+        "color": [
+          0.3254901960784314,
+          0.3254901960784314,
+          0.3254901960784314
+        ],
+        "editable": false,
+        "id": "0",
+        "name": "sessionDefault",
+        "shading_group": "initialShadingGroup"
+      }
+    ],
     "shading": "smooth_shade_all",
     "shapes": [
       {
@@ -150,6 +163,7 @@
         "material": null,
         "name": "pCube1Shape",
         "points": 8,
+        "session_material": "0",
         "smoothing_known": true,
         "source_appearance": {
           "checked_source_bindings": 0,
