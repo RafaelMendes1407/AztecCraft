@@ -458,9 +458,9 @@ remote mutations, Save, Undo/Redo and camera operations return
 remote calls cannot finish a native drag. Viewport Grid visibility, shading mode, sidebar panel visibility, selection mode and
 Face selection are likewise refused with `busy_manipulation` while any manipulation is
 active. Human Escape, tool/selection/selection-mode/lifecycle
-changes cancel a native drag before their existing native guard path. Move is
-Object-mode only: while Face selection is active `begin_manipulation` returns
-`invalid_input`, native handles are not drawn or hit, and `inspection.manipulation.kinds`
+changes cancel a native drag before their existing native guard path. Move, Rotate
+and Scale are Object-mode only: while Face, Vertex or Edge selection is active
+`begin_manipulation` returns `invalid_input`, native handles are not drawn or hit, and `inspection.manipulation.kinds`
 reports each kind unavailable with the reason. Native captured mapping,
 camera, DPI, modifier, focus or release loss cancels and consumes the pointer
 sequence. A finite geometric refusal, or a refused final preview update, on a valid explicit
