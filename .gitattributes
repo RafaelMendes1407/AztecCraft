@@ -1,1 +1,2 @@
 tests/snapshots/** text eol=lf
+.project-docs/mcp-tools.md text eol=lf

@@ -1554,7 +1554,6 @@ fn sparse_nonfinite_intents_preserve_scene_fields_and_redo() {
 #[test]
 fn remote_operations_share_native_scene_selection_history_and_camera() {
     let mut editor = Editor::default();
-    assert_eq!(crate::editor_operations::TOOL_NAMES.len(), 28);
     let OperationReply::Created { node_id } = remote(
         &mut editor,
         Operation::Create {

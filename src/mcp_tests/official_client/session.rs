@@ -303,7 +303,7 @@ async fn sdk_current_discover_lifecycle_mutates_the_same_editor() {
     );
     assert_eq!(
         client.peer().list_tools(None).await.unwrap().tools.len(),
-        crate::editor_operations::TOOL_NAMES.len()
+        crate::mcp::tool_names().count()
     );
     let inspected = call(
         &mut editor,
@@ -366,7 +366,7 @@ async fn sdk_client_discovers_every_handler_and_edits_same_native_controller() {
             .iter()
             .map(|tool| tool.name.as_ref())
             .collect::<Vec<_>>(),
-        crate::editor_operations::TOOL_NAMES
+        crate::mcp::tool_names().collect::<Vec<_>>()
     );
     let inspected = call(&mut editor, &context, peer, "inspect_scene", json!({})).await;
     let token = inspected.structured_content.unwrap()["inspection"]["scene_token"]

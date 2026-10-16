@@ -11,7 +11,7 @@ async fn ascii_open_inspect_select_frame(path: &std::path::Path, expected_counts
             .iter()
             .map(|tool| tool.name.as_ref())
             .collect::<Vec<_>>(),
-        crate::editor_operations::TOOL_NAMES
+        crate::mcp::tool_names().collect::<Vec<_>>()
     );
     let old_token = editor.scene_token.to_string();
     let result = call(
