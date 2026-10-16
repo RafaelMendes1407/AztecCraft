@@ -1428,6 +1428,135 @@ async fn declared_echo_does_not_survive_a_new_scene_that_reuses_the_manipulation
     server.await.unwrap();
 }
 
+/// Rotates the first transform of a cm/degree scene about `axis` in `space` through the SDK and
+/// returns the rotate channels before and after each requested angle.
+async fn rotate_samples(
+    rotate: [f64; 3],
+    axis: &str,
+    space: &str,
+    angles: &[f64],
+) -> (Vec<f64>, Vec<[f64; 3]>) {
+    let original = unit_scene(b"cm", b"deg", rotate, [1.0, 1.0, 1.0]);
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("degrees.mb");
+    std::fs::write(&source, &original).unwrap();
+    let context = egui::Context::default();
+    let (mut editor, client, server) = start(&context).await;
+    let old_token = editor.scene_token.to_string();
+    call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "open_scene",
+        json!({"scene_token":old_token,"path":source}),
+    )
+    .await;
+    let token = editor.scene_token.to_string();
+    let target = editor.history.scene().transform_paths().unwrap().remove(0);
+    let node = target.node.to_decimal();
+    let path: Vec<_> = target.path.iter().map(|id| id.to_decimal()).collect();
+    call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "select_node",
+        json!({"scene_token":token,"node_id":node,"instance_path":path}),
+    )
+    .await;
+    let channels = |editor: &Editor| {
+        let values = editor
+            .history
+            .scene()
+            .node(target.node)
+            .unwrap()
+            .transform()
+            .values();
+        [values[3], values[4], values[5]]
+    };
+    let baseline = channels(&editor).to_vec();
+    let begin = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "begin_manipulation",
+        json!({"scene_token":token,"kind":"rotate","node_id":node,"instance_path":path,"axis":axis,"space":space}),
+    )
+    .await
+    .structured_content
+    .unwrap();
+    let id = begin["manipulation_id"].as_str().unwrap().to_owned();
+    let mut samples = Vec::new();
+    for &angle in angles {
+        call(
+            &mut editor,
+            &context,
+            client.peer(),
+            "update_manipulation",
+            json!({"scene_token":token,"manipulation_id":id,"angle":angle}),
+        )
+        .await;
+        samples.push(channels(&editor));
+    }
+    call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "finish_manipulation",
+        json!({"scene_token":token,"manipulation_id":id,"finish":"cancel"}),
+    )
+    .await;
+    client.cancel().await.unwrap();
+    drop(editor);
+    server.await.unwrap();
+    (baseline, samples)
+}
+
+#[tokio::test]
+async fn object_x_ring_rotate_stores_exactly_baseline_plus_delta_in_a_degree_scene() {
+    let angles: Vec<f64> = (1..=720).map(|step| f64::from(step) * 0.5).collect();
+    let (baseline, samples) = rotate_samples([10.3, 0.0, 0.0], "x", "object", &angles).await;
+    for (angle, values) in angles.iter().zip(&samples) {
+        let expected = baseline[0] + angle;
+        assert_eq!(values[0].to_bits(), expected.to_bits(), "{angle}");
+        assert_eq!(values[1].to_bits(), baseline[1].to_bits(), "{angle}");
+        assert_eq!(values[2].to_bits(), baseline[2].to_bits(), "{angle}");
+    }
+}
+
+#[tokio::test]
+async fn y_ring_and_world_rotates_are_exact_only_when_one_channel_changes() {
+    let angles = [15.0, 30.0, 45.0, 60.0];
+    // From zero, a Y ring turns rotateY alone, so it snaps to the exact delta.
+    let (baseline, samples) = rotate_samples([0.0; 3], "y", "object", &angles).await;
+    for (angle, values) in angles.iter().zip(&samples) {
+        assert_eq!(
+            values[1].to_bits(),
+            (baseline[1] + angle).to_bits(),
+            "{angle}"
+        );
+        assert_eq!(values[0].to_bits(), baseline[0].to_bits());
+        assert_eq!(values[2].to_bits(), baseline[2].to_bits());
+    }
+    // The same from zero in world space, with an unrotated parent.
+    let (baseline, samples) = rotate_samples([0.0; 3], "y", "world", &angles).await;
+    for (angle, values) in angles.iter().zip(&samples) {
+        assert_eq!(
+            values[1].to_bits(),
+            (baseline[1] + angle).to_bits(),
+            "{angle}"
+        );
+    }
+    // From a rotated start a Y ring changes all three channels: the result is computed, correct
+    // to rounding but not claimed exact.
+    let (baseline, samples) = rotate_samples([10.3, 20.0, 5.0], "y", "object", &angles).await;
+    for (angle, values) in angles.iter().zip(&samples) {
+        let changed = (0..3)
+            .filter(|&i| values[i].to_bits() != baseline[i].to_bits())
+            .count();
+        assert!(changed >= 2, "{angle}: {values:?}");
+    }
+}
+
 #[tokio::test]
 async fn rotate_and_scale_sdk_never_commit_real_native_text_drafts() {
     let context = egui::Context::default();

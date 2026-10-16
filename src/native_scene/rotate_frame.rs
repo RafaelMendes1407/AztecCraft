@@ -193,9 +193,25 @@ impl RotateFrame {
             return Err(refused);
         }
         let mut declared = self.declared;
-        for component in 0..3 {
-            if radians[component].to_bits() != self.radians[component].to_bits() {
-                declared[component] = Storage::Radians.declared(radians[component], &self.units)?;
+        let changed: Vec<usize> = (0..3)
+            .filter(|&component| radians[component].to_bits() != self.radians[component].to_bits())
+            .collect();
+        for &component in &changed {
+            declared[component] = Storage::Radians.declared(radians[component], &self.units)?;
+        }
+        // One changed channel that moved by the requested delta is computed in declared units:
+        // converting through radians and back is not an exact round trip.
+        if let [component] = changed[..] {
+            let step = match &self.units.angular {
+                AngularUnit::Degree => degrees,
+                _ => delta,
+            };
+            let moved = radians[component] - self.radians[component];
+            let tolerance = SNAP_TOLERANCE * (self.radians[component].abs() + 1.0);
+            if (moved - delta).abs() <= tolerance {
+                declared[component] = self.declared[component] + step;
+            } else if (moved + delta).abs() <= tolerance {
+                declared[component] = self.declared[component] - step;
             }
         }
         Ok(declared)

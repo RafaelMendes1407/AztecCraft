@@ -418,9 +418,12 @@ grid still draw. Hidden, not unfiltered, because unfiltered markers would show u
 the picker rejects. Picking is unaffected apart from its own budget error. A cache or spatial index
 would lift the limit.
 
-## Edited Rotate channel in a radian scene may be 1 ulp off (#128)
+A Rotate that changes exactly one channel by the requested delta stores `baseline + delta` in the scene's declared unit, bit for bit (object-space X ring, single-channel numeric entry, and Y/Z or world rotations whose decomposition changes one channel within the snap tolerance of that value). Two cases are computed rather than exact, and may differ from `baseline + requested` by about 1 ulp:
 
-Rotate works internally in degrees, so an edited rotate channel in a radian scene may differ from the requested value by about 1 ulp after save. Untouched channels are preserved byte for byte. Inspection echoes the requested value exactly.
+- A radian scene: Rotate works internally in degrees, so a requested radian angle is converted to degrees and back.
+- A Y/Z ring or world rotation that genuinely changes several channels (Euler decomposition).
+
+Untouched channels are preserved bit for bit. Inspection echoes the requested value as given after a remote update, so it does not reveal these differences.
 
 ## Rotate and Scale handle limits are provisional
 
