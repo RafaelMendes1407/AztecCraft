@@ -184,6 +184,19 @@ fn dependency_unknown_transform_and_dag_effects_refuse_before_mutation() {
 }
 
 #[test]
+fn angular_degrees_factor_follows_the_declared_unit_and_refuses_others() {
+    let mut units = Units::default();
+    assert_eq!(units.angular_degrees_factor().unwrap(), 1.0);
+    units.angular = AngularUnit::Radian;
+    assert_eq!(
+        units.angular_degrees_factor().unwrap(),
+        180.0 / std::f64::consts::PI
+    );
+    units.angular = AngularUnit::Unsupported("grad".into());
+    assert!(units.angular_degrees_factor().is_err());
+}
+
+#[test]
 fn unit_conversion_only_changes_derived_view() {
     let (mut scene, id) = cube();
     scene.units = Units {

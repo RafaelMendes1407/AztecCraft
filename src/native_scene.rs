@@ -93,18 +93,19 @@ impl Units {
             LinearUnit::Unsupported(_) => return Err(NativeError::UnsupportedLinearUnit),
         })
     }
+    /// Degrees in one declared angular unit.
+    pub fn angular_degrees_factor(&self) -> Result<f64, NativeError> {
+        match self.angular {
+            AngularUnit::Degree => Ok(1.0),
+            AngularUnit::Radian => Ok(180.0 / std::f64::consts::PI),
+            AngularUnit::Unsupported(_) => Err(NativeError::UnsupportedView("angular unit")),
+        }
+    }
     pub(crate) fn factors(&self) -> Result<(f64, f64), NativeError> {
         let linear = self
             .linear_factor()
             .map_err(|_| NativeError::UnsupportedView("linear unit"))?;
-        let angular = match self.angular {
-            AngularUnit::Degree => 1.0,
-            AngularUnit::Radian => 180.0 / std::f64::consts::PI,
-            AngularUnit::Unsupported(_) => {
-                return Err(NativeError::UnsupportedView("angular unit"));
-            }
-        };
-        Ok((linear, angular))
+        Ok((linear, self.angular_degrees_factor()?))
     }
 }
 

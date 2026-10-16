@@ -87,6 +87,18 @@ pub(crate) struct ChannelBaseline {
     source: Option<Arc<[u8]>>,
 }
 
+impl ChannelBaseline {
+    /// The three stored channel values at begin, in the scene's declared units.
+    pub(crate) fn values(&self) -> [f64; 3] {
+        self.scalars.each_ref().map(|scalar| scalar.value)
+    }
+
+    /// Index of the first of the three channels in `NativeTransform::values`.
+    pub(crate) fn first_channel(&self) -> usize {
+        field_start(self.field)
+    }
+}
+
 impl fmt::Debug for WorldMoveFrame {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("WorldMoveFrame").finish_non_exhaustive()

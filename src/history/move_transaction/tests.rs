@@ -1075,3 +1075,71 @@ fn a_cancelled_manipulation_leaves_no_label() {
         .unwrap();
     assert_eq!(history.undo_label(), None);
 }
+
+#[test]
+fn active_state_reports_the_baseline_and_live_channels_of_each_kind() {
+    let token = Uuid::new_v4();
+    let mut history = cube_history();
+    let node = target(&history).node;
+    history
+        .scene
+        .set_transform(
+            node,
+            NativeTransform {
+                translation: [1.0, 2.0, 3.0],
+                rotation: [10.0, 0.0, 0.0],
+                scale: [1.5, 1.0, 1.0],
+            },
+        )
+        .unwrap();
+    let rotate = history
+        .begin_rotate(
+            &target(&history),
+            RotateAxis::X,
+            RotateSpace::Object,
+            token,
+            ManipulationProvenance::Remote,
+            BUDGET,
+        )
+        .unwrap();
+    let state = history.active_manipulation().unwrap();
+    assert_eq!(state.baseline_channels, [10.0, 0.0, 0.0]);
+    assert_eq!(state.current_channels, Some([10.0, 0.0, 0.0]));
+    history
+        .update_move(token, rotate, ManipulationProvenance::Remote, 30.0)
+        .unwrap();
+    let state = history.active_manipulation().unwrap();
+    assert_eq!(state.baseline_channels, [10.0, 0.0, 0.0]);
+    assert_eq!(state.current_channels, Some([40.0, 0.0, 0.0]));
+    history
+        .finish_move(
+            token,
+            rotate,
+            ManipulationProvenance::Remote,
+            ManipulationFinish::Cancel,
+        )
+        .unwrap();
+
+    let scale = history
+        .begin_scale(
+            &target(&history),
+            ScaleHandle::X,
+            ScaleSpace::Object,
+            token,
+            ManipulationProvenance::Remote,
+            BUDGET,
+        )
+        .unwrap();
+    history
+        .update_move(token, scale, ManipulationProvenance::Remote, 2.0)
+        .unwrap();
+    let state = history.active_manipulation().unwrap();
+    assert_eq!(state.baseline_channels, [1.5, 1.0, 1.0]);
+    assert_eq!(state.current_channels, Some([3.0, 1.0, 1.0]));
+    history.cancel_active_move().unwrap();
+
+    let moved = start(&mut history, token);
+    let state = history.active_manipulation().unwrap();
+    assert_eq!(state.baseline_channels, [1.0, 2.0, 3.0]);
+    assert_eq!(state.id, moved);
+}

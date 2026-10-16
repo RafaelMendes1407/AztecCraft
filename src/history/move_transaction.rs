@@ -94,6 +94,10 @@ pub struct ManipulationState<'a> {
     pub provenance: ManipulationProvenance,
     pub parameter: f64,
     pub kind: ManipulationKindState,
+    /// The three channels this manipulation edits, as stored at begin.
+    pub baseline_channels: [f64; 3],
+    /// The same three channels now (the live preview); `None` if the node cannot be read.
+    pub current_channels: Option<[f64; 3]>,
 }
 
 impl ManipulationState<'_> {
@@ -228,6 +232,12 @@ impl History {
                 provenance: active.provenance,
                 parameter: active.parameter,
                 kind: active.kind.state(),
+                baseline_channels: active.kind.baseline().values(),
+                current_channels: self.scene.node(active.target.node).ok().map(|node| {
+                    let first = active.kind.baseline().first_channel();
+                    let values = node.transform().values();
+                    [values[first], values[first + 1], values[first + 2]]
+                }),
             })
     }
 
