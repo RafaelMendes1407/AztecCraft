@@ -8,38 +8,38 @@ code. Regenerate the matrix with `UPDATE_SNAPSHOTS=1` only for an intended behav
 
 ## Pipelines
 
-Remote, `remote_operation_guarded` (`src/app.rs:298`), checks in this order:
+Remote, `remote_operation_guarded` (`src/app/mod.rs:298`), checks in this order:
 
-1. `Inspect` returns before any guard (`src/app.rs:304`).
-2. Scene token mismatch is `StaleScene` (`src/app.rs:310`).
+1. `Inspect` returns before any guard (`src/app/mod.rs:304`).
+2. Scene token mismatch is `StaleScene` (`src/app/mod.rs:310`).
 3. An active Move is `BusyManipulation` unless it is a Remote Move and the operation is
-   `UpdateMove` or `FinishMove` (`src/app.rs:314`). This is default-deny.
+   `UpdateMove` or `FinishMove` (`src/app/mod.rs:314`). This is default-deny.
 4. Closing, modal (all but `ResolveFileAction`), focused text edit, any draft or pending native
-   input is `BusyEditing` (`src/app.rs:322`).
-5. Then `apply_operation_guarded` with provenance Remote (`src/app.rs:331`).
+   input is `BusyEditing` (`src/app/mod.rs:322`).
+5. Then `apply_operation_guarded` with provenance Remote (`src/app/mod.rs:331`).
 
-Native, `apply_operation` (`src/app.rs:622`) calls `apply_operation_guarded` (defined at `src/app.rs:626`, called at `src/app.rs:623`) with
+Native, `apply_operation` (`src/app/mod.rs:622`) calls `apply_operation_guarded` (defined at `src/app/mod.rs:626`, called at `src/app/mod.rs:623`) with
 provenance Native and no token or draft checks. In order:
 
-1. `guard_move_dispatch` first, with side effects (`src/app.rs:632`, `src/move_ui.rs:82`). For
+1. `guard_move_dispatch` first, with side effects (`src/app/mod.rs:632`, `src/move_ui.rs:82`). For
    `SetActiveTool`, `Select`, `SetSelectionMode`, `SelectFace`, `NewScene`, `OpenScene` and
    `RequestClose` it cancels any Move (`cancel_move`, `src/move_ui.rs:54`) and consumes the
    pointer sequence only on a real tool change that cancelled nothing
    (`src/move_ui.rs:99`). Other operations during a Move are `BusyManipulation` except
    `UpdateMove`/`FinishMove`.
-2. Closing is `BusyEditing` (`src/app.rs:633`), so a native `NewScene` while closing cancels the
+2. Closing is `BusyEditing` (`src/app/mod.rs:633`), so a native `NewScene` while closing cancels the
    Move and then fails.
-3. `SetGridVisible` while modal is `BusyEditing` (`src/app.rs:636`).
-4. File operations are decided in one match (`src/app.rs:639`), before any draft commit. For
-   `OpenScene` and `SaveSceneAs`, path validity (`src/app.rs:641`) runs first. `OpenScene` then
-   reaches `open_candidate` with no modal check (`src/app.rs:650`); `SaveSceneAs` is refused while
-   modal (`src/app.rs:652`) and `SaveScene` likewise (`src/app.rs:659`). `NewScene`,
-   `RequestClose` and `ResolveFileAction` decide internally (`src/app.rs:665`-`src/app.rs:670`).
-5. `SetActiveTool` and the three Move operations are `BusyEditing` while modal (`src/app.rs:673`).
+3. `SetGridVisible` while modal is `BusyEditing` (`src/app/mod.rs:636`).
+4. File operations are decided in one match (`src/app/mod.rs:639`), before any draft commit. For
+   `OpenScene` and `SaveSceneAs`, path validity (`src/app/mod.rs:641`) runs first. `OpenScene` then
+   reaches `open_candidate` with no modal check (`src/app/mod.rs:650`); `SaveSceneAs` is refused while
+   modal (`src/app/mod.rs:652`) and `SaveScene` likewise (`src/app/mod.rs:659`). `NewScene`,
+   `RequestClose` and `ResolveFileAction` decide internally (`src/app/mod.rs:665`-`src/app/mod.rs:670`).
+5. `SetActiveTool` and the three Move operations are `BusyEditing` while modal (`src/app/mod.rs:673`).
 6. Validation before the draft commit: `selection_path` and Select-clear-with-path
-   (`src/app.rs:684`), Face mode and face-target resolution for `SelectFace` (`src/app.rs:699`).
-7. `commit_pending` (`src/app.rs:1091`) commits a valid human draft first, except for `UpdateMove`
-   and `FinishMove` (`src/app.rs:719`). On failure the operation returns `InvalidInput(status)`
+   (`src/app/mod.rs:684`), Face mode and face-target resolution for `SelectFace` (`src/app/mod.rs:699`).
+7. `commit_pending` (`src/app/mod.rs:1091`) commits a valid human draft first, except for `UpdateMove`
+   and `FinishMove` (`src/app/mod.rs:719`). On failure the operation returns `InvalidInput(status)`
    and the status text and error flag change.
 8. The operation handler runs and `sync_fields` refreshes Channel Box drafts.
 
@@ -54,8 +54,8 @@ These are not expressible as a shared guard and must not be hoisted without a ne
 - Read-only Maya ASCII is decided by the scene (`authoring_read_only_reason`,
   `src/native_scene.rs:934`) and surfaces as `ReadOnlyFormat`; Move maps it in
   `src/move_ui.rs:156`.
-- `EditNode` with no fields returns `Unchanged` after only checking the node (`src/app.rs:773`).
-- Delete in Face mode is refused only in `native_operation` (`src/app.rs:243`), above the
+- `EditNode` with no fields returns `Unchanged` after only checking the node (`src/app/mod.rs:773`).
+- Delete in Face mode is refused only in `native_operation` (`src/app/mod.rs:243`), above the
   pipeline. The matrix calls the pipeline directly, so its `delete(face_mode)` cells show the
   operation succeeding in both columns; `native_operation_refuses_face_mode_delete_before_the_pipeline`
   covers the UI refusal. The remote pipeline has no such refusal today, which is a bug
