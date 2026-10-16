@@ -35,7 +35,13 @@ provenance Native and no token or draft checks. In order:
    reaches `open_candidate` with no modal check (`src/app/dispatch.rs:181`); `SaveSceneAs` is refused while
    modal (`src/app/dispatch.rs:183`) and `SaveScene` likewise (`src/app/dispatch.rs:190`). `NewScene`,
    `RequestClose` and `ResolveFileAction` decide internally (`src/app/dispatch.rs:196`-`src/app/dispatch.rs:201`).
-5. `SetActiveTool` and the Move, Rotate and Scale operations are `BusyEditing` while modal (`src/app/dispatch.rs:204`).
+5. `SetActiveTool`, the Move, Rotate and Scale operations and every selection-changing operation (`Select`,
+   `SetSelectionMode`, `SelectFace`, `SelectVertex`, `SelectEdge`) are `BusyEditing` while modal
+   (`src/app/dispatch.rs:250`), whoever the caller. The refusal is in the pipeline, not only in the UI checks in
+   `src/app/panels.rs` and runs before validation and before the draft commit, so a refused selection change never
+   commits a draft (`native_selection_changes_refuse_modal_before_committing_drafts`). Nothing in the modal's own
+   resolve path dispatches a selection operation. Create, Delete and Undo/Redo also move the selection as a side
+   effect but stay allowed under a modal (see Observed behavior).
 6. Validation before the draft commit: `selection_path` and Select-clear-with-path
    (`src/app/dispatch.rs:222`), Face mode and face-target resolution for `SelectFace` (`src/app/dispatch.rs:233`).
 7. `commit_pending` (`src/app/dispatch.rs:626`) commits a valid human draft first, except for `UpdateMove`,

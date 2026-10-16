@@ -257,6 +257,11 @@ impl Editor {
                     | Operation::UpdateMove { .. }
                     | Operation::UpdateManipulation { .. }
                     | Operation::FinishMove { .. }
+                    | Operation::Select { .. }
+                    | Operation::SetSelectionMode(_)
+                    | Operation::SelectFace { .. }
+                    | Operation::SelectVertex { .. }
+                    | Operation::SelectEdge { .. }
             )
         {
             return Err(OperationError::BusyEditing);
