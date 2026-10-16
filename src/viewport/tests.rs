@@ -473,3 +473,65 @@ fn equal_candidates_in_two_instances_resolve_to_the_lower_path() {
         .unwrap();
     assert_eq!(edge.shape, first);
 }
+
+fn clip_point(axis: usize, value: f64) -> DVec4 {
+    let mut point = DVec4::new(0.0, 0.0, 0.5, 1.0);
+    point[axis] = value;
+    point
+}
+
+#[test]
+fn clip_segment_enforces_each_of_the_six_planes() {
+    // (plane, axis, crossing span, expected interval, span fully outside)
+    let planes = [
+        ("near", 2, (-1.0, 1.0), (0.5, 1.0), (-2.0, -1.0)),
+        ("far", 2, (0.0, 2.0), (0.0, 0.5), (2.0, 3.0)),
+        ("left", 0, (-2.0, 0.0), (0.5, 1.0), (-3.0, -2.0)),
+        ("right", 0, (0.0, 2.0), (0.0, 0.5), (2.0, 3.0)),
+        ("bottom", 1, (-2.0, 0.0), (0.5, 1.0), (-3.0, -2.0)),
+        ("top", 1, (0.0, 2.0), (0.0, 0.5), (2.0, 3.0)),
+    ];
+    for (name, axis, crossing, expected, outside) in planes {
+        let clip =
+            |(from, to): (f64, f64)| clip_segment(clip_point(axis, from), clip_point(axis, to));
+        assert_eq!(clip(crossing), Some(expected), "{name} crossing");
+        assert_eq!(clip(outside), None, "{name} outside");
+        assert_eq!(clip((0.25, 0.75)), Some((0.0, 1.0)), "{name} inside");
+    }
+}
+
+#[test]
+fn clip_segment_keeps_a_segment_on_a_plane_and_rejects_a_parallel_one_outside() {
+    // z == 0 for both ends: f0 == f1 == 0 on the near plane.
+    let on_near = clip_segment(
+        DVec4::new(0.0, 0.0, 0.0, 1.0),
+        DVec4::new(0.5, 0.0, 0.0, 1.0),
+    );
+    assert_eq!(on_near, Some((0.0, 1.0)));
+    // w - z == -0.5 for both ends: parallel to the far plane and outside it.
+    let beyond_far = clip_segment(
+        DVec4::new(0.0, 0.0, 2.0, 1.5),
+        DVec4::new(0.5, 0.0, 2.0, 1.5),
+    );
+    assert_eq!(beyond_far, None);
+}
+
+#[test]
+fn edge_pick_rejects_edges_clipped_by_the_border_and_the_far_plane() {
+    let inside = Fixture::new(
+        vec![world(397.0, -100.0, 0.0), world(397.0, 100.0, 0.0)],
+        &[],
+        &[[0, 1]],
+    );
+    // Three pixels inside the border: picked. Three outside: clipped, though within the click radius.
+    assert_eq!(inside.edge_at(near(800.0, 300.0)), Ok(Some(0)));
+    let outside_only = Fixture::new(
+        vec![world(403.0, -100.0, 0.0), world(403.0, 100.0, 0.0)],
+        &[],
+        &[[0, 1]],
+    );
+    assert_eq!(outside_only.edge_at(near(800.0, 300.0)), Ok(None));
+    // Beyond the far plane (eye at z = 5, far = 100) yet under the pointer.
+    let beyond = Fixture::new(vec![[0.0, 0.0, -150.0], [0.5, 0.0, -150.0]], &[], &[[0, 1]]);
+    assert_eq!(beyond.edge_at(near(400.0, 300.0)), Ok(None));
+}
