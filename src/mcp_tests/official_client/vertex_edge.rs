@@ -539,6 +539,55 @@ async fn refuses_stale_token_draft_modal_and_active_move(kind: Kind) {
 }
 
 #[tokio::test]
+async fn sdk_begin_manipulation_refuses_every_kind_in_vertex_and_edge_modes() {
+    let context = egui::Context::default();
+    let (mut editor, client, server) = start(&context).await;
+    let (token, id, _) = cube_with_target(VERTEX, &mut editor, &context, client.peer()).await;
+    let peer = client.peer();
+    let path: Vec<_> = editor
+        .selected_path
+        .iter()
+        .map(|id| id.to_decimal())
+        .collect();
+    for (mode, noun) in [("vertex", "Vertex"), ("edge", "Edge")] {
+        set_mode(&mut editor, &context, peer, &token, mode).await;
+        for (kind, name, extra) in [
+            ("move", "Move", json!({"axis":"x"})),
+            ("rotate", "Rotate", json!({"axis":"y","space":"object"})),
+            ("scale", "Scale", json!({"handle":"x","space":"object"})),
+        ] {
+            let before = baseline(&editor);
+            let dirty = editor.is_dirty();
+            let scene = editor.history.scene().clone();
+            let mut arguments = json!({
+                "scene_token":token,"node_id":id,"instance_path":path,"kind":kind
+            });
+            arguments
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            let refused = call(&mut editor, &context, peer, "begin_manipulation", arguments).await;
+            assert_eq!(refused.is_error, Some(true), "{mode} {kind}");
+            let error = &refused.structured_content.unwrap()["error"];
+            assert_eq!(error["code"], "invalid_input", "{mode} {kind}");
+            assert_eq!(
+                error["message"],
+                format!("{name} is unavailable in {noun} selection; switch to Object selection"),
+                "{mode} {kind}"
+            );
+            assert_eq!(baseline(&editor), before, "{mode} {kind}");
+            assert_eq!(editor.is_dirty(), dirty, "{mode} {kind}");
+            assert_eq!(editor.scene_token.to_string(), token, "{mode} {kind}");
+            assert_eq!(editor.history.scene(), &scene, "{mode} {kind}");
+            assert!(editor.history.active_manipulation().is_none());
+        }
+    }
+    client.cancel().await.unwrap();
+    drop(editor);
+    server.await.unwrap();
+}
+
+#[tokio::test]
 async fn sdk_each_component_type_keeps_its_own_remembered_pick() {
     let context = egui::Context::default();
     let (mut editor, client, server) = start(&context).await;
