@@ -38,7 +38,7 @@ provenance Native and no token or draft checks. In order:
 5. `SetActiveTool` and the three Move operations are `BusyEditing` while modal (`src/app/dispatch.rs:176`).
 6. Validation before the draft commit: `selection_path` and Select-clear-with-path
    (`src/app/dispatch.rs:187`), Face mode and face-target resolution for `SelectFace` (`src/app/dispatch.rs:202`).
-7. `commit_pending` (`src/app/dispatch.rs:556`) commits a valid human draft first, except for `UpdateMove`
+7. `commit_pending` (`src/app/dispatch.rs:561`) commits a valid human draft first, except for `UpdateMove`
    and `FinishMove` (`src/app/dispatch.rs:222`). On failure the operation returns `InvalidInput(status)`
    and the status text and error flag change.
 8. The operation handler runs and `sync_fields` refreshes Channel Box drafts.
@@ -54,7 +54,7 @@ These are not expressible as a shared guard and must not be hoisted without a ne
 - Read-only Maya ASCII is decided by the scene (`authoring_read_only_reason`,
   `src/native_scene.rs:934`) and surfaces as `ReadOnlyFormat`; Move maps it in
   `src/app/features/move_tool.rs:156`.
-- `EditNode` with no fields returns `Unchanged` after only checking the node (`src/app/dispatch.rs:289`).
+- `EditNode` with no fields returns `Unchanged` after only checking the node (`src/app/dispatch.rs:301`).
 - Delete in Face mode is refused only in `native_operation` (`src/app/dispatch.rs:5`), above the
   pipeline. The matrix calls the pipeline directly, so its `delete(face_mode)` cells show the
   operation succeeding in both columns; `native_operation_refuses_face_mode_delete_before_the_pipeline`
