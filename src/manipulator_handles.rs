@@ -15,6 +15,9 @@ use crate::{
 use glam::{DVec2, DVec3, Vec2};
 use std::{f64::consts::TAU, fmt};
 
+#[cfg(feature = "desktop")]
+pub mod paint;
+
 const RING_SEGMENTS: usize = 64;
 const DISABLED_SEGMENTS: usize = 48;
 const VIEW_RING_FACTOR: f64 = 1.2;

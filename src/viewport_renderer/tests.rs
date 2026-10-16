@@ -14,6 +14,9 @@ const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 #[path = "parent_cpu_reference.rs"]
 mod parent_cpu_reference;
 
+#[path = "tests/manipulator_handles.rs"]
+mod manipulator_handles;
+
 fn device_setup() -> (wgpu::Instance, wgpu::Adapter, wgpu::Device, wgpu::Queue) {
     let instance =
         wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
