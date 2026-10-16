@@ -433,3 +433,16 @@ unselected base colour, which keeps the lit pixels different at the 0.4 ambient 
 front-on (grid test over the neighbourhood of the tint plus a 52-step colour grid). It is a display
 legibility rule, not a Maya selection colour, and it does not cover colour management or future
 lighting models.
+
+## Session materials are a first, MCP-only slice (#51)
+
+`create_session_material`, `assign_session_material` and `set_session_material_color` edit a
+session-only lambert table. It is not saved (Untitled scenes have no save), sourced binary scenes
+refuse it with `unsupported_edit` and Maya ASCII scenes with `read_only_format`; it stays separate
+from the saved Phong `set_material_diffuse`. There is no native UI until the Attribute Editor
+branch lands. Assignment is whole-shape only: per-face assignment and instance-specific groups
+are follow-ups. Ids are table indices reused after undo, so clients must not cache them. The
+inspection size estimate budgets 192 bytes per material, so roughly 1300 materials make
+`inspect_scene` return `too_large`. The default shader is unverified for Maya 2026 and linear colour
+is shown as sRGB bytes, so no parity is claimed. No MCP test creates two instances of one shape
+(no instancing operation exists yet); that case is covered by core and `ViewScene` unit tests.
