@@ -11,7 +11,7 @@ Generated from the tool registry in `src/mcp/registry.rs`; do not edit by hand. 
 | `begin_move` | mutating | no | Begin one remote-owned World-axis translation of the exact selected transform instance. Numeric motion may begin while Select is active; this does not change tools |
 | `update_move` | mutating | no | Preview a finite absolute World-axis distance from begin in declared scene linear units. Matching scene token and remote-owned Move ID are required |
 | `finish_move` | mutating | no | Commit one undoable Move edit or cancel to the exact begin authoring state. Only the matching remote-owned Move ID may finish |
-| `create_primitive` | mutating | no | Create a cube or plane in the live editor |
+| `create_primitive` | mutating | no | Create a cube, plane or sphere in the live editor |
 | `select_node` | mutating | yes | Select an object using an optional full transform instance_path; ambiguous objects require a path. Null node_id clears selection without a path |
 | `set_selection_mode` | mutating | yes | Set Object or Face selection mode without editing the scene; a valid remembered face stays inactive in Object mode |
 | `select_face` | mutating | yes | Select a complete canonical face target in Face mode, or clear it with null; explicit targets need not be visible and select their owning instance |

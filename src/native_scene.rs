@@ -860,7 +860,7 @@ impl NativeScene {
         self.append(
             id,
             name,
-            NativeMesh::primitive(primitive),
+            NativeMesh::primitive(primitive)?,
             NativeTransform::default(),
         )?;
         self.next_id = next;

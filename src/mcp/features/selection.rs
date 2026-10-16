@@ -18,6 +18,7 @@ use serde_json::json;
 enum PrimitiveInput {
     Cube,
     Plane,
+    Sphere,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -56,6 +57,7 @@ fn parse_create_primitive(arguments: JsonObject) -> Result<RemoteRequest, ErrorD
     let primitive = match args.primitive {
         PrimitiveInput::Cube => Primitive::Cube,
         PrimitiveInput::Plane => Primitive::Plane,
+        PrimitiveInput::Sphere => Primitive::Sphere,
     };
     Ok(scoped(
         token(&args.scene_token)?,
@@ -149,7 +151,7 @@ fn select_face_schema() -> JsonObject {
 pub(in crate::mcp) const TOOLS: &[ToolSpec] = &[
     ToolSpec {
         name: "create_primitive",
-        description: "Create a cube or plane in the live editor",
+        description: "Create a cube, plane or sphere in the live editor",
         schema: schema::<CreateArgs>,
         parse: parse_create_primitive,
         idempotent: false,

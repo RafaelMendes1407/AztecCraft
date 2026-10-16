@@ -32,7 +32,7 @@ fn binary_sparse_offsets_preserve_storage_and_add_before_world_narrowing() {
         Err(NativeError::InvalidTopology)
     );
     assert_eq!(
-        NativeMesh::primitive(Primitive::Cube).edges[0].smooth(),
+        NativeMesh::primitive(Primitive::Cube).unwrap().edges[0].smooth(),
         Some(false)
     );
     let summary = format!("{mesh:?} {:?}", mesh.points);
@@ -119,14 +119,14 @@ fn binary_factory_rejects_invalid_offsets_topology_and_guessed_smoothing() {
 
 #[test]
 fn each_unproved_topology_update_refuses_independently() {
-    let mut unknown = NativeMesh::primitive(Primitive::Cube);
+    let mut unknown = NativeMesh::primitive(Primitive::Cube).unwrap();
     unknown.edges[0].smooth = None;
     assert!(unknown.point_offsets.is_empty());
     assert_eq!(
         unknown.extruded_face(1, 1.0),
         Err(NativeError::UnsupportedEdit)
     );
-    let mut offsets = NativeMesh::primitive(Primitive::Cube);
+    let mut offsets = NativeMesh::primitive(Primitive::Cube).unwrap();
     offsets.point_offsets.push(PointOffset {
         vertex: 0,
         delta_cm: [0.0; 3],
@@ -142,7 +142,7 @@ fn each_unproved_topology_update_refuses_independently() {
 fn double_and_float_extrusion_preserve_original_bits_and_edge_metadata() {
     for doubles in [false, true] {
         for distance in [0.0, 0.123456789012] {
-            let mut mesh = NativeMesh::primitive(Primitive::Cube);
+            let mut mesh = NativeMesh::primitive(Primitive::Cube).unwrap();
             if doubles {
                 let mut points = mesh
                     .points
@@ -186,7 +186,7 @@ fn double_and_float_extrusion_preserve_original_bits_and_edge_metadata() {
 
 #[test]
 fn arbitrary_loops_holes_and_reversed_zero_edge_are_retained_without_projection() {
-    let mut mesh = NativeMesh::primitive(Primitive::Cube);
+    let mut mesh = NativeMesh::primitive(Primitive::Cube).unwrap();
     let original_face = mesh.faces[0].clone();
     mesh.faces[0].holes = vec![original_face.outer.clone()];
     mesh.validate().unwrap();
@@ -236,7 +236,7 @@ fn arbitrary_loops_holes_and_reversed_zero_edge_are_retained_without_projection(
 #[test]
 fn unsupported_channel_updates_and_new_float_overflow_refuse_without_mutation() {
     for channel in ["crease", "UV", "normal", "color", "tweak", "dependency"] {
-        let mut mesh = NativeMesh::primitive(Primitive::Cube);
+        let mut mesh = NativeMesh::primitive(Primitive::Cube).unwrap();
         mesh.unsupported_channels.push(channel.into());
         let before = mesh.clone();
         assert_eq!(
@@ -245,7 +245,7 @@ fn unsupported_channel_updates_and_new_float_overflow_refuse_without_mutation() 
         );
         assert_eq!(mesh, before);
     }
-    let mesh = NativeMesh::primitive(Primitive::Cube);
+    let mesh = NativeMesh::primitive(Primitive::Cube).unwrap();
     assert_eq!(
         mesh.extruded_face(1, f64::from(f32::MAX) * 2.0),
         Err(NativeError::NonFinite)

@@ -254,6 +254,7 @@ impl Editor {
                     let base = match primitive {
                         Primitive::Cube => "pCube",
                         Primitive::Plane => "pPlane",
+                        Primitive::Sphere => "pSphere",
                     };
                     let mut suffix = 1;
                     while self
