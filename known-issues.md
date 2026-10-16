@@ -350,3 +350,14 @@ follows the camera are unverified. It is not yet wired into the viewport (A1b), 
 ambient floor (0.4) is chosen for legibility, not measured from Maya (provisional). Back faces
 receive only the ambient floor (no two-sided lighting, culling off), so an open plane looks dark
 from behind; Maya's two-sided default is unverified.
+
+## Rotate and Scale handle limits are provisional
+
+The Rotate ring angle comes from a ray-plane hit. Just above the edge-on limit
+(|ray . ring normal| of 1e-3, about 0.06 degrees from the plane) the hit is
+far away and the angle can swing sharply per pixel; below it the drag is refused as
+Degenerate. The limit, the 72 px handle size, the 1 px Scale pivot refusal and the
+100 px uniform-scale reference are provisional, not taken from Maya, and are to be
+tuned with the Task 5 UI wiring. Handle frames must be right-handed; the caller
+must refuse mirrored frames. A zero or negative Scale ratio is reachable by an
+ordinary drag and the core refuses it; the UI must show that refusal.

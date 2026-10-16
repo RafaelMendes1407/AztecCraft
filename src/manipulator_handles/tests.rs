@@ -479,3 +479,87 @@ fn scale_handles_follow_a_rotated_frame() {
         Some(ScaleHandle::Y)
     );
 }
+
+fn tie_segment() -> ScreenSegment {
+    ScreenSegment {
+        start: DVec2::new(100.0, 100.0),
+        end: DVec2::new(200.0, 100.0),
+    }
+}
+
+#[test]
+fn identical_ring_segments_tie_to_x_then_y_then_z() {
+    let mut handles = world_rings(&oblique_camera());
+    for ring in &mut handles.rings {
+        ring.segments = vec![tie_segment()];
+    }
+    assert_eq!(
+        handles.hit_test(DVec2::new(150.0, 100.0)),
+        Some(RotateAxis::X)
+    );
+    handles.rings[0].segments.clear();
+    assert_eq!(
+        handles.hit_test(DVec2::new(150.0, 100.0)),
+        Some(RotateAxis::Y)
+    );
+    handles.rings[1].segments.clear();
+    assert_eq!(
+        handles.hit_test(DVec2::new(150.0, 100.0)),
+        Some(RotateAxis::Z)
+    );
+}
+
+#[test]
+fn identical_scale_boxes_tie_to_x_then_y_then_z() {
+    let mut handles = world_scale(&front_camera());
+    for handle in &mut handles.axes {
+        handle.geometry = Ok(ScaleGeometry {
+            shaft: Some(tie_segment()),
+            tip_box: [None; 4],
+        });
+    }
+    assert_eq!(
+        handles.hit_test(DVec2::new(150.0, 100.0)),
+        Some(ScaleHandle::X)
+    );
+    handles.axes[0].geometry = Err(HandleError::HandleClipped);
+    assert_eq!(
+        handles.hit_test(DVec2::new(150.0, 100.0)),
+        Some(ScaleHandle::Y)
+    );
+    handles.axes[1].geometry = Err(HandleError::HandleClipped);
+    assert_eq!(
+        handles.hit_test(DVec2::new(150.0, 100.0)),
+        Some(ScaleHandle::Z)
+    );
+}
+
+#[test]
+fn edge_on_limit_sits_between_five_ten_thousandths_and_two_thousandths() {
+    let capture = capture(&front_camera());
+    let frame = HandleFrame::world(DVec3::ZERO).unwrap();
+    // On the center row the ray direction dotted with X is about dx / 300 for small dx.
+    let at = |dx: f64| pointer(DVec2::new(400.0 + dx, 300.0 - 72.0));
+    assert_eq!(
+        RotateDrag::begin(capture.clone(), &frame, RotateAxis::X, at(0.15)).err(),
+        Some(HandleError::Degenerate)
+    );
+    assert!(RotateDrag::begin(capture.clone(), &frame, RotateAxis::X, at(0.6)).is_ok());
+}
+
+#[test]
+fn a_plane_behind_the_eye_returns_behind_ray() {
+    // The eye is above the Y=0 plane, so rays that climb above the horizon meet it behind.
+    let capture = capture(&camera_at(0.0, 0.4, 10.0));
+    let frame = HandleFrame::world(DVec3::ZERO).unwrap();
+    assert_eq!(
+        RotateDrag::begin(
+            capture.clone(),
+            &frame,
+            RotateAxis::Y,
+            pointer(DVec2::new(400.0, 5.0))
+        )
+        .err(),
+        Some(HandleError::BehindRay)
+    );
+}

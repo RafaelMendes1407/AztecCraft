@@ -40,6 +40,9 @@ pub struct HandleFrame {
 }
 
 impl HandleFrame {
+    /// `axes` must be orthonormal (up to scale) and right-handed, as a rotation of the world axes.
+    /// A mirrored (left-handed) frame flips the sign of every ring drag, and the handles do not
+    /// check for it; the caller must refuse mirrored frames before building one.
     pub fn new(origin: DVec3, axes: [DVec3; 3]) -> Result<Self, HandleError> {
         let mut unit = [DVec3::ZERO; 3];
         for (slot, axis) in unit.iter_mut().zip(axes) {
