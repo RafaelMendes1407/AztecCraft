@@ -102,8 +102,8 @@ The Tool Box rows below reflect the icon-only Tool Box change (feat/70-wire-ui-i
 | Lasso tool | [toolbox] | Visible-unsupported | src/app/panels.rs:70 "Lasso" (disabled, hover "not implemented yet") | none | P2 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
 | Paint Selection tool | [toolbox] | Visible-unsupported | src/app/panels.rs:75 "Paint Selection" (disabled, hover "not implemented yet") | none | P3 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
 | Move tool (W) | [toolbox] | Supported | src/app/panels.rs:108 "SetActiveTool" (icon-only button, hover "Move tool (W)" at src/app/panels.rs:81) | `set_active_tool` | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
-| Rotate tool (E) | [toolbox] | Visible-unsupported | src/app/panels.rs:87 "Rotate" (disabled, hover "not implemented yet") | none | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
-| Scale tool (R) | [toolbox] | Visible-unsupported | src/app/panels.rs:89 "Scale" (disabled, hover "not implemented yet") | none | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| Rotate tool (E) | [toolbox] | Supported (native only) | src/app/panels.rs "Rotate" (icon-only button, hover "Rotate tool (E)"); Object/World selector and numeric row in src/app/features/manipulation_tool.rs | none yet (`set_active_tool` only; generic manipulation tools are Task 6) | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| Scale tool (R) | [toolbox] | Supported (native only) | src/app/panels.rs "Scale" (icon-only button, hover "Scale tool (R)"); Object/World selector and numeric row in src/app/features/manipulation_tool.rs | none yet (`set_active_tool` only; generic manipulation tools are Task 6) | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
 | Last Used tool (Y) | [toolbox] | Visible-unsupported | src/app/panels.rs:94 "Last Used" (disabled, hover "not implemented yet"; dynamic last-used behaviour unsupported) | none | P2 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
 | Show Manipulators (T) | [overview] | Missing | absent | none | P2 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
 | Quick Layout: single pane | [quicklayout] | Missing | absent; fixed layout at src/app.rs:1594-1643 | none | P2 | S8 Panels and quick layouts (#48 / #69) |
@@ -256,8 +256,8 @@ Editor::shortcuts at src/app.rs:953 handles Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z, F, Cmd
 | --- | --- | --- | --- | --- | --- | --- |
 | Q Select | [toolbox] | Missing | no key handler | none | P1 | S5 Hotkeys (#32) |
 | W Move | [toolbox] | Missing | no key handler; tool disabled | none | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
-| E Rotate | [toolbox] | Missing | no key handler; tool disabled | none | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
-| R Scale | [toolbox] | Missing | no key handler; tool disabled | none | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| E Rotate | [toolbox] | Supported | src/app/shortcuts.rs | none yet | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| R Scale | [toolbox] | Supported | src/app/shortcuts.rs | none yet | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
 | T Show Manipulators | [overview] | Missing | no key handler | none | P2 | S5 Hotkeys (#32) |
 | Y Last Used tool | [toolbox] | Missing | no key handler | none | P2 | S5 Hotkeys (#32) |
 | F8 toggle Object/Component | [select] | Partial | src/app.rs:1577 "Key::F8" (toggles Object and Face; from Hierarchy it goes to Face, PROVISIONAL) | `set_selection_mode` | P1 | S1 Status Line strip (#59) |

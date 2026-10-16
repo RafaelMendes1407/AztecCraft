@@ -424,10 +424,30 @@ The Rotate ring angle comes from a ray-plane hit. Just above the edge-on limit
 (|ray . ring normal| of 1e-3, about 0.06 degrees from the plane) the hit is
 far away and the angle can swing sharply per pixel; below it the drag is refused as
 Degenerate. The limit, the 72 px handle size, the 1 px Scale pivot refusal and the
-100 px uniform-scale reference are provisional, not taken from Maya, and are to be
-tuned with the Task 5 UI wiring. Handle frames must be right-handed; the caller
-must refuse mirrored frames. A zero or negative Scale ratio is reachable by an
-ordinary drag and the core refuses it; the UI must show that refusal.
+100 px uniform-scale reference are provisional, not taken from Maya, were not changed
+by the UI wiring and use physical pixels (they ignore HiDPI scaling). Maya 2026 back-half
+ring behaviour is unverified.
+
+A Rotate drag whose samples are refused for a stretch (edge-on ring, pointer behind the
+camera) can lose whole turns. Each accepted sample adds the shortest signed step from the
+last accepted angle, so a pointer that circles the pivot by more than half a turn while
+samples are refused resumes on the wrong multiple of 360 degrees. Nothing is lost for
+refusals by the scene, because the drag keeps tracking the angle itself.
+
+Handle frames must be right-handed and perpendicular. `HandleFrame::new` refuses a
+mirrored one (`MirroredFrame`) or a skewed one (`SkewedFrame`), which an Object-space
+frame under a negative or uneven scale parent produces. The tool shows "Rotate unavailable"
+or "Scale unavailable" with the reason, and World space still works. A zero or negative Scale
+ratio is reachable by an ordinary drag; the core refuses it with InvalidFactor, the status
+line shows the refusal, and the drag continues from the last valid preview (release commits
+that preview).
+
+Rotate and Scale share one Object/World selector; Maya keeps one per tool. The selector,
+the axis choice and the numeric field are a row above the viewport standing in for the
+unsupported Tool Settings panel. Gimbal, Parent, Normal, Custom and Component are listed
+disabled. The inspection tool reports Move fields (`orientation`, `class`) even while
+Rotate or Scale is active, and no MCP tool begins, updates or finishes a Rotate or Scale
+yet; both gaps belong to the generic manipulation tools (Task 6).
 
 ## Grid lines leak across faces (#111)
 
