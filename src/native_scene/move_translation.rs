@@ -32,6 +32,7 @@ impl WorldAxis {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ChannelLeaf {
     Translate,
+    Rotate,
 }
 
 impl ChannelLeaf {
@@ -39,6 +40,7 @@ impl ChannelLeaf {
         let axis = ["X", "Y", "Z"].get(component).copied().unwrap_or("?");
         match self {
             Self::Translate => format!("translate{axis}"),
+            Self::Rotate => format!("rotate{axis}"),
         }
     }
 }
