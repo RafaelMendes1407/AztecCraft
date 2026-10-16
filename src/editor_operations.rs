@@ -18,6 +18,16 @@ use rmcp::schemars;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SidebarPanel {
     ChannelBox,
+    AttributeEditor,
+}
+
+/// An Attribute Editor tab. Each variant names its owner: the selected transform, or a direct
+/// mesh shape (its own tab, or the material connected to it).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AttributeEditorTab {
+    Transform(NodeId),
+    Shape(NativeId),
+    Material(NativeId),
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -173,6 +183,9 @@ pub enum Operation {
         panel: SidebarPanel,
         visible: bool,
     },
+    SelectAttributeEditorTab {
+        tab: AttributeEditorTab,
+    },
     Orbit {
         radians: [f32; 2],
     },
@@ -253,6 +266,7 @@ pub struct SceneInspection {
     pub viewport_error: Option<crate::viewport_renderer::ViewportError>,
     pub grid_visible: bool,
     pub sidebar_panels: SidebarPanelsInspection,
+    pub attribute_editor_tab: Option<AttributeEditorTabInspection>,
     pub depth_complete: bool,
     pub clipping_complete: bool,
     pub appearance_incomplete: bool,
@@ -367,6 +381,13 @@ impl From<NativeTransform> for AuthoringTransformInspection {
 #[cfg(any(test, feature = "mcp"))]
 pub struct SidebarPanelsInspection {
     pub channel_box: bool,
+    pub attribute_editor: bool,
+}
+#[derive(Debug, Serialize)]
+#[cfg(any(test, feature = "mcp"))]
+pub struct AttributeEditorTabInspection {
+    pub kind: &'static str,
+    pub id: String,
 }
 #[derive(Debug, Serialize)]
 #[cfg(any(test, feature = "mcp"))]

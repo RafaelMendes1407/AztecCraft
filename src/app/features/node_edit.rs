@@ -5,6 +5,7 @@ impl Editor {
         self.material_draft = None;
         self.channel_intents = [false; 9];
         self.name_intent = false;
+        self.normalize_attribute_editor_tab();
         let Some(node) = self
             .selected
             .and_then(|id| self.history.scene().node(id).ok())
@@ -31,14 +32,10 @@ impl Editor {
         let values = node.transform().values();
         self.channels = values.map(|value| value.to_string());
         let transform = node.transform_id();
-        let direct = |shape| {
-            self.history.scene().dag_edges().iter().any(|edge| {
-                edge.parent() == Some(transform)
-                    && edge.child() == shape
-                    && self.history.scene().shape(shape).is_ok()
-            })
-        };
-        if !self.material_shape.is_some_and(direct) {
+        if !self
+            .material_shape
+            .is_some_and(|shape| self.is_direct_shape(transform, shape))
+        {
             let mut shapes = self
                 .history
                 .scene()
@@ -126,22 +123,9 @@ impl Editor {
             .wrap(),
         );
     }
-    pub(in crate::app) fn channels(&mut self, ui: &mut egui::Ui, delete_intent: &mut bool) {
-        ui.label(RichText::new("Channel Box").strong());
-        let read_only_reason = self.history.scene().authoring_read_only_reason();
-        let authoring = read_only_reason.is_none();
-        if let Some(reason) = read_only_reason {
-            ui.weak(reason.to_string());
-        }
-        if !self.history.scene().curves().is_empty() {
-            ui.weak("Curves: select in the Outliner and frame with F. Viewport curve picking and CV editing are unavailable.");
-        }
-        self.appearance_summary(ui);
-        ui.separator();
-        if self.selected.is_none() {
-            ui.weak("Select an object to edit its channels.");
-            return;
-        }
+    /// Name, the nine transform channels and the read-only Visibility row, shared by the Channel
+    /// Box and the Attribute Editor Transform tab so both edit the same drafts and widget ids.
+    pub(in crate::app) fn transform_section(&mut self, ui: &mut egui::Ui, authoring: bool) {
         ui.label("Object name");
         let response = ui.add_enabled(
             authoring,
@@ -201,6 +185,24 @@ impl Editor {
         if apply {
             self.commit_pending();
         }
+    }
+    pub(in crate::app) fn channels(&mut self, ui: &mut egui::Ui, delete_intent: &mut bool) {
+        ui.label(RichText::new("Channel Box").strong());
+        let read_only_reason = self.history.scene().authoring_read_only_reason();
+        let authoring = read_only_reason.is_none();
+        if let Some(reason) = read_only_reason {
+            ui.weak(reason.to_string());
+        }
+        if !self.history.scene().curves().is_empty() {
+            ui.weak("Curves: select in the Outliner and frame with F. Viewport curve picking and CV editing are unavailable.");
+        }
+        self.appearance_summary(ui);
+        ui.separator();
+        if self.selected.is_none() {
+            ui.weak("Select an object to edit its channels.");
+            return;
+        }
+        self.transform_section(ui, authoring);
         self.material_controls(ui);
         ui.separator();
         if ui

@@ -47,6 +47,16 @@ impl Editor {
         let Some(shape) = self.material_shape else {
             return;
         };
+        self.material_section(ui, shape);
+    }
+
+    /// The Phong summary and Diffuse editor for exactly `shape`. Callers must have bound
+    /// `material_shape` to it: the draft is keyed to that selection.
+    pub(in crate::app) fn material_section(&mut self, ui: &mut egui::Ui, shape: NativeId) {
+        if self.material_shape != Some(shape) {
+            ui.weak("Material selection is out of sync with this tab.");
+            return;
+        }
         let Ok(material) = self.history.scene().material_for_shape(shape) else {
             ui.weak("Material data editing unavailable for this shape.");
             return;

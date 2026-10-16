@@ -1,3 +1,4 @@
+pub(in crate::app) mod attribute_editor;
 mod camera;
 mod history;
 mod material;

@@ -13,6 +13,22 @@ the corrected protocol reopen journey was independently reproduced and bounded
 macOS native edit/Undo/Save/reopen passed. Committed cold verification, hooks/CI
 and published Save/NCRV/Face/Grid composition remain pending.
 
+## Attribute Editor first slice is an approximation
+
+**Severity:** low
+**Area:** editor UI
+**Issue:** cristim/AztecCraft#60
+
+The Attribute Editor models Maya's Ctrl+A switch as one right dock that cycles between the
+Channel Box and the Attribute Editor (hidden to Attribute Editor); it is not Maya dock, tab or
+floating-window parity. Its Transform Attributes list comes only from the Maya 2023 page and is
+provisional. Tabs are the selected transform, its direct mesh shapes and their supported
+materials, not Maya's connected-node tabs. Only the first 16 direct shapes of a transform get shape and material tabs; selecting a later one is refused as `invalid_input`, natively and over MCP, and the panel states how many shapes are omitted. Pin Tab, Notes, Extra Attributes, Add/Show/Hide
+Attributes, Shear, Rotate Order, Rotate Axis, pivots, limits, visibility editing and material
+assignment are visibly unsupported. Maya's default modifier is Ctrl on every platform; AztecCraft
+uses an explicit Ctrl modifier rather than its `modifiers.command` convention, and the macOS
+Cmd-versus-Ctrl behavior is unverified. Native visual verification is pending.
+
 ## Remote Delete is not refused in Face selection
 
 **Severity:** medium

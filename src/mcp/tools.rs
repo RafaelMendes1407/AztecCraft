@@ -192,7 +192,7 @@ impl ServerHandler for EditorServer {
 mod tests {
     use super::*;
     use crate::editor_operations::{
-        FileDecision, MAX_NAME_BYTES, MoveDistance, Operation, SidebarPanel,
+        AttributeEditorTab, FileDecision, MAX_NAME_BYTES, MoveDistance, Operation, SidebarPanel,
     };
     use crate::mcp::tool_names;
     use rmcp::model::{ErrorCode, JsonObject};
@@ -347,6 +347,9 @@ mod tests {
                 "set_sidebar_panel_visibility" => {
                     json!({"scene_token":token,"panel":"channel_box","visible":true})
                 }
+                "select_attribute_editor_tab" => {
+                    json!({"scene_token":token,"tab":{"kind":"transform","id":"1"}})
+                }
                 "open_scene" | "save_scene_as" => json!({"scene_token":token,"path":"scene.mb"}),
                 "resolve_file_action" => {
                     json!({"scene_token":token,"pending_action_id":Uuid::new_v4().to_string(),"decision":"cancel"})
@@ -364,6 +367,7 @@ mod tests {
                 tool.name.as_ref(),
                 "set_grid_visibility"
                     | "set_sidebar_panel_visibility"
+                    | "select_attribute_editor_tab"
                     | "set_active_tool"
                     | "select_node"
                     | "set_selection_mode"
@@ -596,7 +600,8 @@ mod tests {
             json!({"scene_token": token, "panel": "channel_box", "visible": null}),
             json!({"scene_token": token, "panel": "channel_box", "visible": "true"}),
             json!({"scene_token": token, "panel": "channel_box", "visible": false, "extra": 1}),
-            json!({"scene_token": token, "panel": "attribute_editor", "visible": false}),
+            json!({"scene_token": token, "panel": "attributeEditor", "visible": false}),
+            json!({"scene_token": token, "panel": "tool_settings", "visible": false}),
             json!({"scene_token": token, "panel": "ChannelBox", "visible": false}),
             json!({"scene_token": token, "panel": null, "visible": false}),
             json!({"scene_token": "invalid", "panel": "channel_box", "visible": false}),
@@ -627,6 +632,78 @@ mod tests {
                 Operation::SetSidebarPanelVisible { panel: SidebarPanel::ChannelBox, visible: actual }
                     if actual == visible
             ));
+        }
+    }
+
+    #[test]
+    fn attribute_editor_panel_and_tab_decode_to_typed_operations() {
+        let token = Uuid::new_v4().to_string();
+        let request = parse_request(
+            "set_sidebar_panel_visibility",
+            json!({"scene_token": token, "panel": "attribute_editor", "visible": true})
+                .as_object()
+                .unwrap()
+                .clone(),
+        )
+        .unwrap();
+        assert!(matches!(
+            request.operation,
+            Operation::SetSidebarPanelVisible {
+                panel: SidebarPanel::AttributeEditor,
+                visible: true
+            }
+        ));
+        let tool = catalog()
+            .into_iter()
+            .find(|tool| tool.name == "select_attribute_editor_tab")
+            .unwrap();
+        assert_eq!(tool.input_schema["additionalProperties"], false);
+        let annotations = tool.annotations.unwrap();
+        assert_eq!(annotations.read_only_hint, Some(false));
+        assert_eq!(annotations.idempotent_hint, Some(true));
+        for (kind, check) in [("transform", 0), ("shape", 1), ("material", 2)] {
+            let request = parse_request(
+                "select_attribute_editor_tab",
+                json!({"scene_token": token, "tab": {"kind": kind, "id": "7"}})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
+            .unwrap();
+            let Operation::SelectAttributeEditorTab { tab } = request.operation else {
+                panic!("wrong operation");
+            };
+            assert_eq!(
+                check,
+                match tab {
+                    AttributeEditorTab::Transform(_) => 0,
+                    AttributeEditorTab::Shape(_) => 1,
+                    AttributeEditorTab::Material(_) => 2,
+                }
+            );
+        }
+        for arguments in [
+            json!({"tab": {"kind": "shape", "id": "7"}}),
+            json!({"scene_token": token}),
+            json!({"scene_token": token, "tab": null}),
+            json!({"scene_token": token, "tab": {"kind": "shape"}}),
+            json!({"scene_token": token, "tab": {"id": "7"}}),
+            json!({"scene_token": token, "tab": {"kind": "pin", "id": "7"}}),
+            json!({"scene_token": token, "tab": {"kind": "Shape", "id": "7"}}),
+            json!({"scene_token": token, "tab": {"kind": "shape", "id": "x"}}),
+            json!({"scene_token": token, "tab": {"kind": "shape", "id": ""}}),
+            json!({"scene_token": token, "tab": {"kind": "shape", "id": 7}}),
+            json!({"scene_token": token, "tab": {"kind": "shape", "id": "7", "extra": 1}}),
+            json!({"scene_token": token, "tab": {"kind": "shape", "id": "7"}, "extra": 1}),
+            json!({"scene_token": "invalid", "tab": {"kind": "shape", "id": "7"}}),
+        ] {
+            let Err(error) = parse_request(
+                "select_attribute_editor_tab",
+                arguments.as_object().unwrap().clone(),
+            ) else {
+                panic!("accepted {arguments}");
+            };
+            assert_eq!(error.code, ErrorCode::INVALID_PARAMS, "{arguments}");
         }
     }
 

@@ -72,7 +72,7 @@ async fn sdk_sidebar_panel_visibility_is_idempotent_and_guarded() {
     );
     assert!(editor.sidebar_panel_visible(SidebarPanel::ChannelBox));
 
-    for panel in ["attribute_editor", "ChannelBox", ""] {
+    for panel in ["tool_settings", "ChannelBox", ""] {
         let rejected = call_response(
             &mut editor,
             &context,

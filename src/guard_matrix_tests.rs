@@ -157,6 +157,8 @@ enum Pre {
     FaceMode,
     /// Adds a second node with different channels, reselects the first and enters Face mode.
     SecondNodeFaceMode,
+    /// Makes the Attribute Editor the active dock panel, the only state that accepts a tab.
+    AttributeEditorDock,
 }
 
 struct Sample {
@@ -526,6 +528,9 @@ fn seeds(t: &Targets) -> Vec<Operation> {
             panel: crate::editor_operations::SidebarPanel::ChannelBox,
             visible: false,
         },
+        Operation::SelectAttributeEditorTab {
+            tab: crate::editor_operations::AttributeEditorTab::Shape(t.shape),
+        },
         Operation::Orbit {
             radians: [0.1, 0.0],
         },
@@ -800,13 +805,39 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
             "set_grid_visible(false)",
             Operation::SetGridVisible { visible: false },
         )],
-        Operation::SetSidebarPanelVisible { .. } => vec![sample(
-            "set_sidebar_panel_visible(channel_box,false)",
-            Operation::SetSidebarPanelVisible {
-                panel: crate::editor_operations::SidebarPanel::ChannelBox,
-                visible: false,
+        Operation::SetSidebarPanelVisible { .. } => vec![
+            sample(
+                "set_sidebar_panel_visible(channel_box,false)",
+                Operation::SetSidebarPanelVisible {
+                    panel: crate::editor_operations::SidebarPanel::ChannelBox,
+                    visible: false,
+                },
+            ),
+            sample(
+                "set_sidebar_panel_visible(attribute_editor,true)",
+                Operation::SetSidebarPanelVisible {
+                    panel: crate::editor_operations::SidebarPanel::AttributeEditor,
+                    visible: true,
+                },
+            ),
+        ],
+        Operation::SelectAttributeEditorTab { .. } => vec![
+            Sample {
+                pre: Pre::AttributeEditorDock,
+                ..sample(
+                    "select_attribute_editor_tab(shape)",
+                    Operation::SelectAttributeEditorTab {
+                        tab: crate::editor_operations::AttributeEditorTab::Shape(t.shape),
+                    },
+                )
             },
-        )],
+            sample(
+                "select_attribute_editor_tab(shape,panel_hidden)",
+                Operation::SelectAttributeEditorTab {
+                    tab: crate::editor_operations::AttributeEditorTab::Shape(t.shape),
+                },
+            ),
+        ],
         Operation::Orbit { .. } => vec![sample(
             "orbit",
             Operation::Orbit {
@@ -875,6 +906,15 @@ fn observe(editor: &Editor, roots: &[&std::path::Path]) -> Observed {
             format!(
                 "channel_box={}",
                 editor.sidebar_panel_visible(crate::editor_operations::SidebarPanel::ChannelBox)
+            ),
+        ),
+        (
+            "attribute_editor",
+            format!(
+                "panel={} tab={:?}",
+                editor
+                    .sidebar_panel_visible(crate::editor_operations::SidebarPanel::AttributeEditor),
+                editor.attribute_editor_tab
             ),
         ),
         ("camera", format!("{:?}", editor.camera)),
@@ -978,6 +1018,9 @@ fn run_cell(state: State, pipeline: Pipeline, index: usize) -> (String, String) 
     match pre {
         Pre::None => {}
         Pre::FaceMode => rig.editor.selection_mode = SelectionMode::Face,
+        Pre::AttributeEditorDock => {
+            rig.editor.sidebar_dock = Some(crate::editor_operations::SidebarPanel::AttributeEditor)
+        }
         Pre::SecondNodeFaceMode => {
             add_second_node(&mut rig.editor);
             rig.editor.selection_mode = SelectionMode::Face;
