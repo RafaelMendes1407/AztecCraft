@@ -68,6 +68,8 @@ These are not expressible as a shared guard and must not be hoisted without a ne
   (cristim/AztecCraft#83, listed in `known-issues.md`); the snapshot records current behavior and
   must change with the fix. The Move, Rotate and Scale Face-mode refusal is in the shared target check
   (`check_manipulation_target`, `src/app/features/manipulation_tool.rs:139`) and applies to both pipelines (`begin_move(face_mode)` cells).
+- The viewport click path (`src/app/panels.rs`) dispatches Object, Hierarchy, Face, Vertex and Edge picks through
+  `apply_operation`, not `native_operation`, so a pick takes the shared guards like any other native operation.
 - The `read_only_ascii` fixture is a curve-only scene with no mesh. `set_material_diffuse`,
   `select_face(face_mode)` and `extrude_face` therefore fail there with a missing-shape error, not
   `ReadOnlyFormat`; read-only refusal is shown by `create`, `delete`, `rename` and the other

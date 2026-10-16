@@ -343,6 +343,7 @@ impl Editor {
                     }
                     OperationError::File(e.to_string())
                 })?;
+            // Picks dispatch through `apply_operation`, not `native_operation`.
             if !self.files.is_modal()
                 && let Some(ndc) = clickable
             {

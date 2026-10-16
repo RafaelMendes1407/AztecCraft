@@ -42,7 +42,29 @@ const SELECTION_MODES: [ModeButton; 3] = [
     ModeButton {
         label: "Component selection",
         icon: UiIcon::SelectComponent,
-        hover: "Component selection (Face only; Vertex, Edge, UV unsupported)  F11",
+        hover: "Component selection (enters Face; pick Vertex, Edge or Face with the buttons to the right)  F11",
+        target: (SelectionModeIntent::Face, SelectionMode::Face),
+    },
+];
+
+/// The order is provisional: no fetched Maya 2026 page names the Status Line component-type icons.
+const COMPONENT_TYPES: [ModeButton; 3] = [
+    ModeButton {
+        label: "Vertex selection",
+        icon: UiIcon::SelectVertex,
+        hover: "Vertex selection  F9. Component modes are exclusive here, unlike Maya's per-type selection masks. UV is unsupported.",
+        target: (SelectionModeIntent::Vertex, SelectionMode::Vertex),
+    },
+    ModeButton {
+        label: "Edge selection",
+        icon: UiIcon::SelectEdge,
+        hover: "Edge selection  F10. Component modes are exclusive here, unlike Maya's per-type selection masks. UV is unsupported.",
+        target: (SelectionModeIntent::Edge, SelectionMode::Edge),
+    },
+    ModeButton {
+        label: "Face selection",
+        icon: UiIcon::SelectFace,
+        hover: "Face selection  F11. Component modes are exclusive here, unlike Maya's per-type selection masks. UV is unsupported.",
         target: (SelectionModeIntent::Face, SelectionMode::Face),
     },
 ];
@@ -122,14 +144,33 @@ impl Editor {
             selection_mode_menu(ui);
             for button in &SELECTION_MODES {
                 let (intent, mode) = button.target;
-                let selected = mode == self.selection_mode;
-                let enabled = admitted;
+                // The Component button stays pressed in every component mode.
+                let selected = if mode.is_component() {
+                    self.selection_mode.is_component()
+                } else {
+                    mode == self.selection_mode
+                };
                 let response = icon_button(
                     ui,
                     button.label,
                     button.icon,
-                    enabled,
+                    admitted,
                     selected,
+                    button.hover,
+                );
+                if response.clicked() {
+                    selection_intent.get_or_insert(intent);
+                }
+            }
+            ui.separator();
+            for button in &COMPONENT_TYPES {
+                let (intent, mode) = button.target;
+                let response = icon_button(
+                    ui,
+                    button.label,
+                    button.icon,
+                    admitted,
+                    mode == self.selection_mode,
                     button.hover,
                 );
                 if response.clicked() {

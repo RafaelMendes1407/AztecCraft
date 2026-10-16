@@ -2370,3 +2370,20 @@ fn native_extras_reach_the_view_through_the_shared_matrix() {
         assert!(actual.distance(expected) < 1e-5, "{actual} != {expected}");
     }
 }
+
+#[test]
+fn face_center_work_budget_accepts_exactly_the_limit_and_rejects_one_more() {
+    for (eligible, triangles) in [(1, 1_000_000), (1000, 1000), (500, 2000), (1_000_000, 1)] {
+        assert!(
+            crate::viewport::face_center_work(eligible, triangles).is_ok(),
+            "{eligible} x {triangles}"
+        );
+    }
+    for (eligible, triangles) in [(1, 1_000_001), (1_000_001, 1), (1000, 1001), (1001, 1000)] {
+        assert_eq!(
+            crate::viewport::face_center_work(eligible, triangles),
+            Err(ViewError::ResourceLimit),
+            "{eligible} x {triangles}"
+        );
+    }
+}

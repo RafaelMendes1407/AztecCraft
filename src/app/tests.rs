@@ -5079,6 +5079,116 @@ fn f9_and_f10_ignore_modified_keys() {
 }
 
 #[test]
+fn f9_and_f10_are_ignored_while_a_text_field_has_focus() {
+    for (start, key_code) in [
+        (SelectionMode::Object, Key::F9),
+        (SelectionMode::Object, Key::F10),
+        (SelectionMode::Vertex, Key::F10),
+        (SelectionMode::Edge, Key::F9),
+    ] {
+        let mut editor = Editor::default();
+        editor.create(Primitive::Cube);
+        let ctx = egui::Context::default();
+        frame(&mut editor, &ctx, vec![]);
+        set_mode(&mut editor, start);
+        ctx.memory_mut(|memory| memory.request_focus(name_edit_id()));
+        frame(&mut editor, &ctx, vec![]);
+        let baseline = click_baseline(&editor);
+        frame(
+            &mut editor,
+            &ctx,
+            vec![egui::Event::Text("draft".into()), key(key_code)],
+        );
+        assert_eq!(editor.selection_mode, start, "{start:?} {key_code:?}");
+        assert!(editor.has_draft());
+        assert_eq!(click_baseline(&editor), baseline, "{start:?} {key_code:?}");
+    }
+}
+
+#[test]
+fn vertex_click_ignores_an_occluded_vertex_and_picks_a_visible_one() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    editor.camera =
+        Camera::new(Vec3::ZERO, 0.5, 0.3, 5.0, 45_f32.to_radians(), 0.01, 100.0).unwrap();
+    let ctx = egui::Context::default();
+    let output = frame(&mut editor, &ctx, vec![]);
+    let rect = face_viewport_rect(&output);
+    frame(&mut editor, &ctx, vec![key(Key::F9)]);
+    assert_eq!(editor.selection_mode, SelectionMode::Vertex);
+    let points = world_points(&editor, &(0..8).collect::<Vec<_>>());
+    let eye = editor.camera.eye();
+    let distance = |index: usize| points[index].distance(eye);
+    let farthest = (0..8)
+        .max_by(|&a, &b| distance(a).total_cmp(&distance(b)))
+        .unwrap();
+    let nearest = (0..8)
+        .min_by(|&a, &b| distance(a).total_cmp(&distance(b)))
+        .unwrap();
+    let hidden = screen_point(&editor, rect, points[farthest]);
+    for other in (0..8).filter(|&i| i != farthest) {
+        let apart = screen_point(&editor, rect, points[other]) - hidden;
+        assert!(
+            apart.abs().max_elem() > 20.0,
+            "vertex {other} overlaps the hidden one"
+        );
+    }
+    let baseline = click_baseline(&editor);
+    face_pointer_click(&mut editor, &ctx, hidden, egui::Modifiers::NONE, vec![]);
+    assert_eq!(editor.remembered_vertex, None);
+    assert_eq!(click_baseline(&editor), baseline);
+    let visible = screen_point(&editor, rect, points[nearest]);
+    face_pointer_click(&mut editor, &ctx, visible, egui::Modifiers::NONE, vec![]);
+    assert_eq!(
+        editor.remembered_vertex.as_ref().unwrap().vertex_index,
+        nearest
+    );
+}
+
+#[test]
+fn vertex_click_commits_a_valid_draft_before_picking_the_moved_geometry() {
+    let (mut editor, ctx, rect) = component_click_editor();
+    frame(&mut editor, &ctx, vec![key(Key::F9)]);
+    let id = editor.selected.unwrap();
+    let (front, points) = front_vertices(&editor);
+    let index = front[0];
+    let at = screen_point(&editor, rect, points[index] + Vec3::new(2.0, 0.0, 0.0));
+    frame(&mut editor, &ctx, vec![egui::Event::PointerMoved(at)]);
+    editor.channels[0] = "2".into();
+    editor.channel_intents[0] = true;
+    for pressed in [true, false] {
+        frame(
+            &mut editor,
+            &ctx,
+            vec![
+                egui::Event::PointerMoved(at),
+                egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+        );
+    }
+    assert_eq!(
+        editor
+            .history
+            .scene()
+            .node(id)
+            .unwrap()
+            .transform()
+            .translation[0],
+        2.0
+    );
+    assert!(!editor.has_draft());
+    assert_eq!(
+        editor.remembered_vertex.as_ref().unwrap().vertex_index,
+        index
+    );
+}
+
+#[test]
 fn f9_and_f10_are_blocked_by_popups_modals_and_closing() {
     let mut editor = Editor::default();
     editor.create(Primitive::Cube);
