@@ -668,6 +668,24 @@ fn face_vertex_and_edge_selection_refuse_rotate_and_scale_handles() {
 }
 
 #[test]
+fn inspection_names_each_kind_in_its_selection_mode_refusal() {
+    let (mut editor, _, _) = setup(Key::E, 1.0);
+    editor.selection_mode = SelectionMode::Face;
+    let inspected = editor.inspect_manipulation().unwrap();
+    for (kind, name) in [("move", "Move"), ("rotate", "Rotate"), ("scale", "Scale")] {
+        let entry = inspected.kinds.iter().find(|k| k.kind == kind).unwrap();
+        assert!(!entry.available);
+        assert_eq!(
+            entry.unavailable_reason.as_deref(),
+            Some(
+                format!("{name} is unavailable in Face selection; switch to Object selection")
+                    .as_str()
+            )
+        );
+    }
+}
+
+#[test]
 fn a_tool_switch_mid_drag_cancels_with_the_tool_name() {
     let (mut editor, context, view) = setup(Key::E, 1.0);
     press(&mut editor, &context, 1.0, view.ring(Vec3::Y, 0.0));

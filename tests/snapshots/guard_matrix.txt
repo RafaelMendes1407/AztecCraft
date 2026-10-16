@@ -506,7 +506,7 @@
   begin_scale(object) => Err(BusyManipulation: Finish or cancel the active manipulation) | no state change
   begin_scale(world) => Err(BusyManipulation: Finish or cancel the active manipulation) | no state change
   begin_scale(face_mode) => Err(BusyManipulation: Finish or cancel the active manipulation) | no state change
-  update_manipulation(degrees) => Err(KindMismatch: A angle does not apply to the active move manipulation) | no state change
+  update_manipulation(degrees) => Err(KindMismatch: An angle does not apply to the active move manipulation) | no state change
   update_manipulation(factor) => Err(KindMismatch: A factor does not apply to the active move manipulation) | no state change
   finish_move(commit) => Ok(unchanged) | active_move: native -> none
   set_material_diffuse => Err(BusyManipulation: Finish or cancel the active manipulation) | no state change
@@ -666,7 +666,7 @@
   begin_scale(object) => Err(BusyManipulation: Finish or cancel the active manipulation) | no state change
   begin_scale(world) => Err(BusyManipulation: Finish or cancel the active manipulation) | no state change
   begin_scale(face_mode) => Err(BusyManipulation: Finish or cancel the active manipulation) | no state change
-  update_manipulation(degrees) => Err(KindMismatch: A angle does not apply to the active move manipulation) | no state change
+  update_manipulation(degrees) => Err(KindMismatch: An angle does not apply to the active move manipulation) | no state change
   update_manipulation(factor) => Err(KindMismatch: A factor does not apply to the active move manipulation) | no state change
   finish_move(commit) => Err(Move: manipulation belongs to another input source) | no state change
   set_material_diffuse => Err(BusyManipulation: Finish or cancel the active manipulation) | no state change
@@ -746,7 +746,7 @@
   begin_scale(object) => Err(BusyManipulation: Finish or cancel the active manipulation) | no state change
   begin_scale(world) => Err(BusyManipulation: Finish or cancel the active manipulation) | no state change
   begin_scale(face_mode) => Err(BusyManipulation: Finish or cancel the active manipulation) | no state change
-  update_manipulation(degrees) => Err(KindMismatch: A angle does not apply to the active move manipulation) | no state change
+  update_manipulation(degrees) => Err(KindMismatch: An angle does not apply to the active move manipulation) | no state change
   update_manipulation(factor) => Err(KindMismatch: A factor does not apply to the active move manipulation) | no state change
   finish_move(commit) => Ok(unchanged) | active_move: remote -> none
   set_material_diffuse => Err(BusyManipulation: Finish or cancel the active manipulation) | no state change

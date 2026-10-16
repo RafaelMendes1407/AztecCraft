@@ -699,7 +699,12 @@ impl fmt::Display for OperationError {
             Self::Camera(error) => error.fmt(f),
             Self::KindMismatch { parameter, active } => write!(
                 f,
-                "A {parameter} does not apply to the active {active} manipulation"
+                "{} {parameter} does not apply to the active {active} manipulation",
+                if parameter.starts_with(['a', 'e', 'i', 'o', 'u']) {
+                    "An"
+                } else {
+                    "A"
+                }
             ),
         }
     }
@@ -790,6 +795,30 @@ mod tests {
         );
     }
     use azteccraft::{native_scene::NativeScene, scene::Scene};
+
+    #[test]
+    fn kind_mismatch_uses_the_right_article() {
+        for (parameter, expected) in [
+            (
+                "angle",
+                "An angle does not apply to the active move manipulation",
+            ),
+            (
+                "factor",
+                "A factor does not apply to the active move manipulation",
+            ),
+            (
+                "distance",
+                "A distance does not apply to the active move manipulation",
+            ),
+        ] {
+            let error = OperationError::KindMismatch {
+                parameter,
+                active: "move",
+            };
+            assert_eq!(error.to_string(), expected);
+        }
+    }
 
     #[test]
     fn curve_inspection_preflight_bounds_names_and_fixed_fields_before_cloning() {

@@ -40,12 +40,12 @@
         {
           "available": false,
           "kind": "rotate",
-          "unavailable_reason": "Move is unavailable in Face selection; switch to Object selection"
+          "unavailable_reason": "Rotate is unavailable in Face selection; switch to Object selection"
         },
         {
           "available": false,
           "kind": "scale",
-          "unavailable_reason": "Move is unavailable in Face selection; switch to Object selection"
+          "unavailable_reason": "Scale is unavailable in Face selection; switch to Object selection"
         }
       ],
       "refusal": null,

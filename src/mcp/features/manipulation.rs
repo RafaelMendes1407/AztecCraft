@@ -81,7 +81,7 @@ enum BeginManipulationArgs {
 }
 
 /// Exactly one of `distance`, `angle` or `factor`, matching the kind of the manipulation.
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct UpdateManipulationArgs {
     scene_token: String,
@@ -332,3 +332,39 @@ pub(in crate::mcp) const TOOLS: &[ToolSpec] = &[
         read_only: false,
     },
 ];
+
+#[cfg(test)]
+mod schema_drift_tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    fn names(properties: &Value) -> BTreeSet<String> {
+        properties.as_object().unwrap().keys().cloned().collect()
+    }
+
+    // The published schema is a hand-written oneOf (exactly one value parameter), which the type
+    // cannot express; this keeps its property names equal to the decoded struct's fields.
+    #[test]
+    fn update_schema_properties_match_the_decoded_fields() {
+        let derived = schema::<UpdateManipulationArgs>();
+        let derived = names(&derived["properties"]);
+        let published = update_schema();
+        let branches = published["oneOf"].as_array().unwrap();
+        let union: BTreeSet<String> = branches
+            .iter()
+            .flat_map(|branch| names(&branch["properties"]))
+            .collect();
+        assert_eq!(union, derived);
+        for branch in branches {
+            let own = names(&branch["properties"]);
+            assert_eq!(own.len(), 3, "each branch has the two ids and one value");
+            let required: BTreeSet<String> = branch["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|name| name.as_str().unwrap().to_owned())
+                .collect();
+            assert_eq!(required, own);
+        }
+    }
+}

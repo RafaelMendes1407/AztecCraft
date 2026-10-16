@@ -52,8 +52,8 @@ These are not expressible as a shared guard and must not be hoisted without a ne
   `NativeSave: save cancelled before installation`. Only a dirty Maya binary document reaches it
   (matrix states `no_install`, `no_install_modal`).
 - Read-only Maya ASCII is decided by the scene (`authoring_read_only_reason`,
-  `src/native_scene.rs:989`) and surfaces as `ReadOnlyFormat`; Move, Rotate and Scale map it in
-  `begin_error` (`src/app/features/manipulation_tool.rs:119`).
+  `src/native_scene.rs:1034`) and surfaces as `ReadOnlyFormat`; Move, Rotate and Scale map it in
+  `begin_error` (`src/app/features/manipulation_tool.rs:127`).
 - `EditNode` with no fields returns `Unchanged` after only checking the node (`src/app/dispatch.rs:359`).
 - Delete in Face mode is refused only in `native_operation` (`src/app/dispatch.rs:5`), above the
   pipeline. The matrix calls the pipeline directly, so its `delete(face_mode)` cells show the
