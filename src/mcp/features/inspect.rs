@@ -1,0 +1,33 @@
+use crate::{
+    editor_operations::{Operation, RemoteRequest},
+    mcp::{
+        args::{decode, schema},
+        registry::ToolSpec,
+    },
+};
+use rmcp::{
+    model::{ErrorData, JsonObject},
+    schemars::{self, JsonSchema},
+};
+use serde::Deserialize;
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct InspectArgs {}
+
+fn parse_inspect(arguments: JsonObject) -> Result<RemoteRequest, ErrorData> {
+    decode::<InspectArgs>(arguments)?;
+    Ok(RemoteRequest {
+        expected_scene_token: None,
+        operation: Operation::Inspect,
+    })
+}
+
+pub(in crate::mcp) const TOOLS: &[ToolSpec] = &[ToolSpec {
+    name: "inspect_scene",
+    description: "Inspect committed editor state, including an active Move preview, document origin, bounded canonical curve IDs/names/class/counts/domain, retained-source counts and read-only reason, pending human edits and source-appearance readiness. Curve draw_available means at least one visible instance prepared as draw geometry; it does not claim GPU health or framebuffer success. No CV arrays or script bodies are exposed",
+    schema: schema::<InspectArgs>,
+    parse: parse_inspect,
+    idempotent: false,
+    read_only: true,
+}];

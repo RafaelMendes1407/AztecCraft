@@ -1,5 +1,11 @@
+mod args;
+mod features;
+mod registry;
 mod tools;
 mod transport;
+
+#[cfg(test)]
+pub(crate) use registry::tool_names;
 
 use crate::{
     app::Editor,

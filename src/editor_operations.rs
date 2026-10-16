@@ -71,38 +71,6 @@ pub const MAX_NAME_BYTES: usize = 4096;
 #[cfg(any(test, feature = "mcp"))]
 pub const MAX_RESULT_BYTES: usize = 512 * 1024;
 
-#[cfg(any(test, feature = "mcp"))]
-pub const TOOL_NAMES: [&str; 28] = [
-    "inspect_scene",
-    "set_active_tool",
-    "begin_move",
-    "update_move",
-    "finish_move",
-    "create_primitive",
-    "select_node",
-    "set_selection_mode",
-    "select_face",
-    "rename_node",
-    "set_transform",
-    "edit_node",
-    "extrude_face",
-    "set_material_diffuse",
-    "delete_node",
-    "undo",
-    "redo",
-    "frame_selected",
-    "set_grid_visibility",
-    "orbit_camera",
-    "pan_camera",
-    "dolly_camera",
-    "open_scene",
-    "save_scene",
-    "save_scene_as",
-    "new_scene",
-    "resolve_file_action",
-    "request_close",
-];
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize, Serialize)]
 #[cfg_attr(feature = "mcp", derive(rmcp::schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
