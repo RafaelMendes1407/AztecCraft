@@ -264,6 +264,11 @@ impl Editor {
                 } else if before == Some(panel) {
                     self.sidebar_dock = None;
                 }
+                if before != self.sidebar_dock
+                    && self.sidebar_dock == Some(SidebarPanel::AttributeEditor)
+                {
+                    self.bind_material_shape_to_tab();
+                }
                 return Ok(if before != self.sidebar_dock {
                     OperationReply::Changed
                 } else {

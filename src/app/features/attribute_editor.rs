@@ -10,6 +10,21 @@ impl Editor {
         })
     }
 
+    /// Position of `shape` among the transform's direct mesh shapes, in tab order.
+    fn direct_shape_rank(&self, transform: NativeId, shape: NativeId) -> Option<usize> {
+        self.direct_shapes(transform).position(|id| id == shape)
+    }
+
+    fn direct_shapes(&self, transform: NativeId) -> impl Iterator<Item = NativeId> + '_ {
+        let scene = self.history.scene();
+        scene
+            .dag_edges()
+            .iter()
+            .filter(move |edge| edge.parent() == Some(transform))
+            .filter_map(|edge| scene.shape(edge.child()).ok())
+            .map(|shape| shape.id())
+    }
+
     /// Whether `tab` names the selected transform or one of its direct shapes or their materials.
     fn attribute_editor_tab_resolves(&self, tab: AttributeEditorTab) -> bool {
         let Some(node) = self
@@ -20,9 +35,12 @@ impl Editor {
         };
         match tab {
             AttributeEditorTab::Transform(id) => id == node.id(),
-            AttributeEditorTab::Shape(shape) => self.is_direct_shape(node.transform_id(), shape),
+            AttributeEditorTab::Shape(shape) => self
+                .direct_shape_rank(node.transform_id(), shape)
+                .is_some_and(|rank| rank < MAX_SHAPE_TABS),
             AttributeEditorTab::Material(shape) => {
-                self.is_direct_shape(node.transform_id(), shape)
+                self.direct_shape_rank(node.transform_id(), shape)
+                    .is_some_and(|rank| rank < MAX_SHAPE_TABS)
                     && self.history.scene().material_for_shape(shape).is_ok()
             }
         }
@@ -51,6 +69,19 @@ impl Editor {
         }
     }
 
+    /// Re-binds the single material selection to the active shape or material tab, so the tab
+    /// and the shape the Diffuse editor targets cannot diverge (the Channel Box combo may have
+    /// moved the selection while this panel was hidden).
+    pub(in crate::app) fn bind_material_shape_to_tab(&mut self) {
+        if let Some(AttributeEditorTab::Shape(shape) | AttributeEditorTab::Material(shape)) =
+            self.effective_attribute_editor_tab()
+            && self.material_shape != Some(shape)
+        {
+            self.material_shape = Some(shape);
+            self.sync_fields();
+        }
+    }
+
     pub(in crate::app) fn select_attribute_editor_tab(
         &mut self,
         tab: AttributeEditorTab,
@@ -60,6 +91,18 @@ impl Editor {
                 "Attribute Editor tab requires the Attribute Editor to be the active sidebar panel"
                     .into(),
             ));
+        }
+        if let (AttributeEditorTab::Shape(shape) | AttributeEditorTab::Material(shape), Some(node)) = (
+            tab,
+            self.selected
+                .and_then(|id| self.history.scene().node(id).ok()),
+        ) && self
+            .direct_shape_rank(node.transform_id(), shape)
+            .is_some_and(|rank| rank >= MAX_SHAPE_TABS)
+        {
+            return Err(OperationError::InvalidInput(format!(
+                "Attribute Editor shows at most {MAX_SHAPE_TABS} shape tabs per transform"
+            )));
         }
         if !self.attribute_editor_tab_resolves(tab) {
             return Err(OperationError::InvalidInput(
@@ -116,7 +159,11 @@ impl Editor {
                 self.transform_section(ui, authoring);
             }
             AttributeEditorTab::Shape(shape) => self.shape_section(ui, shape),
-            AttributeEditorTab::Material(_) => self.material_controls(ui),
+            AttributeEditorTab::Material(shape) => {
+                ui.label(RichText::new("Materials").strong());
+                ui.label("Common Material Attributes");
+                self.material_section(ui, shape);
+            }
         }
     }
 
@@ -131,6 +178,7 @@ impl Editor {
             .filter(|edge| edge.parent() == Some(node.transform_id()))
             .filter_map(|edge| scene.shape(edge.child()).ok())
             .collect();
+        // Same order and cap as `direct_shape_rank`, which gates which tabs can be selected.
         let mut tabs = vec![(
             AttributeEditorTab::Transform(node.id()),
             node.name().to_owned(),
