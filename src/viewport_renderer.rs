@@ -1,7 +1,7 @@
 use azteccraft::{
     native_scene::{FaceTarget, NativeId},
     scene::NodeId,
-    shading::{SURFACE_BASE_RGB, shade},
+    shading::shade,
     view_scene::{FACE_CENTER_MARKER_PIXELS, ViewFace, ViewInstance, ViewScene},
     viewport::{Camera, InvalidCameraInput},
 };
@@ -13,8 +13,26 @@ use eframe::{
 use glam::{Mat4, Vec3, Vec4};
 use std::{fmt, ops::Range, sync::Arc};
 
-/// Selection tint; shaded like the base fill.
-const SELECTED_FILL_RGB: [u8; 3] = [95, 110, 120];
+/// Selection tint, averaged with a face's base colour. On the grey base fill (83) the result is
+/// the historical selected fill (95, 110, 120).
+const SELECTION_TINT_RGB: [u8; 3] = [107, 137, 157];
+
+/// Always differs from `base`. The average with the tint maps the tint and tint - 1 per channel
+/// onto themselves, so a base equal to either on every channel falls back to the average with
+/// its complement (127 per channel), which differs because no tint channel is 127 or 126.
+fn selected_base(base: [u8; 3]) -> [u8; 3] {
+    let blend = |other: [u8; 3]| -> [u8; 3] {
+        std::array::from_fn(|channel| {
+            ((u16::from(base[channel]) + u16::from(other[channel])) / 2) as u8
+        })
+    };
+    let tinted = blend(SELECTION_TINT_RGB);
+    if tinted == base {
+        blend(base.map(|channel| 255 - channel))
+    } else {
+        tinted
+    }
+}
 const VERTEX_BYTES: usize = 8 * size_of::<f32>();
 // Charge snapshot, upload staging, retained vertices and a growth replacement per upload.
 const MAX_UPLOAD_WORKING_BYTES: u64 = 256 * 1024 * 1024;
@@ -312,9 +330,9 @@ impl Submission {
         for instance in scene.instances().iter().rev() {
             for face in instance.faces().iter().rev() {
                 let base = if selection.selected(instance, face) {
-                    SELECTED_FILL_RGB
+                    selected_base(instance.base_rgb())
                 } else {
-                    SURFACE_BASE_RGB
+                    instance.base_rgb()
                 };
                 let center = face
                     .center(instance.world_vertices())

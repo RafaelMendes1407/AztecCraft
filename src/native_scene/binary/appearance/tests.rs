@@ -978,7 +978,11 @@ fn session_material_edits_refuse_sourced_scenes_and_keep_phong_diffuse_editable(
         Err(NativeError::UnsupportedEdit)
     );
     assert_eq!(scene, before);
-    assert!(scene.session_material(shape).is_none());
+    assert!(
+        scene
+            .session_material(scene.shape(shape).unwrap())
+            .is_none()
+    );
     scene.set_material_diffuse(shape, 0.25).unwrap();
     assert_ne!(scene, before);
     assert!(crate::native_scene::binary::encode(&scene).is_ok());

@@ -3,6 +3,7 @@ use crate::native_scene::{
     NativeMeshShape, NativeScene, NativeTransformNode,
 };
 use crate::scene::NodeId;
+use crate::shading::SURFACE_BASE_RGB;
 use glam::{DMat3, DMat4, DVec3, Mat3, Vec3};
 use std::fmt;
 use std::mem::size_of;
@@ -15,6 +16,10 @@ pub const FACE_CENTER_CLICK_PIXELS: f32 = 8.0;
 const WINDING_RESIDUAL: f64 = 0.25;
 
 mod curves;
+
+fn channel_to_u8(channel: f64) -> u8 {
+    (channel * 255.0).round().clamp(0.0, 255.0) as u8
+}
 
 #[derive(Debug)]
 /// Readonly geometry for one prepared authoring state; rebuild after any scene edit.
@@ -72,6 +77,7 @@ pub struct ViewInstance {
     normal_matrix: Mat3,
     faces: Vec<ViewFace>,
     appearance_incomplete: bool,
+    base_rgb: [u8; 3],
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -178,6 +184,11 @@ impl ViewScene {
                                 normal_matrix: normal_matrix(&world),
                                 faces: view_faces(mesh)?,
                                 appearance_incomplete: admission.appearance_incomplete(),
+                                base_rgb: scene
+                                    .session_material(shape)
+                                    .map_or(SURFACE_BASE_RGB, |material| {
+                                        material.color().map(channel_to_u8)
+                                    }),
                             });
                         }
                         Record::Curve(shape) => {
@@ -255,6 +266,12 @@ impl ViewInstance {
         } else {
             Vec3::ZERO
         }
+    }
+    /// Unlit surface colour from the shape's session material, shared by every instance of the
+    /// shape; the initial group (the viewport base fill) when none is assigned or the scene is
+    /// sourced. Linear 0 through 1 is shown as sRGB bytes directly: no colour management yet.
+    pub fn base_rgb(&self) -> [u8; 3] {
+        self.base_rgb
     }
     pub fn world_vertices(&self) -> &[Vec3] {
         &self.world_vertices

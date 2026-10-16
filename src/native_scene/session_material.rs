@@ -134,8 +134,8 @@ impl SessionMaterials {
     }
 
     pub(super) fn prune(&mut self, shapes: &[NativeMeshShape]) {
-        self.assignments
-            .retain(|shape, _| shapes.iter().any(|candidate| candidate.id == *shape));
+        let known: HashSet<NativeId> = shapes.iter().map(|shape| shape.id).collect();
+        self.assignments.retain(|shape, _| known.contains(shape));
     }
 
     pub(super) fn add(&mut self, color: [f64; 3]) -> Result<SessionMaterialId, NativeError> {
@@ -171,13 +171,14 @@ impl NativeScene {
         &self.session_materials.groups
     }
 
-    /// The lambert every instance of this authored shape displays; `None` for sourced or
-    /// unknown shapes, whose appearance the session table does not own.
-    pub fn session_material(&self, shape: NativeId) -> Option<&Lambert> {
-        if self.source.is_some() || !self.shapes.iter().any(|candidate| candidate.id == shape) {
+    /// The lambert every instance of this authored shape displays; `None` for sourced scenes,
+    /// whose appearance the session table does not own. Taking the shape itself means an unknown
+    /// id cannot be asked about; the lookup is one `BTreeMap` probe, O(log n) in assignments.
+    pub fn session_material(&self, shape: &NativeMeshShape) -> Option<&Lambert> {
+        if self.source.is_some() {
             return None;
         }
-        let group = self.session_materials.assignments.get(&shape).copied();
+        let group = self.session_materials.assignments.get(&shape.id).copied();
         let group = self.session_materials.groups.get(group.unwrap_or(0))?;
         self.session_materials.materials.get(group.material.0)
     }

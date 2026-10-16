@@ -2077,3 +2077,62 @@ fn singular_transform_gives_zero_world_normals() {
             .all(|f| instance.world_normal(f) == Vec3::ZERO)
     );
 }
+
+fn base_colors(native: &NativeScene) -> Vec<[u8; 3]> {
+    ViewScene::from_native(native, VIEW_BUDGET)
+        .unwrap()
+        .instances()
+        .iter()
+        .map(ViewInstance::base_rgb)
+        .collect()
+}
+
+#[test]
+fn instances_default_to_the_pinned_base_fill() {
+    assert_eq!(SURFACE_BASE_RGB, [83, 83, 83]);
+    let (native, ..) = test_fixtures::shared_shape();
+    assert_eq!(base_colors(&native), [SURFACE_BASE_RGB; 2]);
+}
+
+#[test]
+fn every_instance_of_an_assigned_shape_takes_its_colour_and_undo_restores_grey() {
+    use crate::history::{Command, History};
+    use crate::native_scene::MaterialChoice;
+    let (native, _, _, shape) = test_fixtures::shared_shape();
+    let mut history = History::new(native);
+    history
+        .execute(Command::AssignSessionMaterial {
+            shape,
+            material: MaterialChoice::New {
+                color: [1.0, 0.0, 0.2],
+            },
+        })
+        .unwrap();
+    assert_eq!(base_colors(history.scene()), [[255, 0, 51]; 2]);
+    assert!(history.undo());
+    assert_eq!(base_colors(history.scene()), [SURFACE_BASE_RGB; 2]);
+}
+
+#[test]
+fn recolouring_a_material_updates_its_instances_and_other_shapes_keep_grey() {
+    let (mut native, _, _, shape) = test_fixtures::shared_shape();
+    native.create(Primitive::Cube, "other").unwrap();
+    let material = native
+        .assign_session_material(
+            shape,
+            crate::native_scene::MaterialChoice::New { color: [1.0; 3] },
+        )
+        .unwrap();
+    native
+        .set_session_material_color(material, [0.0, 1.0, 0.0])
+        .unwrap();
+    let view = ViewScene::from_native(&native, VIEW_BUDGET).unwrap();
+    for instance in view.instances() {
+        let expected = if instance.shape() == shape {
+            [0, 255, 0]
+        } else {
+            SURFACE_BASE_RGB
+        };
+        assert_eq!(instance.base_rgb(), expected);
+    }
+}
