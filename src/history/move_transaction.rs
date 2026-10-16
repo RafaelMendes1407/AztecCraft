@@ -1,7 +1,7 @@
 use super::{Command, EditOutcome, History};
 use crate::native_scene::{
-    ChannelBaseline, NativeError, NativeId, NativeScene, ObjectScaleFrame, RotateAxis, RotateFrame,
-    RotateSpace, ScaleHandle, TransformTarget, WorldAxis, WorldMoveFrame,
+    ChannelBaseline, NativeError, NativeId, NativeScene, RotateAxis, RotateFrame, RotateSpace,
+    ScaleFrame, ScaleHandle, ScaleSpace, TransformTarget, WorldAxis, WorldMoveFrame,
 };
 use crate::view_scene::{ViewError, ViewScene};
 use std::{fmt, mem::size_of};
@@ -82,6 +82,7 @@ pub enum ManipulationKindState {
     },
     Scale {
         handle: ScaleHandle,
+        space: ScaleSpace,
     },
 }
 
@@ -122,7 +123,7 @@ enum ManipulationKind {
     },
     Scale {
         handle: ScaleHandle,
-        frame: ObjectScaleFrame,
+        frame: ScaleFrame,
         baseline: ChannelBaseline,
     },
 }
@@ -142,7 +143,10 @@ impl ManipulationKind {
                 axis: *axis,
                 space: frame.space(),
             },
-            Self::Scale { handle, .. } => ManipulationKindState::Scale { handle: *handle },
+            Self::Scale { handle, frame, .. } => ManipulationKindState::Scale {
+                handle: *handle,
+                space: frame.space(),
+            },
         }
     }
 
@@ -257,17 +261,18 @@ impl History {
         })
     }
 
-    /// Begins an object-space scale; `update_move` then takes the unitless factor.
+    /// Begins a scale in object or world space; `update_move` then takes the unitless factor.
     pub fn begin_scale(
         &mut self,
         target: &TransformTarget,
         handle: ScaleHandle,
+        space: ScaleSpace,
         scene_token: Uuid,
         provenance: ManipulationProvenance,
         byte_budget: usize,
     ) -> Result<ManipulationId, ManipulationError> {
         self.begin_manipulation(target, scene_token, provenance, byte_budget, |scene| {
-            let (frame, baseline) = scene.begin_object_scale(target, handle)?;
+            let (frame, baseline) = scene.begin_scale_frame(target, handle, space)?;
             Ok(ManipulationKind::Scale {
                 handle,
                 frame,

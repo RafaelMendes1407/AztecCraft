@@ -1,5 +1,4 @@
 use super::*;
-use crate::scene::Primitive;
 use glam::{DQuat, DVec3, EulerRot};
 
 fn quat(degrees: [f64; 3]) -> DQuat {
@@ -319,33 +318,12 @@ fn gimbal_and_huge_angles_are_refused_in_world_space() {
     ));
 }
 
-// root -> middle -> leaf, so the parent map is a product of two rotated, scaled ancestors.
 fn chain(root: NativeTransform, middle: NativeTransform, leaf: [f64; 3]) -> (NativeScene, NodeId) {
-    let (mut scene, root_id, middle_id, _) = test_fixtures::grouped_shape();
-    let leaf_id = scene.create(Primitive::Cube, "leaf").unwrap();
-    let discarded = scene.shapes.pop().unwrap().id;
-    let leaf_native = scene.node(leaf_id).unwrap().transform_id;
-    let middle_native = scene.node(middle_id).unwrap().transform_id;
-    scene.dag.retain(|edge| {
-        edge.child != discarded && !(edge.child == leaf_native && edge.parent.is_none())
-    });
-    scene.dag.push(DagEdge {
-        parent: Some(middle_native),
-        child: leaf_native,
-    });
-    scene.validate().unwrap();
-    scene.set_transform(root_id, root).unwrap();
-    scene.set_transform(middle_id, middle).unwrap();
-    scene
-        .set_transform(
-            leaf_id,
-            NativeTransform {
-                rotation: leaf,
-                ..NativeTransform::default()
-            },
-        )
-        .unwrap();
-    (scene, leaf_id)
+    let leaf = NativeTransform {
+        rotation: leaf,
+        ..NativeTransform::default()
+    };
+    test_fixtures::three_level_chain(root, middle, leaf)
 }
 
 #[test]

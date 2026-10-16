@@ -150,3 +150,28 @@ pub(crate) fn unproved_group() -> (NativeScene, NodeId, NodeId, NativeId) {
     scene.validate().unwrap();
     (scene, root, child, shape)
 }
+
+/// root -> middle -> leaf, with the given local transforms; returns the leaf node.
+pub(crate) fn three_level_chain(
+    root: NativeTransform,
+    middle: NativeTransform,
+    leaf: NativeTransform,
+) -> (NativeScene, NodeId) {
+    let (mut scene, root_id, middle_id, _) = grouped_shape();
+    let leaf_id = scene.create(Primitive::Cube, "leaf").unwrap();
+    let discarded = scene.shapes.pop().unwrap().id;
+    let leaf_native = scene.node(leaf_id).unwrap().transform_id;
+    let middle_native = scene.node(middle_id).unwrap().transform_id;
+    scene.dag.retain(|edge| {
+        edge.child != discarded && !(edge.child == leaf_native && edge.parent.is_none())
+    });
+    scene.dag.push(DagEdge {
+        parent: Some(middle_native),
+        child: leaf_native,
+    });
+    scene.validate().unwrap();
+    scene.set_transform(root_id, root).unwrap();
+    scene.set_transform(middle_id, middle).unwrap();
+    scene.set_transform(leaf_id, leaf).unwrap();
+    (scene, leaf_id)
+}

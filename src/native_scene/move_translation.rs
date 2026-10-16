@@ -305,6 +305,30 @@ impl NativeScene {
         Ok(channels)
     }
 
+    /// Product of the local matrices of the ancestors on `target.path` (the selected node
+    /// excluded); `None` when one has no finite matrix.
+    pub(super) fn ancestor_world(
+        &self,
+        target: &TransformTarget,
+    ) -> Result<Option<DMat4>, NativeError> {
+        let mut world = DMat4::IDENTITY;
+        for id in target.path.iter().take(target.path.len().saturating_sub(1)) {
+            let node = self
+                .nodes
+                .iter()
+                .find(|node| node.transform_id == *id)
+                .ok_or(NativeError::InvalidInstancePath)?;
+            let Some(local) = self.internal_transform(node.id)?.matrix() else {
+                return Ok(None);
+            };
+            world *= local;
+            if !world.is_finite() {
+                return Ok(None);
+            }
+        }
+        Ok(Some(world))
+    }
+
     pub fn world_move_frame(
         &self,
         target: &TransformTarget,
@@ -358,26 +382,11 @@ impl NativeScene {
                 )?;
             }
         }
-        let mut parent_world = DMat4::IDENTITY;
-        for id in target.path.iter().take(target.path.len().saturating_sub(1)) {
-            let node = self
-                .nodes
-                .iter()
-                .find(|node| node.transform_id == *id)
-                .ok_or(NativeError::InvalidInstancePath)?;
-            let local =
-                self.internal_transform(node.id)?
-                    .matrix()
-                    .ok_or(NativeError::UnsupportedMove(
-                        WorldMoveUnsupported::ParentTransform,
-                    ))?;
-            parent_world *= local;
-            if !parent_world.is_finite() {
-                return Err(NativeError::UnsupportedMove(
-                    WorldMoveUnsupported::ParentTransform,
-                ));
-            }
-        }
+        let parent_world = self
+            .ancestor_world(target)?
+            .ok_or(NativeError::UnsupportedMove(
+                WorldMoveUnsupported::ParentTransform,
+            ))?;
         let parent_linear = DMat3::from_mat4(parent_world);
         let determinant = parent_linear.determinant();
         if !determinant.is_finite() || determinant == 0.0 {

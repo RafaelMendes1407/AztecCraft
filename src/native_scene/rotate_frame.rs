@@ -79,7 +79,7 @@ impl fmt::Debug for RotateFrame {
 }
 
 // True when `linear` is a rotation times one positive scale, within `PARENT_TOLERANCE`.
-fn rotation_times_uniform_scale(linear: DMat3) -> bool {
+pub(super) fn rotation_times_uniform_scale(linear: DMat3) -> bool {
     let columns = [linear.x_axis, linear.y_axis, linear.z_axis];
     let scale = columns.iter().map(|column| column.length()).sum::<f64>() / 3.0;
     if !linear.is_finite() || !scale.is_normal() || linear.determinant() <= 0.0 {
@@ -93,7 +93,7 @@ fn rotation_times_uniform_scale(linear: DMat3) -> bool {
             .all(|i| ((i + 1)..3).all(|j| columns[i].dot(columns[j]).abs() <= tolerance * scale))
 }
 
-fn rotation_matrix([x, y, z]: [f64; 3]) -> DMat3 {
+pub(super) fn rotation_matrix([x, y, z]: [f64; 3]) -> DMat3 {
     DMat3::from_rotation_z(z) * DMat3::from_rotation_y(y) * DMat3::from_rotation_x(x)
 }
 
@@ -313,19 +313,7 @@ impl NativeScene {
                 RotateUnsupported::NonPositiveScale,
             ));
         }
-        let mut parent_world = DMat4::IDENTITY;
-        for id in target.path.iter().take(target.path.len().saturating_sub(1)) {
-            let node = self
-                .nodes
-                .iter()
-                .find(|node| node.transform_id == *id)
-                .ok_or(NativeError::InvalidInstancePath)?;
-            let local = self
-                .internal_transform(node.id)?
-                .matrix()
-                .ok_or(refused.clone())?;
-            parent_world *= local;
-        }
+        let parent_world = self.ancestor_world(target)?.ok_or(refused.clone())?;
         let linear = DMat3::from_mat4(parent_world);
         if rotation_times_uniform_scale(linear) {
             Ok(linear)
