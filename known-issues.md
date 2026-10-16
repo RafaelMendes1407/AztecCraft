@@ -442,7 +442,6 @@ refuse it with `unsupported_edit` and Maya ASCII scenes with `read_only_format`;
 from the saved Phong `set_material_diffuse`. There is no native UI until the Attribute Editor
 branch lands. Assignment is whole-shape only: per-face assignment and instance-specific groups
 are follow-ups. Ids are table indices reused after undo, so clients must not cache them. The
-inspection size estimate budgets 192 bytes per material, so roughly 1300 materials make
-`inspect_scene` return `too_large`. The default shader is unverified for Maya 2026 and linear colour
+table holds at most 512 materials, far inside the `inspect_scene` budget (tested); creating past it returns `session_material_limit`. The default shader is unverified for Maya 2026 and linear colour
 is shown as sRGB bytes, so no parity is claimed. No MCP test creates two instances of one shape
 (no instancing operation exists yet); that case is covered by core and `ViewScene` unit tests.

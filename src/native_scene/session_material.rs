@@ -8,8 +8,9 @@ use super::{NativeError, NativeId, NativeMeshShape, NativeScene};
 use crate::shading::SURFACE_BASE_RGB;
 use std::collections::{BTreeMap, HashSet};
 
-/// Arbitrary bound on materials per scene, chosen to keep validation and snapshots cheap.
-pub const MAX_SESSION_MATERIALS: usize = 4096;
+/// Bound on materials per scene. Kept far below what `inspect_scene` can list (see the
+/// inspection budget test) so a full table never makes inspection `too_large`.
+pub const MAX_SESSION_MATERIALS: usize = 512;
 
 /// An index into the current table. It is valid only at the current history position: undoing a
 /// create frees its index for the next create, so callers must take ids from operation outcomes

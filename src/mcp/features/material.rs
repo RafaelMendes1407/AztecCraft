@@ -65,16 +65,17 @@ struct SetSessionMaterialColorArgs {
 }
 
 fn material_id(value: &str) -> Result<SessionMaterialId, ErrorData> {
-    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
-        return Err(ErrorData::invalid_params(
-            "material_id must be an unsigned decimal string",
+    let invalid = || {
+        ErrorData::invalid_params(
+            "material_id must be a canonical unsigned decimal string",
             None,
-        ));
+        )
+    };
+    let index = value.parse::<usize>().map_err(|_| invalid())?;
+    if index.to_string() != value {
+        return Err(invalid());
     }
-    value
-        .parse::<usize>()
-        .map(SessionMaterialId::from_index)
-        .map_err(|_| ErrorData::invalid_params("material_id is out of range", None))
+    Ok(SessionMaterialId::from_index(index))
 }
 
 fn parse_create_session_material(arguments: JsonObject) -> Result<RemoteRequest, ErrorData> {

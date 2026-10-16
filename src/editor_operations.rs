@@ -570,7 +570,6 @@ const NODE_VISIBLE_FIELD_MAX_BYTES: usize = "\"visible\":false,".len();
 const MOVE_INSPECTION_MAX_BYTES: usize = 32 * 1024;
 
 #[cfg(any(test, feature = "mcp"))]
-#[cfg(any(test, feature = "mcp"))]
 const SESSION_MATERIAL_INSPECTION_MAX_BYTES: usize = 192;
 
 #[cfg(any(test, feature = "mcp"))]
@@ -623,6 +622,22 @@ pub fn check_inspection_size(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_full_session_material_table_stays_well_inside_the_inspection_budget() {
+        let materials = azteccraft::native_scene::MAX_SESSION_MATERIALS;
+        assert!(materials * SESSION_MATERIAL_INSPECTION_MAX_BYTES * 2 <= MAX_RESULT_BYTES / 2);
+        let widest = SessionMaterialInspection {
+            id: (materials - 1).to_string(),
+            name: format!("sessionLambert{}", materials - 1),
+            shading_group: format!("sessionLambert{}SG", materials - 1),
+            color: [0.30000000000000004; 3],
+            editable: true,
+        };
+        assert!(
+            serde_json::to_vec(&widest).unwrap().len() <= SESSION_MATERIAL_INSPECTION_MAX_BYTES
+        );
+    }
     use azteccraft::{native_scene::NativeScene, scene::Scene};
 
     #[test]

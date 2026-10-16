@@ -157,7 +157,8 @@ async fn session_material_sdk_refusals_are_typed_and_leave_state_unchanged() {
     )
     .await;
     let scene = editor.history.scene().clone();
-    let undo_depth = editor.history.can_redo();
+    let can_undo = editor.history.can_undo();
+    let can_redo = editor.history.can_redo();
     for (name, arguments, code) in [
         (
             "assign_session_material",
@@ -198,7 +199,8 @@ async fn session_material_sdk_refusals_are_typed_and_leave_state_unchanged() {
         let result = tool(&mut editor, &context, &client, name, arguments).await;
         assert_eq!(result["error"]["code"], code, "{name}");
         assert_eq!(editor.history.scene(), &scene, "{name}");
-        assert_eq!(editor.history.can_redo(), undo_depth);
+        assert_eq!(editor.history.can_undo(), can_undo, "{name}");
+        assert_eq!(editor.history.can_redo(), can_redo, "{name}");
     }
     for (name, arguments) in [
         ("assign_session_material", json!({"shape_id": shape})),
@@ -369,6 +371,39 @@ async fn session_material_sdk_guards_stale_token_draft_modal_close_and_active_mo
         assert_eq!(result["error"]["code"], "busy_editing", "close {name}");
     }
     assert_eq!(editor.history.scene(), &scene);
+    client.cancel().await.unwrap();
+    drop(editor);
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn session_material_sdk_table_cap_is_a_typed_limit_and_inspection_still_fits() {
+    let context = egui::Context::default();
+    let (mut editor, client, server) = start(&context).await;
+    editor.create(Primitive::Cube);
+    let cap = azteccraft::native_scene::MAX_SESSION_MATERIALS;
+    for _ in 1..cap {
+        editor
+            .history
+            .execute(azteccraft::history::Command::CreateSessionMaterial { color: RED })
+            .unwrap();
+    }
+    let scene = editor.history.scene().clone();
+    let limit = tool(
+        &mut editor,
+        &context,
+        &client,
+        "create_session_material",
+        json!({"color": RED}),
+    )
+    .await;
+    assert_eq!(limit["error"]["code"], "session_material_limit");
+    assert_eq!(editor.history.scene(), &scene);
+    let inspection = inspect_json(&mut editor, &context, &client).await;
+    assert_eq!(
+        inspection["session_materials"].as_array().unwrap().len(),
+        cap
+    );
     client.cancel().await.unwrap();
     drop(editor);
     server.await.unwrap();

@@ -78,6 +78,7 @@ fn tool_reply(reply: Result<OperationReply, OperationError>) -> CallToolResult {
                     NativeError::UnsupportedEdit => "unsupported_edit",
                     NativeError::ReadOnlyFormat => "read_only_format",
                     NativeError::MissingShape(_) => "unknown_shape",
+                    NativeError::ResourceLimit => "session_material_limit",
                     _ => "scene_error",
                 },
                 OperationError::NoSelection => "no_selection",
@@ -405,6 +406,14 @@ mod tests {
             (
                 "set_session_material_color",
                 json!({"scene_token":token,"material_id":"01x","color":[0,0,0]}),
+            ),
+            (
+                "set_session_material_color",
+                json!({"scene_token":token,"material_id":"007","color":[0,0,0]}),
+            ),
+            (
+                "assign_session_material",
+                json!({"scene_token":token,"shape_id":"2","material_id":"+1"}),
             ),
             (
                 "create_session_material",
