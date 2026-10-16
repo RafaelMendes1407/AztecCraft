@@ -1143,3 +1143,67 @@ fn active_state_reports_the_baseline_and_live_channels_of_each_kind() {
     assert_eq!(state.baseline_channels, [1.0, 2.0, 3.0]);
     assert_eq!(state.id, moved);
 }
+
+// Extras only arrive with read-only Maya ASCII sources today, which the editor refuses first, so
+// the typed policy reasons are checked at the History seam that the native and MCP begin paths
+// both call. Both surface a `ManipulationError::Native` and keep the baseline.
+#[test]
+fn extras_policy_refusals_leave_no_transaction_and_no_consumed_id() {
+    use crate::native_scene::TransformExtras;
+    let cases = [
+        (
+            TransformExtras {
+                rotate_order: Some(1),
+                ..TransformExtras::default()
+            },
+            NativeError::UnsupportedRotate(RotateUnsupported::RotateOrder),
+            false,
+        ),
+        (
+            TransformExtras {
+                rotate_axis: Some([0.0, 0.0, 90.0]),
+                ..TransformExtras::default()
+            },
+            NativeError::UnsupportedRotate(RotateUnsupported::RotateAxis),
+            false,
+        ),
+        (
+            TransformExtras {
+                shear: Some([0.5, 0.0, 0.0]),
+                ..TransformExtras::default()
+            },
+            NativeError::UnsupportedScale(ScaleUnsupported::Shear),
+            true,
+        ),
+    ];
+    for (extras, expected, scale) in cases {
+        let (mut scene, node) = test_fixtures::cube();
+        test_fixtures::set_extras(&mut scene, node, extras);
+        let mut history = History::new(scene);
+        let before = history.scene.clone();
+        let selected = target(&history);
+        let result = if scale {
+            history.begin_scale(
+                &selected,
+                ScaleHandle::X,
+                ScaleSpace::World,
+                Uuid::new_v4(),
+                ManipulationProvenance::Native,
+                BUDGET,
+            )
+        } else {
+            history.begin_rotate(
+                &selected,
+                RotateAxis::Z,
+                RotateSpace::Object,
+                Uuid::new_v4(),
+                ManipulationProvenance::Native,
+                BUDGET,
+            )
+        };
+        assert_eq!(result.unwrap_err(), ManipulationError::Native(expected));
+        assert!(history.active_manipulation().is_none());
+        assert_eq!(history.next_manipulation_id, 0);
+        assert_eq!(history.scene, before);
+    }
+}

@@ -43,6 +43,8 @@ pub enum RotateUnsupported {
     ParentTransform,
     NonPositiveScale,
     SelectedPivot,
+    RotateOrder,
+    RotateAxis,
     Gimbal,
     NumericalAngle,
 }
@@ -55,6 +57,8 @@ impl fmt::Display for RotateUnsupported {
             }
             Self::NonPositiveScale => "world rotation needs positive scale on the selected node",
             Self::SelectedPivot => "the selected rotate pivot must be zero",
+            Self::RotateOrder => "rotation needs the xyz rotate order (Rotate order is read-only)",
+            Self::RotateAxis => "rotation needs a zero rotate axis (Rotate axis is read-only)",
             Self::Gimbal => "rotation is too close to gimbal lock",
             Self::NumericalAngle => "rotation cannot be represented accurately",
         })
@@ -272,6 +276,20 @@ impl NativeScene {
             return Err(NativeError::UnsupportedRotate(
                 RotateUnsupported::SelectedPivot,
             ));
+        }
+        // Channel edits are xyz Euler deltas, and R * RA * Rd * RA^-1 != R * Rd: refuse before
+        // any source or leaf check so the reason is the same in every format (Task 2d lifts it).
+        if let Some(extras) = transform.extras {
+            if extras.rotate_order != 0 {
+                return Err(NativeError::UnsupportedRotate(
+                    RotateUnsupported::RotateOrder,
+                ));
+            }
+            if extras.rotate_axis_radians.iter().any(|value| *value != 0.0) {
+                return Err(NativeError::UnsupportedRotate(
+                    RotateUnsupported::RotateAxis,
+                ));
+            }
         }
         let mut absent_leaf = [false; 3];
         if let Some(source) = &self.source {

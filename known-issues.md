@@ -517,14 +517,3 @@ are follow-ups. Ids are table indices reused after undo, so clients must not cac
 table holds at most 512 materials, far inside the `inspect_scene` budget (tested); creating past it returns `session_material_limit`. The default shader is unverified for Maya 2026 and linear colour
 is shown as sRGB bytes, so no parity is claimed. No MCP test creates two instances of one shape
 (no instancing operation exists yet); that case is covered by core and `ViewScene` unit tests.
-
-## World Scale on a sheared node is not refused yet
-
-**Severity:** low
-**Area:** manipulation policy
-**Issue:** cristim/AztecCraft#105
-
-World Scale on a node with a nonzero shear edits one scale channel, which cannot express the
-world scale (SH^-1 * D * SH is not diagonal). The refusal is planned for the transform-extras
-policy commit. It is latent because no source with shear opens yet in Binary; commit 5 must land
-before any `.mb` extras parse, and `.ma` scenes are read-only.
