@@ -478,7 +478,15 @@ fn real_xyz_drag_samples_reach_independent_world_positions_and_can_leave_the_vie
                 button(begin, true),
             ),
         );
-        assert_eq!(editor.history.active_manipulation().unwrap().axis, axis);
+        assert_eq!(
+            editor
+                .history
+                .active_manipulation()
+                .unwrap()
+                .move_axis()
+                .unwrap(),
+            axis
+        );
         frame(
             &mut editor,
             &context,
@@ -763,7 +771,12 @@ fn finite_parallel_or_backward_release_commits_exact_last_valid_preview_with_hon
             ),
         );
         assert_eq!(
-            editor.history.active_manipulation().unwrap().axis,
+            editor
+                .history
+                .active_manipulation()
+                .unwrap()
+                .move_axis()
+                .unwrap(),
             WorldAxis::X
         );
         frame(
@@ -1478,7 +1491,12 @@ fn hover_and_active_painter_states_use_the_same_actual_axis_hit() {
     );
     assert_eq!(shaft_color(&active), egui::Color32::from_rgb(255, 225, 80));
     assert_eq!(
-        editor.history.active_manipulation().unwrap().axis,
+        editor
+            .history
+            .active_manipulation()
+            .unwrap()
+            .move_axis()
+            .unwrap(),
         WorldAxis::X
     );
 }

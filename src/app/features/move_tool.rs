@@ -262,14 +262,15 @@ impl Editor {
         let active = self
             .history
             .active_manipulation()
-            .map(|active| {
+            .and_then(|active| Some((active.move_axis()?, active.move_distance_cm()?, active)))
+            .map(|(axis, distance_cm, active)| {
                 let factor = self
                     .history
                     .scene()
                     .units()
                     .linear_factor()
                     .map_err(OperationError::Scene)?;
-                let distance = active.distance_cm / factor;
+                let distance = distance_cm / factor;
                 if !distance.is_finite() {
                     return Err(OperationError::InvalidInput(
                         "Move distance inspection overflow".into(),
@@ -284,7 +285,7 @@ impl Editor {
                         .iter()
                         .map(|id| id.to_decimal())
                         .collect(),
-                    axis: axis_name(active.axis),
+                    axis: axis_name(axis),
                     provenance: match active.provenance {
                         ManipulationProvenance::Native => "native",
                         ManipulationProvenance::Remote => "remote",
@@ -617,7 +618,10 @@ impl Editor {
                 return;
             }
         };
-        let active = self.history.active_manipulation().map(|active| active.axis);
+        let active = self
+            .history
+            .active_manipulation()
+            .and_then(|active| active.move_axis());
         let hovered = if active.is_none() {
             input
                 .move_pointer()

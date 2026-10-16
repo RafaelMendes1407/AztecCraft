@@ -1,7 +1,7 @@
 use super::{Command, EditOutcome, History};
 use crate::native_scene::{
-    MoveTranslationBaseline, NativeError, NativeId, NativeScene, TransformTarget, WorldAxis,
-    WorldMoveFrame,
+    ChannelBaseline, NativeError, NativeId, NativeScene, ObjectRotateFrame, RotateAxis,
+    TransformTarget, WorldAxis, WorldMoveFrame,
 };
 use crate::view_scene::{ViewError, ViewScene};
 use std::{fmt, mem::size_of};
@@ -71,12 +71,33 @@ impl fmt::Display for ManipulationError {
 
 impl std::error::Error for ManipulationError {}
 
-pub struct MoveState<'a> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ManipulationKindState {
+    Move { axis: WorldAxis },
+    Rotate { axis: RotateAxis },
+}
+
+/// Read-only view of the active manipulation; `parameter` is in the kind's internal unit
+/// (centimeters for Move, degrees for Rotate).
+pub struct ManipulationState<'a> {
     pub id: ManipulationId,
     pub target: &'a TransformTarget,
-    pub axis: WorldAxis,
     pub provenance: ManipulationProvenance,
-    pub distance_cm: f64,
+    pub parameter: f64,
+    pub kind: ManipulationKindState,
+}
+
+impl ManipulationState<'_> {
+    pub fn move_axis(&self) -> Option<WorldAxis> {
+        match self.kind {
+            ManipulationKindState::Move { axis } => Some(axis),
+            ManipulationKindState::Rotate { .. } => None,
+        }
+    }
+
+    pub fn move_distance_cm(&self) -> Option<f64> {
+        self.move_axis().map(|_| self.parameter)
+    }
 }
 
 /// The kind of manipulation and its kind-specific state; the guards in `History` are shared.
@@ -84,52 +105,53 @@ enum ManipulationKind {
     Move {
         axis: WorldAxis,
         frame: WorldMoveFrame,
-        baseline: MoveTranslationBaseline,
+        baseline: ChannelBaseline,
+    },
+    Rotate {
+        axis: RotateAxis,
+        frame: ObjectRotateFrame,
+        baseline: ChannelBaseline,
     },
 }
 
-/// Exact scene state captured by a preview so a failed one can be undone.
-enum ManipulationSnapshot {
-    Move(MoveTranslationBaseline),
-}
-
 impl ManipulationKind {
+    fn initial_parameter(&self) -> f64 {
+        match self {
+            Self::Move { .. } | Self::Rotate { .. } => 0.0,
+        }
+    }
+
+    fn state(&self) -> ManipulationKindState {
+        match self {
+            Self::Move { axis, .. } => ManipulationKindState::Move { axis: *axis },
+            Self::Rotate { axis, .. } => ManipulationKindState::Rotate { axis: *axis },
+        }
+    }
+
+    fn baseline(&self) -> &ChannelBaseline {
+        match self {
+            Self::Move { baseline, .. } | Self::Rotate { baseline, .. } => baseline,
+        }
+    }
+
     fn preview(
         &self,
         scene: &mut NativeScene,
         parameter: f64,
-    ) -> Result<(ManipulationSnapshot, bool), NativeError> {
-        match self {
-            Self::Move {
-                axis,
-                frame,
-                baseline,
-            } => {
-                let translation = frame.translation(*axis, parameter)?;
-                let (previous, changed) = scene.preview_move_translation(baseline, translation)?;
-                Ok((ManipulationSnapshot::Move(previous), changed))
-            }
-        }
+    ) -> Result<(ChannelBaseline, bool), NativeError> {
+        let values = match self {
+            Self::Move { axis, frame, .. } => frame.translation(*axis, parameter)?,
+            Self::Rotate { axis, frame, .. } => frame.rotation(*axis, parameter)?,
+        };
+        scene.preview_channels(self.baseline(), values)
     }
 
     fn restore(&self, scene: &mut NativeScene) -> Result<(), NativeError> {
-        match self {
-            Self::Move { baseline, .. } => scene.restore_move_translation(baseline),
-        }
+        scene.restore_channels(self.baseline())
     }
 
     fn changes(&self, scene: &NativeScene) -> Result<[Option<f64>; 9], NativeError> {
-        match self {
-            Self::Move { baseline, .. } => scene.move_translation_changes(baseline),
-        }
-    }
-}
-
-impl ManipulationSnapshot {
-    fn restore(&self, scene: &mut NativeScene) -> Result<(), NativeError> {
-        match self {
-            Self::Move(previous) => scene.restore_move_translation(previous),
-        }
+        scene.channel_changes(self.baseline())
     }
 }
 
@@ -164,17 +186,16 @@ impl MoveTransaction {
 }
 
 impl History {
-    pub fn active_manipulation(&self) -> Option<MoveState<'_>> {
-        self.active_manipulation.as_ref().map(|active| {
-            let ManipulationKind::Move { axis, .. } = &active.kind;
-            MoveState {
+    pub fn active_manipulation(&self) -> Option<ManipulationState<'_>> {
+        self.active_manipulation
+            .as_ref()
+            .map(|active| ManipulationState {
                 id: active.id,
                 target: &active.target,
-                axis: *axis,
                 provenance: active.provenance,
-                distance_cm: active.parameter,
-            }
-        })
+                parameter: active.parameter,
+                kind: active.kind.state(),
+            })
     }
 
     pub fn begin_move(
@@ -185,6 +206,43 @@ impl History {
         provenance: ManipulationProvenance,
         byte_budget: usize,
     ) -> Result<ManipulationId, ManipulationError> {
+        self.begin_manipulation(target, scene_token, provenance, byte_budget, |scene| {
+            let (frame, baseline) = scene.begin_move_translation(target, axis)?;
+            Ok(ManipulationKind::Move {
+                axis,
+                frame,
+                baseline,
+            })
+        })
+    }
+
+    /// Begins an object-space rotation; `update_move` then takes the angle in degrees.
+    pub fn begin_rotate(
+        &mut self,
+        target: &TransformTarget,
+        axis: RotateAxis,
+        scene_token: Uuid,
+        provenance: ManipulationProvenance,
+        byte_budget: usize,
+    ) -> Result<ManipulationId, ManipulationError> {
+        self.begin_manipulation(target, scene_token, provenance, byte_budget, |scene| {
+            let (frame, baseline) = scene.begin_object_rotation(target, axis)?;
+            Ok(ManipulationKind::Rotate {
+                axis,
+                frame,
+                baseline,
+            })
+        })
+    }
+
+    fn begin_manipulation(
+        &mut self,
+        target: &TransformTarget,
+        scene_token: Uuid,
+        provenance: ManipulationProvenance,
+        byte_budget: usize,
+        make_kind: impl FnOnce(&NativeScene) -> Result<ManipulationKind, NativeError>,
+    ) -> Result<ManipulationId, ManipulationError> {
         if self.active_manipulation.is_some() {
             return Err(ManipulationError::Busy);
         }
@@ -192,7 +250,7 @@ impl History {
             .next_manipulation_id
             .checked_add(1)
             .ok_or(ManipulationError::IdsExhausted)?;
-        let (frame, baseline) = self.scene.begin_move_translation(target, axis)?;
+        let kind = make_kind(&self.scene)?;
         let mut path = Vec::new();
         path.try_reserve_exact(target.path.len())
             .map_err(|_| NativeError::ResourceLimit)?;
@@ -214,13 +272,9 @@ impl History {
                 path,
             },
             provenance,
-            kind: ManipulationKind::Move {
-                axis,
-                frame,
-                baseline,
-            },
+            parameter: kind.initial_parameter(),
+            kind,
             view_budget,
-            parameter: 0.0,
         });
         self.next_manipulation_id = next_id;
         Ok(ManipulationId(next_id))
@@ -240,7 +294,7 @@ impl History {
         active.matches(scene_token, id, provenance)?;
         let (previous, changed) = active.kind.preview(&mut self.scene, distance_cm)?;
         if let Err(error) = ViewScene::from_native(&self.scene, active.view_budget) {
-            previous.restore(&mut self.scene)?;
+            self.scene.restore_channels(&previous)?;
             return Err(error.into());
         }
         active.parameter = distance_cm;
