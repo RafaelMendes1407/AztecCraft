@@ -2,6 +2,10 @@ use super::*;
 use crate::native_scene::test_fixtures::cube;
 use crate::shading::SURFACE_BASE_RGB;
 
+fn material_of(scene: &NativeScene, shape: NativeId) -> Option<&Lambert> {
+    scene.session_material(scene.shape(shape).unwrap())
+}
+
 fn assigned_cube() -> (NativeScene, NativeId) {
     let (mut scene, _) = cube();
     let shape = scene.shapes[0].id;
@@ -19,7 +23,7 @@ fn authored_shapes_start_in_the_initial_group_with_the_viewport_base_fill() {
         "initialShadingGroup"
     );
     assert_eq!(
-        scene.session_material(shape).unwrap().color(),
+        material_of(&scene, shape).unwrap().color(),
         SURFACE_BASE_RGB.map(|channel| f64::from(channel) / 255.0)
     );
 }
@@ -144,21 +148,15 @@ mod operations {
         let shape = scene.shapes[0].id;
         let red = scene.create_session_material(RED).unwrap();
         assert_eq!(red, id(1));
-        assert_eq!(
-            scene.session_material(shape).unwrap().name(),
-            "sessionDefault"
-        );
+        assert_eq!(material_of(&scene, shape).unwrap().name(), "sessionDefault");
         scene
             .assign_session_material(shape, MaterialChoice::Existing(red))
             .unwrap();
-        assert_eq!(scene.session_material(shape).unwrap().color(), RED);
+        assert_eq!(material_of(&scene, shape).unwrap().color(), RED);
         scene
             .set_session_material_color(red, [0.0, 1.0, 0.0])
             .unwrap();
-        assert_eq!(
-            scene.session_material(shape).unwrap().color(),
-            [0.0, 1.0, 0.0]
-        );
+        assert_eq!(material_of(&scene, shape).unwrap().color(), [0.0, 1.0, 0.0]);
         scene.validate().unwrap();
     }
 
@@ -216,7 +214,7 @@ mod operations {
         for node in [first, second] {
             let transform = scene.node(node).unwrap().transform_id();
             let instance = scene.instance_shape(&[transform, shape]).unwrap();
-            assert_eq!(scene.session_material(instance.id()).unwrap().color(), RED);
+            assert_eq!(material_of(&scene, instance.id()).unwrap().color(), RED);
         }
     }
 
@@ -246,13 +244,13 @@ mod operations {
                 color: [0.0, 0.0, 1.0],
             })
             .unwrap();
-        let color = |history: &History| history.scene().session_material(shape).unwrap().color();
+        let color = |history: &History| material_of(history.scene(), shape).unwrap().color();
         assert_eq!(color(&history), [0.0, 0.0, 1.0]);
         assert!(history.undo());
         assert_eq!(color(&history), RED);
         assert!(history.undo());
         assert_eq!(
-            history.scene().session_material(shape).unwrap().name(),
+            material_of(history.scene(), shape).unwrap().name(),
             "sessionDefault"
         );
         assert!(history.undo());
@@ -317,10 +315,7 @@ mod operations {
                 material: MaterialChoice::New { color: RED },
             })
             .unwrap();
-        assert_eq!(
-            history.scene().session_material(shape).unwrap().color(),
-            RED
-        );
+        assert_eq!(material_of(history.scene(), shape).unwrap().color(), RED);
         assert!(history.undo());
         assert!(!history.can_undo());
         assert_eq!(history.scene().session_materials().len(), 1);
