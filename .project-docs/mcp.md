@@ -234,7 +234,8 @@ This scope does not establish Maya grid appearance or behavior parity.
 null, numbers and unknown fields refuse. Repeating a mode returns unchanged.
 Inspection reports authoritative `shading` even without a GPU. `face_centres_hidden` is true when the last painted frame hid Wireframe
 Face-mode centre markers because the occlusion check exceeded its work budget (false without a
-GPU or before the first paint). The setting starts
+GPU or before the first paint). `vertex_markers_hidden` is the same for Vertex-mode vertex
+markers; at most one of the two is true in any frame, by selection mode. The setting starts
 `smooth_shade_all`, survives New/Open and belongs to this viewport's session. It
 does not edit NativeScene, create an undo entry, mark the document dirty or change
 its token. It shares the Grid guards: stale token, differing draft, text focus,

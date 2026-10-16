@@ -254,6 +254,7 @@
       "linear": "cm",
       "time": "film"
     },
+    "vertex_markers_hidden": false,
     "viewport_backend": "uninitialized",
     "viewport_error": "uninitialized"
   },

@@ -19,6 +19,9 @@ mod parent_cpu_reference;
 #[path = "tests/manipulator_handles.rs"]
 mod manipulator_handles;
 
+#[path = "tests/vertex_edge.rs"]
+mod vertex_edge;
+
 fn device_setup() -> (wgpu::Instance, wgpu::Adapter, wgpu::Device, wgpu::Queue) {
     let instance =
         wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
@@ -134,7 +137,7 @@ fn face_mode_feedback_on_a_curves_only_scene_draws_lines_without_markers_or_high
         .unwrap();
         assert_eq!(submission.surfaces, 0..0);
         assert_eq!(submission.lines, 0..vertices as u32);
-        assert_eq!(submission.centers.start, submission.centers.end);
+        assert_eq!(submission.markers.start, submission.markers.end);
         assert_eq!(submission.bytes.len(), vertices * VERTEX_BYTES);
     }
 }
@@ -441,7 +444,7 @@ pub(crate) fn renderer_handle() -> ViewportRenderer {
 pub(crate) struct RecordedSubmission {
     pub surfaces: Range<u32>,
     pub lines: Range<u32>,
-    pub centers: Range<u32>,
+    pub markers: Range<u32>,
     pub vertices: Vec<[f32; 8]>,
 }
 
@@ -453,7 +456,7 @@ pub(crate) fn recorded_submission(renderer: &ViewportRenderer) -> RecordedSubmis
     RecordedSubmission {
         surfaces: submission.surfaces.clone(),
         lines: submission.lines.clone(),
-        centers: submission.centers.clone(),
+        markers: submission.markers.clone(),
         vertices: submission
             .bytes
             .as_chunks::<VERTEX_BYTES>()
@@ -553,7 +556,7 @@ fn face_submission_highlights_only_exact_identity_and_charges_physical_markers()
         )
         .unwrap();
         assert_eq!(submission.surfaces, 0..36);
-        assert_eq!(submission.centers.end - submission.centers.start, 36);
+        assert_eq!(submission.markers.end - submission.markers.start, 36);
         assert_eq!(submission.bytes.len(), 204 * VERTEX_BYTES);
         let selected_vertices = submission.bytes[..36 * VERTEX_BYTES]
             .as_chunks::<VERTEX_BYTES>()
@@ -562,7 +565,7 @@ fn face_submission_highlights_only_exact_identity_and_charges_physical_markers()
             .filter(|vertex| f32::from_ne_bytes(vertex[16..20].try_into().unwrap()) > 0.35)
             .count();
         assert_eq!(selected_vertices, 6);
-        let start = submission.centers.start as usize * VERTEX_BYTES;
+        let start = submission.markers.start as usize * VERTEX_BYTES;
         let coordinates: Vec<_> = submission.bytes[start..start + 6 * VERTEX_BYTES]
             .as_chunks::<VERTEX_BYTES>()
             .0
@@ -627,7 +630,7 @@ fn face_submission_highlights_only_exact_identity_and_charges_physical_markers()
         1024 * 1024,
     )
     .unwrap();
-    assert!(wrong.centers.is_empty());
+    assert!(wrong.markers.is_empty());
     assert!(
         wrong.bytes[..36 * VERTEX_BYTES]
             .as_chunks::<VERTEX_BYTES>()
@@ -850,7 +853,7 @@ fn headless_gpu_face_feedback_matches_exact_face_and_instance_and_hides_occluded
         1024 * 1024,
     )
     .unwrap();
-    assert!(submission.centers.is_empty());
+    assert!(submission.markers.is_empty());
     assert!(
         camera
             .pick_face_center(
@@ -945,13 +948,13 @@ fn grid_visibility_omits_only_original_grid_bytes_and_its_allocation_charge() {
         assert_eq!(visible.vertex_count() - hidden.vertex_count(), 84);
         assert_eq!(visible.lines.start, hidden.lines.start);
         assert_eq!(visible.lines.end - hidden.lines.end, 84);
-        assert_eq!(visible.centers.start - hidden.centers.start, 84);
-        assert_eq!(visible.centers.end - hidden.centers.end, 84);
+        assert_eq!(visible.markers.start - hidden.markers.start, 84);
+        assert_eq!(visible.markers.end - hidden.markers.end, 84);
         if matches!(selection, SelectionFeedback::Face { .. }) {
-            assert!(hidden.centers.end > hidden.centers.start);
+            assert!(hidden.markers.end > hidden.markers.start);
             assert_eq!(
-                visible.bytes[visible.centers.start as usize * VERTEX_BYTES..],
-                hidden.bytes[hidden.centers.start as usize * VERTEX_BYTES..]
+                visible.bytes[visible.markers.start as usize * VERTEX_BYTES..],
+                hidden.bytes[hidden.markers.start as usize * VERTEX_BYTES..]
             );
         }
         let surface_bytes = visible.surfaces.end as usize * VERTEX_BYTES;
@@ -1151,6 +1154,8 @@ pub(crate) struct Offscreen {
     resources: GpuResources,
     format: wgpu::TextureFormat,
     renderer: Option<Arc<egui::epaint::mutex::RwLock<egui_wgpu::Renderer>>>,
+    /// Square render target edge in pixels.
+    pub(crate) size: u32,
 }
 
 enum TestFrame {
@@ -1172,6 +1177,7 @@ impl Offscreen {
             resources,
             format,
             renderer: None,
+            size: SIZE,
         }
     }
 
@@ -1203,6 +1209,7 @@ impl Offscreen {
             format: state.target_format,
             resources: GpuResources::new(&state.device, state.target_format),
             renderer: Some(state.renderer.clone()),
+            size: SIZE,
         }
     }
 
@@ -1216,8 +1223,8 @@ impl Offscreen {
 
     fn render(&mut self, frame: TestFrame) -> Vec<u8> {
         let extent = wgpu::Extent3d {
-            width: SIZE,
-            height: SIZE,
+            width: self.size,
+            height: self.size,
             depth_or_array_layers: 1,
         };
         let color = self.device.create_texture(&wgpu::TextureDescriptor {
@@ -1242,7 +1249,7 @@ impl Offscreen {
         });
         let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("viewport regression pixels"),
-            size: u64::from(SIZE * SIZE * 4),
+            size: u64::from(self.size * self.size * 4),
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -1279,7 +1286,7 @@ impl Offscreen {
                 }
                 let jobs = context.tessellate(output.shapes.clone(), output.pixels_per_point);
                 let screen = egui_wgpu::ScreenDescriptor {
-                    size_in_pixels: [SIZE; 2],
+                    size_in_pixels: [self.size; 2],
                     pixels_per_point: output.pixels_per_point,
                 };
                 let commands = renderer_guard.update_buffers(
@@ -1349,8 +1356,8 @@ impl Offscreen {
                 buffer: &readback,
                 layout: wgpu::TexelCopyBufferLayout {
                     offset: 0,
-                    bytes_per_row: Some(SIZE * 4),
-                    rows_per_image: Some(SIZE),
+                    bytes_per_row: Some(self.size * 4),
+                    rows_per_image: Some(self.size),
                 },
             },
             extent,
@@ -2228,8 +2235,8 @@ fn wireframe_emits_only_face_centres_the_cpu_occlusion_filter_accepts() {
     let smooth = build(ShadingMode::SmoothShadeAll);
     let wire = build(ShadingMode::Wireframe);
     // Smooth Shade All leaves occlusion to the GPU depth test, so every in-frustum centre is emitted.
-    assert_eq!(smooth.centers.len(), 6 * 6);
-    assert_eq!(wire.centers.len(), visible * 6);
+    assert_eq!(smooth.markers.len(), 6 * 6);
+    assert_eq!(wire.markers.len(), visible * 6);
 }
 
 #[test]
@@ -2264,7 +2271,7 @@ fn wireframe_degrades_face_centres_instead_of_failing_the_frame_over_budget() {
     };
     let wire = build(ShadingMode::Wireframe);
     assert!(wire.centers_degraded);
-    assert!(wire.centers.is_empty());
+    assert!(wire.markers.is_empty());
     assert!(!wire.lines.is_empty());
     assert!(!build(ShadingMode::SmoothShadeAll).centers_degraded);
     let small = ViewScene::from_native(&cube(), VIEW_BUDGET).unwrap();

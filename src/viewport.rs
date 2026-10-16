@@ -13,10 +13,12 @@ const MAX_FACE_CENTER_INTERSECTIONS: usize = 1_000_000;
 
 /// Relative view-depth slack for a face center against its own surface hit (f32 rounding).
 pub const FACE_CENTER_DEPTH_TOLERANCE: f32 = 1e-4;
-/// Same slack for a vertex, or a point on an edge, against the surface it lies on. Edges share
-/// it so a drawn edge and a picked edge agree; kept apart from the face constant so loosening
-/// one never moves the other (a provisional policy value, see `known-issues.md`).
-const VERTEX_MARKER_DEPTH_TOLERANCE: f32 = 1e-4;
+/// Relative view-depth slack for a vertex, or a point on an edge, against the surface it lies
+/// on. Vertex markers and the selected-edge strip are biased toward the eye by it and vertex and
+/// edge picks test occlusion with it, so what is drawn and what is picked agree. Kept apart from
+/// the face constant so loosening one never moves the other. A flat provisional policy value,
+/// see `known-issues.md`.
+pub const VERTEX_MARKER_DEPTH_TOLERANCE: f32 = 6e-3;
 
 // Right-handed, Y-up; yaw zero looks from +Z. NDC uses X/Y [-1, 1], Y up, Z [0, 1].
 // UI pixels map to NDC as (2*x/width - 1, 1 - 2*y/height).
@@ -144,6 +146,14 @@ impl Camera {
                     self.yaw.cos() * self.pitch.cos(),
                 )
     }
+    /// `point` moved toward the eye by `VERTEX_MARKER_DEPTH_TOLERANCE`, so a marker on a surface is not hidden by
+    /// the neighbouring pixels of that surface. Depth is linear in `p - eye`, unlike NDC depth,
+    /// so the shift scales with distance.
+    pub fn marker_biased(&self, point: Vec3) -> Vec3 {
+        let eye = self.eye();
+        eye + (point - eye) * (1.0 - VERTEX_MARKER_DEPTH_TOLERANCE)
+    }
+
     pub fn view_matrix(&self) -> Mat4 {
         let back = (self.eye() - self.target).normalize();
         let right = Vec3::Y.cross(back).normalize();

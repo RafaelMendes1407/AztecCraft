@@ -1,9 +1,12 @@
 use crate::editor_operations::ShadingMode;
 use azteccraft::{
-    native_scene::{FaceTarget, NativeId},
+    native_scene::{EdgeTarget, FaceTarget, NativeId, VertexTarget},
     scene::NodeId,
     shading::shade,
-    view_scene::{FACE_CENTER_MARKER_PIXELS, ViewFace, ViewInstance, ViewScene},
+    view_scene::{
+        FACE_CENTER_MARKER_PIXELS, SELECTED_EDGE_PIXELS, VERTEX_MARKER_PIXELS, ViewFace,
+        ViewInstance, ViewScene,
+    },
     viewport::{Camera, InvalidCameraInput},
 };
 use eframe::{
@@ -46,6 +49,14 @@ fn selected_base(base: [u8; 3]) -> [u8; 3] {
         tinted
     }
 }
+
+// Provisional original colours that follow the Maya 2026 display-colour words only (purple-ish
+// vertex, highlighted when selected, light-blue edge); see `known-issues.md`.
+const VERTEX_RGB: [u8; 3] = [150, 110, 200];
+const SELECTED_VERTEX_RGB: [u8; 3] = [255, 232, 64];
+const EDGE_RGB: [u8; 3] = [120, 180, 235];
+const SELECTED_EDGE_RGB: [u8; 3] = [255, 178, 96];
+
 const VERTEX_BYTES: usize = 8 * size_of::<f32>();
 // Charge snapshot, upload staging, retained vertices and a growth replacement per upload.
 const MAX_UPLOAD_WORKING_BYTES: u64 = 256 * 1024 * 1024;
@@ -57,6 +68,14 @@ pub enum SelectionFeedback<'a> {
         active: Option<(NodeId, &'a [NativeId])>,
         selected: Option<&'a FaceTarget>,
     },
+    Vertex {
+        active: Option<(NodeId, &'a [NativeId])>,
+        selected: Option<&'a VertexTarget>,
+    },
+    Edge {
+        active: Option<(NodeId, &'a [NativeId])>,
+        selected: Option<&'a EdgeTarget>,
+    },
 }
 
 impl SelectionFeedback<'_> {
@@ -64,7 +83,7 @@ impl SelectionFeedback<'_> {
     fn curve_selected(self, instance: &azteccraft::view_scene::ViewCurveInstance) -> bool {
         match self {
             Self::Object(path) => path.is_some_and(|path| instance.path().starts_with(path)),
-            Self::Face { .. } => false,
+            Self::Face { .. } | Self::Vertex { .. } | Self::Edge { .. } => false,
         }
     }
 
@@ -77,6 +96,7 @@ impl SelectionFeedback<'_> {
                     && target.path == instance.path()
                     && target.face_index == face.source_index()
             }),
+            Self::Vertex { .. } | Self::Edge { .. } => false,
         }
     }
 
@@ -84,6 +104,68 @@ impl SelectionFeedback<'_> {
         matches!(self, Self::Face { active: Some((owner, path)), .. }
             if instance.is_direct_shape_of(owner, path))
     }
+
+    fn vertex_markers(self, instance: &ViewInstance) -> bool {
+        matches!(self, Self::Vertex { active: Some((owner, path)), .. }
+            if instance.is_direct_shape_of(owner, path))
+    }
+
+    /// Edge mode replaces the active object's face outlines with its full edge list.
+    fn edges_shown(self, instance: &ViewInstance) -> bool {
+        matches!(self, Self::Edge { active: Some((owner, path)), .. }
+            if instance.is_direct_shape_of(owner, path))
+    }
+
+    fn selected_vertex(self, instance: &ViewInstance) -> Option<usize> {
+        match self {
+            Self::Vertex {
+                selected: Some(target),
+                ..
+            } if target.transform == instance.transform()
+                && target.shape == instance.shape()
+                && target.path == instance.path() =>
+            {
+                Some(target.vertex_index)
+            }
+            _ => None,
+        }
+    }
+
+    fn selected_edge(self, instance: &ViewInstance) -> Option<usize> {
+        match self {
+            Self::Edge {
+                selected: Some(target),
+                ..
+            } if self.edges_shown(instance)
+                && target.transform == instance.transform()
+                && target.shape == instance.shape()
+                && target.path == instance.path() =>
+            {
+                Some(target.edge_index)
+            }
+            _ => None,
+        }
+    }
+
+    /// Markers the Wireframe CPU occlusion filter would test on `instance`.
+    fn filtered_markers(self, instance: &ViewInstance) -> usize {
+        if self.centers(instance) {
+            instance.faces().len()
+        } else if self.vertex_markers(instance) {
+            instance.world_vertices().len()
+        } else {
+            0
+        }
+    }
+}
+
+/// Whether a clip-space point lies inside the view frustum.
+fn clip_inside(clip: Vec4) -> bool {
+    clip.w > 0.0
+        && clip.z >= 0.0
+        && clip.z <= clip.w
+        && clip.x.abs() <= clip.w
+        && clip.y.abs() <= clip.w
 }
 
 fn check_buffer_bytes(bytes: u64, device_limit: u64) -> Result<(), RenderError> {
@@ -281,8 +363,9 @@ struct Submission {
     bytes: Vec<u8>,
     surfaces: Range<u32>,
     lines: Range<u32>,
-    centers: Range<u32>,
-    /// Wireframe skipped face centres because the occlusion check exceeded its work budget.
+    markers: Range<u32>,
+    /// Wireframe skipped its occlusion-filtered markers (face centres in Face mode, vertices in
+    /// Vertex mode) because the check exceeded its work budget.
     centers_degraded: bool,
 }
 
@@ -310,6 +393,11 @@ impl Submission {
             * camera.view_matrix();
         let mut vertices = if grid_visible { 84_usize } else { 0 };
         for instance in scene.instances() {
+            let outline_corners = if selection.edges_shown(instance) {
+                0
+            } else {
+                2
+            };
             for face in instance.faces() {
                 let surface_count = if shading == ShadingMode::Wireframe {
                     0
@@ -318,12 +406,28 @@ impl Submission {
                 };
                 vertices = vertices
                     .checked_add(surface_count)
-                    .and_then(|count| count.checked_add(face.corners().len() * 2))
+                    .and_then(|count| count.checked_add(face.corners().len() * outline_corners))
                     .and_then(|count| {
                         count.checked_add(if selection.centers(instance) { 6 } else { 0 })
                     })
                     .ok_or(RenderError::ResourceLimit)?;
             }
+            let component_vertices = if selection.edges_shown(instance) {
+                instance.edges().len().checked_mul(2).and_then(|count| {
+                    count.checked_add(if selection.selected_edge(instance).is_some() {
+                        6
+                    } else {
+                        0
+                    })
+                })
+            } else if selection.vertex_markers(instance) {
+                instance.world_vertices().len().checked_mul(6)
+            } else {
+                Some(0)
+            };
+            vertices = component_vertices
+                .and_then(|count| vertices.checked_add(count))
+                .ok_or(RenderError::ResourceLimit)?;
         }
         for instance in scene.curve_instances() {
             vertices = vertices
@@ -350,7 +454,7 @@ impl Submission {
             bytes: Vec::new(),
             surfaces: 0..0,
             lines: 0..0,
-            centers: 0..0,
+            markers: 0..0,
             centers_degraded: false,
         };
         submission
@@ -413,6 +517,9 @@ impl Submission {
         }
         for selected_pass in [false, true] {
             for instance in scene.instances() {
+                if selection.edges_shown(instance) {
+                    continue;
+                }
                 for face in instance.faces() {
                     let selected = selection.selected(instance, face);
                     if selected != selected_pass {
@@ -430,6 +537,24 @@ impl Submission {
                                 matrix,
                                 instance.world_vertices()[vertex],
                                 color,
+                                format,
+                            )?;
+                        }
+                    }
+                }
+            }
+            if !selected_pass {
+                for instance in scene
+                    .instances()
+                    .iter()
+                    .filter(|instance| selection.edges_shown(instance))
+                {
+                    for &[a, b] in instance.edges() {
+                        for vertex in [a, b] {
+                            submission.vertex(
+                                matrix,
+                                instance.world_vertices()[vertex],
+                                Color32::from_rgb(EDGE_RGB[0], EDGE_RGB[1], EDGE_RGB[2]),
                                 format,
                             )?;
                         }
@@ -455,7 +580,7 @@ impl Submission {
         }
         submission.surfaces = 0..surface_end;
         submission.lines = surface_end..submission.vertex_count();
-        let center_start = submission.vertex_count();
+        let marker_start = submission.vertex_count();
         if shading == ShadingMode::Wireframe {
             // No surface depth exists, so centres need the CPU occlusion filter. Over budget the
             // frame hides them (flagged to the user) instead of failing; edges and grid still draw.
@@ -467,11 +592,9 @@ impl Submission {
                         .checked_add(face.triangles().count())
                         .ok_or(RenderError::ResourceLimit)?;
                 }
-                if selection.centers(instance) {
-                    eligible = eligible
-                        .checked_add(instance.faces().len())
-                        .ok_or(RenderError::ResourceLimit)?;
-                }
+                eligible = eligible
+                    .checked_add(selection.filtered_markers(instance))
+                    .ok_or(RenderError::ResourceLimit)?;
             }
             submission.centers_degraded =
                 azteccraft::viewport::face_center_work(eligible, triangles).is_err();
@@ -493,12 +616,7 @@ impl Submission {
                 if !clip.is_finite() {
                     return Err(RenderError::NonFiniteClip);
                 }
-                if clip.w <= 0.0
-                    || clip.z < 0.0
-                    || clip.z > clip.w
-                    || clip.x.abs() > clip.w
-                    || clip.y.abs() > clip.w
-                {
+                if !clip_inside(clip) {
                     continue;
                 }
                 if shading == ShadingMode::Wireframe
@@ -515,26 +633,152 @@ impl Submission {
                 {
                     continue;
                 }
-                let dx = FACE_CENTER_MARKER_PIXELS / physical_size[0] as f32 * clip.w;
-                let dy = FACE_CENTER_MARKER_PIXELS / physical_size[1] as f32 * clip.w;
-                for [x, y] in [
-                    [-dx, -dy],
-                    [dx, -dy],
-                    [dx, dy],
-                    [-dx, -dy],
-                    [dx, dy],
-                    [-dx, dy],
-                ] {
-                    submission.clip_vertex(
-                        clip + Vec4::new(x, y, 0.0, 0.0),
-                        Color32::from_rgb(242, 163, 70),
+                submission.square(
+                    clip,
+                    FACE_CENTER_MARKER_PIXELS,
+                    physical_size,
+                    Color32::from_rgb(242, 163, 70),
+                    format,
+                )?;
+            }
+        }
+        for instance in scene
+            .instances()
+            .iter()
+            .filter(|instance| draw_centers && selection.vertex_markers(instance))
+        {
+            let selected = selection.selected_vertex(instance);
+            // The selected marker goes last so it stays on top at the shared depth.
+            for selected_pass in [false, true] {
+                for (index, &point) in instance.world_vertices().iter().enumerate() {
+                    if (selected == Some(index)) != selected_pass {
+                        continue;
+                    }
+                    let clip = matrix * camera.marker_biased(point).extend(1.0);
+                    if !clip.is_finite() {
+                        return Err(RenderError::NonFiniteClip);
+                    }
+                    if !clip_inside(clip) {
+                        continue;
+                    }
+                    if shading == ShadingMode::Wireframe
+                        && camera
+                            .unoccluded_depth(
+                                scene,
+                                &frame,
+                                point,
+                                clip.truncate() / clip.w,
+                                azteccraft::viewport::VERTEX_MARKER_DEPTH_TOLERANCE,
+                            )
+                            .map_err(|_| RenderError::NonFiniteClip)?
+                            .is_none()
+                    {
+                        continue;
+                    }
+                    let [red, green, blue] = if selected_pass {
+                        SELECTED_VERTEX_RGB
+                    } else {
+                        VERTEX_RGB
+                    };
+                    submission.square(
+                        clip,
+                        VERTEX_MARKER_PIXELS,
+                        physical_size,
+                        Color32::from_rgb(red, green, blue),
                         format,
                     )?;
                 }
             }
         }
-        submission.centers = center_start..submission.vertex_count();
+        for instance in scene.instances() {
+            let Some(&[a, b]) = selection
+                .selected_edge(instance)
+                .and_then(|index| instance.edges().get(index))
+            else {
+                continue;
+            };
+            let [red, green, blue] = SELECTED_EDGE_RGB;
+            submission.edge_quad(
+                matrix,
+                [a, b].map(|index| camera.marker_biased(instance.world_vertices()[index])),
+                physical_size,
+                Color32::from_rgb(red, green, blue),
+                format,
+            )?;
+        }
+        submission.markers = marker_start..submission.vertex_count();
         Ok(submission)
+    }
+
+    /// A `pixels` wide square centred on `clip`, as two triangles.
+    fn square(
+        &mut self,
+        clip: Vec4,
+        pixels: f32,
+        physical_size: [u32; 2],
+        color: Color32,
+        format: wgpu::TextureFormat,
+    ) -> Result<(), RenderError> {
+        let dx = pixels / physical_size[0] as f32 * clip.w;
+        let dy = pixels / physical_size[1] as f32 * clip.w;
+        for [x, y] in [
+            [-dx, -dy],
+            [dx, -dy],
+            [dx, dy],
+            [-dx, -dy],
+            [dx, dy],
+            [-dx, dy],
+        ] {
+            self.clip_vertex(clip + Vec4::new(x, y, 0.0, 0.0), color, format)?;
+        }
+        Ok(())
+    }
+
+    /// A `SELECTED_EDGE_PIXELS` wide screen-space strip along the world segment `ends`, cut at the
+    /// near plane. Skipped when behind the eye or when it projects to no length.
+    fn edge_quad(
+        &mut self,
+        matrix: Mat4,
+        ends: [Vec3; 2],
+        physical_size: [u32; 2],
+        color: Color32,
+        format: wgpu::TextureFormat,
+    ) -> Result<(), RenderError> {
+        let [mut a, mut b] = ends.map(|point| matrix * point.extend(1.0));
+        if !a.is_finite() || !b.is_finite() {
+            return Err(RenderError::NonFiniteClip);
+        }
+        match (a.z >= 0.0, b.z >= 0.0) {
+            (false, false) => return Ok(()),
+            (true, false) => b = a + (b - a) * (a.z / (a.z - b.z)),
+            (false, true) => a = b + (a - b) * (b.z / (b.z - a.z)),
+            (true, true) => {}
+        }
+        if a.w <= 0.0 || b.w <= 0.0 {
+            return Ok(());
+        }
+        let half_size = Vec2::new(physical_size[0] as f32, physical_size[1] as f32) * 0.5;
+        let along = (b.truncate().truncate() / b.w - a.truncate().truncate() / a.w) * half_size;
+        let length = along.length();
+        if !length.is_finite() {
+            return Err(RenderError::NonFiniteClip);
+        }
+        if length <= f32::EPSILON {
+            return Ok(());
+        }
+        let side = Vec2::new(-along.y, along.x) / length * (SELECTED_EDGE_PIXELS * 0.5) / half_size;
+        let corner = |clip: Vec4, sign: f32| clip + (side * sign * clip.w).extend(0.0).extend(0.0);
+        for (clip, sign) in [
+            (a, -1.0),
+            (b, -1.0),
+            (b, 1.0),
+            (a, -1.0),
+            (b, 1.0),
+            (a, 1.0),
+        ] {
+            self.clip_vertex(corner(clip, sign), color, format)?;
+        }
+        Ok(())
     }
 
     fn vertex_count(&self) -> u32 {
@@ -575,7 +819,7 @@ impl Submission {
 struct GpuResources {
     surfaces: wgpu::RenderPipeline,
     lines: wgpu::RenderPipeline,
-    centers: wgpu::RenderPipeline,
+    markers: wgpu::RenderPipeline,
     vertices: Option<wgpu::Buffer>,
 }
 
@@ -629,7 +873,7 @@ impl GpuResources {
         Self {
             surfaces: pipeline(wgpu::PrimitiveTopology::TriangleList, true),
             lines: pipeline(wgpu::PrimitiveTopology::LineList, false),
-            centers: pipeline(wgpu::PrimitiveTopology::TriangleList, false),
+            markers: pipeline(wgpu::PrimitiveTopology::TriangleList, false),
             vertices: None,
         }
     }
@@ -690,8 +934,8 @@ impl GpuResources {
         pass.draw(submission.surfaces.clone(), 0..1);
         pass.set_pipeline(&self.lines);
         pass.draw(submission.lines.clone(), 0..1);
-        pass.set_pipeline(&self.centers);
-        pass.draw(submission.centers.clone(), 0..1);
+        pass.set_pipeline(&self.markers);
+        pass.draw(submission.markers.clone(), 0..1);
         Ok(())
     }
 }

@@ -142,7 +142,7 @@ fn headless_gpu_face_editor_typed_selection_reaches_actual_marker_callback() {
         editor.viewport(ui, token, None, None, false, true)
     });
     let recorded = recorded_submission(editor.renderer.as_ref().unwrap());
-    assert_eq!(recorded.centers.end - recorded.centers.start, 36);
+    assert_eq!(recorded.markers.end - recorded.markers.start, 36);
     assert_eq!(
         recorded.vertices[..36]
             .iter()

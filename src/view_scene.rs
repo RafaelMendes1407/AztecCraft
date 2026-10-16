@@ -10,6 +10,10 @@ use std::mem::size_of;
 
 pub const FACE_CENTER_MARKER_PIXELS: f32 = 4.0;
 pub const FACE_CENTER_CLICK_PIXELS: f32 = 8.0;
+/// Provisional vertex marker size; the click box below is twice it. Policy value, not a Maya default.
+pub const VERTEX_MARKER_PIXELS: f32 = 5.0;
+/// Provisional width of the selected-edge highlight quad.
+pub const SELECTED_EDGE_PIXELS: f32 = 3.0;
 /// Provisional click box edge for a vertex marker (5 px marker), a policy value not a Maya default.
 pub const VERTEX_CLICK_PIXELS: f32 = 10.0;
 /// Provisional largest screen distance from the pointer to a picked edge.

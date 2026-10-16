@@ -381,12 +381,23 @@ impl Editor {
                 &self.camera,
                 &view,
                 match self.selection_mode {
-                    SelectionMode::Object
-                    | SelectionMode::Hierarchy
-                    | SelectionMode::Vertex
-                    | SelectionMode::Edge => crate::viewport_renderer::SelectionFeedback::Object(
-                        self.selected.map(|_| self.selected_path.as_slice()),
-                    ),
+                    SelectionMode::Object | SelectionMode::Hierarchy => {
+                        crate::viewport_renderer::SelectionFeedback::Object(
+                            self.selected.map(|_| self.selected_path.as_slice()),
+                        )
+                    }
+                    SelectionMode::Vertex => crate::viewport_renderer::SelectionFeedback::Vertex {
+                        active: self
+                            .selected
+                            .map(|owner| (owner, self.selected_path.as_slice())),
+                        selected: self.remembered_vertex.as_ref(),
+                    },
+                    SelectionMode::Edge => crate::viewport_renderer::SelectionFeedback::Edge {
+                        active: self
+                            .selected
+                            .map(|owner| (owner, self.selected_path.as_slice())),
+                        selected: self.remembered_edge.as_ref(),
+                    },
                     SelectionMode::Face => crate::viewport_renderer::SelectionFeedback::Face {
                         active: self
                             .selected
@@ -398,7 +409,9 @@ impl Editor {
                 self.shading,
             );
             self.viewport_error = painted.as_ref().err().map(|error| error.category());
-            self.face_centres_hidden = matches!(painted, Ok(true));
+            let degraded = matches!(painted, Ok(true));
+            self.face_centres_hidden = degraded && self.selection_mode == SelectionMode::Face;
+            self.vertex_markers_hidden = degraded && self.selection_mode == SelectionMode::Vertex;
             self.paint_move(&input);
             self.paint_manipulation(&input);
             match painted {
