@@ -3290,3 +3290,82 @@ mod toolbox_wire {
         assert_eq!(editor.history.scene(), &with_cube);
     }
 }
+
+#[test]
+fn startup_status_names_every_creatable_primitive() {
+    assert_eq!(
+        Editor::default().status,
+        "Ready | Create a cube, plane or sphere to start"
+    );
+}
+
+#[test]
+fn create_menu_polygon_sphere_item_creates_a_selectable_framed_movable_sphere() {
+    let mut editor = Editor::default();
+    let ctx = egui::Context::default();
+    let output = frame(&mut editor, &ctx, vec![]);
+    let create = face_text_position(&output, "Create");
+    let output = face_pointer_click(&mut editor, &ctx, create, egui::Modifiers::NONE, vec![]);
+    face_text_position(&output, "Other primitives");
+    let sphere = face_text_position(&output, "Polygon sphere");
+    face_pointer_click(&mut editor, &ctx, sphere, egui::Modifiers::NONE, vec![]);
+    let id = editor.selected.expect("menu item selects the new sphere");
+    assert_eq!(editor.history.scene().node(id).unwrap().name(), "pSphere1");
+    assert_eq!(editor.history.scene().shapes()[0].mesh().faces().len(), 400);
+    assert!(editor.history.can_undo());
+    assert!(editor.is_dirty());
+
+    editor
+        .apply_operation(Operation::SetSelectionMode(SelectionMode::Face))
+        .unwrap();
+    let triangle = selected_face(&editor, 0);
+    editor
+        .apply_operation(Operation::SelectFace {
+            target: Some(triangle.clone()),
+        })
+        .unwrap();
+    assert_eq!(editor.remembered_face.as_ref(), Some(&triangle));
+    let camera = editor.camera.clone();
+    editor.apply_operation(Operation::FrameSelected).unwrap();
+    assert_ne!(editor.camera, camera);
+    editor
+        .apply_operation(Operation::SetSelectionMode(SelectionMode::Object))
+        .unwrap();
+
+    editor
+        .apply_operation(Operation::SetActiveTool(ActiveTool::Move))
+        .unwrap();
+    let target = editor.selected_move_target().unwrap();
+    editor
+        .apply_operation(Operation::BeginMove {
+            target,
+            axis: azteccraft::native_scene::WorldAxis::X,
+        })
+        .unwrap();
+    let move_id = editor.history.active_manipulation().unwrap().id;
+    editor
+        .apply_operation(Operation::UpdateMove {
+            id: move_id,
+            distance: crate::editor_operations::MoveDistance::Centimeters(5.0),
+        })
+        .unwrap();
+    editor
+        .apply_operation(Operation::FinishMove {
+            id: move_id,
+            finish: azteccraft::history::ManipulationFinish::Commit,
+        })
+        .unwrap();
+    editor.history.scene().validate().unwrap();
+    assert_eq!(
+        editor
+            .history
+            .scene()
+            .node(id)
+            .unwrap()
+            .transform()
+            .translation[0],
+        5.0
+    );
+    let view = ViewScene::from_native(editor.history.scene(), 256 * 1024 * 1024).unwrap();
+    assert_eq!(view.instances()[0].faces().len(), 400);
+}

@@ -60,7 +60,7 @@ Call `inspect_scene` first. Every other tool requires `scene_token`, a UUID stri
 | `begin_move` | `node_id`, full `instance_path` (1 to 256 decimal IDs), `axis`: `x`, `y` or `z` | Begin a remote-owned translation of the exact selected transform; returns `move_id` |
 | `update_move` | `move_id`: decimal string; `distance`: finite absolute f64 | Preview World distance from begin in declared linear units |
 | `finish_move` | `move_id`; `finish`: `commit` or `cancel` | One Undo at commit, or exact begin-state restoration |
-| `create_primitive` | `primitive`: `cube` or `plane`; optional `name` | Created `node_id`; selects the new node |
+| `create_primitive` | `primitive`: `cube`, `plane` or `sphere` (provisional 20x20 radius-1 polygon sphere, triangles at the poles); optional `name` | Created `node_id`; selects the new node |
 | `select_node` | Optional `node_id` and `instance_path`, at most 256 decimal NativeId strings | Full root-to-transform prefix; ambiguous objects require a path. Null or omitted node clears selection and cannot include a path |
 | `set_selection_mode` | Required `mode`: `object` or `face` | Changes the transient selection mask; a valid remembered face remains inactive in Object mode |
 | `select_face` | Required `target`: complete target object or null | In Face mode, selects that exact owning instance and canonical face; null clears only the face |

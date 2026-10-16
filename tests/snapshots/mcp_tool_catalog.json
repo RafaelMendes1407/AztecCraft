@@ -174,13 +174,14 @@
   },
   {
     "name": "create_primitive",
-    "description": "Create a cube or plane in the live editor",
+    "description": "Create a cube, plane or sphere in the live editor",
     "inputSchema": {
       "$defs": {
         "PrimitiveInput": {
           "enum": [
             "cube",
-            "plane"
+            "plane",
+            "sphere"
           ],
           "type": "string"
         }

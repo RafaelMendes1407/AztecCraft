@@ -26,6 +26,7 @@ impl NodeId {
 pub enum Primitive {
     Cube,
     Plane,
+    Sphere,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -192,6 +193,7 @@ impl Scene {
 
     pub fn create(&mut self, primitive: Primitive, name: &str) -> Result<NodeId, SceneError> {
         validate_name(name)?;
+        let mesh = Mesh::primitive(primitive)?;
         let next_id = self
             .next_id
             .checked_add(1)
@@ -200,7 +202,7 @@ impl Scene {
         self.nodes.push(Node {
             id,
             name: name.into(),
-            mesh: Mesh::primitive(primitive),
+            mesh,
             transform: Transform::default(),
         });
         self.next_id = next_id;
@@ -287,6 +289,7 @@ pub enum SceneError {
     UnsupportedAllFacesExtrusion,
     InvalidExtrusionDistance,
     UndefinedFaceNormal,
+    UnsupportedPrimitive(Primitive),
 }
 
 impl fmt::Display for SceneError {
@@ -312,6 +315,10 @@ impl fmt::Display for SceneError {
             }
             Self::InvalidExtrusionDistance => f.write_str("extrusion distance must be finite"),
             Self::UndefinedFaceNormal => f.write_str("selected face has no finite nonzero normal"),
+            Self::UnsupportedPrimitive(primitive) => write!(
+                f,
+                "{primitive:?} needs triangles, which the quad-only legacy mesh cannot hold"
+            ),
         }
     }
 }

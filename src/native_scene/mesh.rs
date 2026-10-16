@@ -263,8 +263,13 @@ impl NativeMesh {
     pub fn faces(&self) -> &[NativeFace] {
         &self.faces
     }
-    pub(super) fn primitive(primitive: Primitive) -> Self {
-        Self::from_legacy(&Mesh::primitive(primitive))
+    pub(super) fn primitive(primitive: Primitive) -> Result<Self, NativeError> {
+        match primitive {
+            Primitive::Sphere => Ok(Self::polygon_sphere()),
+            Primitive::Cube | Primitive::Plane => {
+                Ok(Self::from_legacy(&Mesh::primitive(primitive)?))
+            }
+        }
     }
     pub(super) fn from_legacy(mesh: &Mesh) -> Self {
         let mut native = Self {
@@ -469,5 +474,6 @@ impl NativeMesh {
     }
 }
 
+mod sphere;
 #[cfg(test)]
 mod tests;

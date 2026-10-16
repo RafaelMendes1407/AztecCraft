@@ -18,8 +18,8 @@ impl Mesh {
         mesh.validate()?;
         Ok(mesh)
     }
-    pub(crate) fn primitive(primitive: Primitive) -> Self {
-        match primitive {
+    pub(crate) fn primitive(primitive: Primitive) -> Result<Self, SceneError> {
+        Ok(match primitive {
             Primitive::Cube => Self {
                 vertices: vec![
                     Vec3::new(-0.5, -0.5, -0.5),
@@ -49,7 +49,8 @@ impl Mesh {
                 ],
                 faces: vec![[0, 1, 2, 3]],
             },
-        }
+            Primitive::Sphere => return Err(SceneError::UnsupportedPrimitive(primitive)),
+        })
     }
 
     pub fn vertices(&self) -> &[Vec3] {
