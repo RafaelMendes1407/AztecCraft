@@ -1,15 +1,22 @@
 use crate::scene::{Node, NodeId, Scene};
 use crate::{
-    native_scene::{FaceTarget, NativeId},
-    view_scene::{FACE_CENTER_CLICK_PIXELS, ViewError, ViewFace, ViewInstance, ViewScene},
+    native_scene::{EdgeTarget, FaceTarget, NativeId, VertexTarget},
+    view_scene::{
+        EDGE_CLICK_PIXELS, FACE_CENTER_CLICK_PIXELS, VERTEX_CLICK_PIXELS, ViewError, ViewFace,
+        ViewInstance, ViewScene,
+    },
 };
-use glam::{Mat4, Vec2, Vec3, Vec4};
+use glam::{DVec2, DVec4, Mat4, Vec2, Vec3, Vec4};
 use std::fmt;
 
 const MAX_FACE_CENTER_INTERSECTIONS: usize = 1_000_000;
 
 /// Relative view-depth slack for a face center against its own surface hit (f32 rounding).
 const FACE_CENTER_DEPTH_TOLERANCE: f32 = 1e-4;
+/// Same slack for a vertex, or a point on an edge, against the surface it lies on. Edges share
+/// it so a drawn edge and a picked edge agree; kept apart from the face constant so loosening
+/// one never moves the other (a provisional policy value, see `known-issues.md`).
+const VERTEX_MARKER_DEPTH_TOLERANCE: f32 = 1e-4;
 
 // Right-handed, Y-up; yaw zero looks from +Z. NDC uses X/Y [-1, 1], Y up, Z [0, 1].
 // UI pixels map to NDC as (2*x/width - 1, 1 - 2*y/height).
@@ -440,7 +447,7 @@ impl Camera {
         pixels_per_point: f32,
     ) -> Result<Option<FaceTarget>, ViewError> {
         let frame = self.pick_frame(pointer_points, viewport_pixels, pixels_per_point)?;
-        let (size, pointer, matrix) = (frame.size, frame.pointer, frame.matrix);
+        let pointer = frame.pointer;
         let Some((owner, path)) = active else {
             return Ok(None);
         };
@@ -449,41 +456,23 @@ impl Camera {
                 return Ok(None);
             }
             let center = face.center(instance.world_vertices())?;
-            let clip = matrix * center.extend(1.0);
-            if !clip.is_finite() {
-                return Err(ViewError::NonFiniteWorld);
-            }
-            if clip.w <= 0.0
-                || clip.z < 0.0
-                || clip.z > clip.w
-                || clip.x.abs() > clip.w
-                || clip.y.abs() > clip.w
-            {
+            let Some((ndc, pixel)) = project_in_frustum(&frame, center)? else {
                 return Ok(None);
-            }
-            let ndc = clip.truncate() / clip.w;
-            if !ndc.is_finite() {
-                return Err(ViewError::NonFiniteWorld);
-            }
-            let pixel = Vec2::new(ndc.x + 1.0, 1.0 - ndc.y) * 0.5 * size;
+            };
             Ok(
                 ((pixel - pointer).abs().max_element() <= FACE_CENTER_CLICK_PIXELS * 0.5)
                     .then_some((center, ndc)),
             )
         };
         let mut eligible = 0usize;
-        let mut triangles = 0usize;
         for instance in scene.instances() {
             for face in instance.faces() {
-                triangles = triangles
-                    .checked_add(face.triangles().count())
-                    .ok_or(ViewError::ResourceLimit)?;
                 if candidate(instance, face)?.is_some() {
                     eligible = eligible.checked_add(1).ok_or(ViewError::ResourceLimit)?;
                 }
             }
         }
-        face_center_work(eligible, triangles)?;
+        admit_pick_work(scene, eligible)?;
         let mut selected: Option<(f32, &ViewInstance, usize)> = None;
         for instance in scene.instances() {
             for face in instance.faces() {
@@ -519,6 +508,133 @@ impl Camera {
         selected
             .map(|(_, instance, index)| face_target(instance, index))
             .transpose()
+    }
+
+    pub fn pick_vertex(
+        &self,
+        scene: &ViewScene,
+        active: Option<(NodeId, &[NativeId])>,
+        pointer_points: Vec2,
+        viewport_pixels: [u32; 2],
+        pixels_per_point: f32,
+    ) -> Result<Option<VertexTarget>, ViewError> {
+        let picked = self.pick_component(
+            scene,
+            active,
+            pointer_points,
+            viewport_pixels,
+            pixels_per_point,
+            |instance, frame, out| {
+                for (index, &point) in instance.world_vertices().iter().enumerate() {
+                    let Some((ndc, pixel)) = project_in_frustum(frame, point)? else {
+                        continue;
+                    };
+                    let offset = pixel - frame.pointer;
+                    if offset.abs().max_element() <= VERTEX_CLICK_PIXELS * 0.5 {
+                        push_candidate(out, instance, index, point, ndc, offset.length())?;
+                    }
+                }
+                Ok(())
+            },
+        )?;
+        picked
+            .map(|(instance, vertex_index)| {
+                Ok(VertexTarget {
+                    transform: instance.transform(),
+                    shape: instance.shape(),
+                    path: instance_path(instance)?,
+                    vertex_index,
+                })
+            })
+            .transpose()
+    }
+
+    pub fn pick_edge(
+        &self,
+        scene: &ViewScene,
+        active: Option<(NodeId, &[NativeId])>,
+        pointer_points: Vec2,
+        viewport_pixels: [u32; 2],
+        pixels_per_point: f32,
+    ) -> Result<Option<EdgeTarget>, ViewError> {
+        let picked = self.pick_component(
+            scene,
+            active,
+            pointer_points,
+            viewport_pixels,
+            pixels_per_point,
+            |instance, frame, out| {
+                let vertices = instance.world_vertices();
+                for (index, &[a, b]) in instance.edges().iter().enumerate() {
+                    let (Some(&a), Some(&b)) = (vertices.get(a), vertices.get(b)) else {
+                        return Err(ViewError::InvalidGeometry);
+                    };
+                    if let Some(hit) = edge_candidate(frame, a, b)? {
+                        push_candidate(out, instance, index, hit.point, hit.ndc, hit.pixels)?;
+                    }
+                }
+                Ok(())
+            },
+        )?;
+        picked
+            .map(|(instance, edge_index)| {
+                Ok(EdgeTarget {
+                    transform: instance.transform(),
+                    shape: instance.shape(),
+                    path: instance_path(instance)?,
+                    edge_index,
+                })
+            })
+            .transpose()
+    }
+
+    /// Gathers click-window candidates from the active object's direct shapes, then returns the
+    /// nearest to the pointer, then nearest to the eye, then lowest key, among the unoccluded.
+    fn pick_component<'a>(
+        &self,
+        scene: &'a ViewScene,
+        active: Option<(NodeId, &[NativeId])>,
+        pointer_points: Vec2,
+        viewport_pixels: [u32; 2],
+        pixels_per_point: f32,
+        gather: impl Fn(
+            &'a ViewInstance,
+            &PickFrame,
+            &mut Vec<ScreenCandidate<'a>>,
+        ) -> Result<(), ViewError>,
+    ) -> Result<Option<(&'a ViewInstance, usize)>, ViewError> {
+        let frame = self.pick_frame(pointer_points, viewport_pixels, pixels_per_point)?;
+        let Some((owner, path)) = active else {
+            return Ok(None);
+        };
+        let mut candidates = Vec::new();
+        for instance in scene.instances() {
+            if instance.is_direct_shape_of(owner, path) {
+                gather(instance, &frame, &mut candidates)?;
+            }
+        }
+        admit_pick_work(scene, candidates.len())?;
+        let mut selected: Option<(f32, f32, &ViewInstance, usize)> = None;
+        for candidate in candidates {
+            let Some(depth) = self.unoccluded_depth(
+                scene,
+                &frame,
+                candidate.point,
+                candidate.ndc,
+                VERTEX_MARKER_DEPTH_TOLERANCE,
+            )?
+            else {
+                continue;
+            };
+            // Instances are sorted by path and indices ascend, so a strict comparison keeps the
+            // lowest (path, index) among equal candidates.
+            if selected.as_ref().is_none_or(|(pixels, nearest, _, _)| {
+                (candidate.pixels, depth) < (*pixels, *nearest)
+            }) {
+                selected = Some((candidate.pixels, depth, candidate.instance, candidate.index));
+            }
+        }
+        Ok(selected.map(|(_, _, instance, index)| (instance, index)))
     }
 
     /// Validates the pointer and viewport and builds the matrices every screen-space pick shares.
@@ -618,6 +734,162 @@ struct PickFrame {
     matrix: Mat4,
 }
 
+struct ScreenCandidate<'a> {
+    instance: &'a ViewInstance,
+    index: usize,
+    point: Vec3,
+    ndc: Vec3,
+    pixels: f32,
+}
+
+fn push_candidate<'a>(
+    out: &mut Vec<ScreenCandidate<'a>>,
+    instance: &'a ViewInstance,
+    index: usize,
+    point: Vec3,
+    ndc: Vec3,
+    pixels: f32,
+) -> Result<(), ViewError> {
+    out.try_reserve(1).map_err(|_| ViewError::ResourceLimit)?;
+    out.push(ScreenCandidate {
+        instance,
+        index,
+        point,
+        ndc,
+        pixels,
+    });
+    Ok(())
+}
+
+struct EdgeHit {
+    point: Vec3,
+    ndc: Vec3,
+    pixels: f32,
+}
+
+/// NDC and pixel position of `point`, or `None` outside the view frustum.
+fn project_in_frustum(frame: &PickFrame, point: Vec3) -> Result<Option<(Vec3, Vec2)>, ViewError> {
+    let clip = frame.matrix * point.extend(1.0);
+    if !clip.is_finite() {
+        return Err(ViewError::NonFiniteWorld);
+    }
+    if clip.w <= 0.0
+        || clip.z < 0.0
+        || clip.z > clip.w
+        || clip.x.abs() > clip.w
+        || clip.y.abs() > clip.w
+    {
+        return Ok(None);
+    }
+    let ndc = clip.truncate() / clip.w;
+    if !ndc.is_finite() {
+        return Err(ViewError::NonFiniteWorld);
+    }
+    Ok(Some((
+        ndc,
+        Vec2::new(ndc.x + 1.0, 1.0 - ndc.y) * 0.5 * frame.size,
+    )))
+}
+
+/// Clip-space parameter interval of the segment `a..b` inside the frustum, if any.
+fn clip_segment(a: DVec4, b: DVec4) -> Option<(f64, f64)> {
+    let (mut low, mut high) = (0.0_f64, 1.0_f64);
+    for (f0, f1) in [
+        (a.z, b.z),
+        (a.w - a.z, b.w - b.z),
+        (a.w + a.x, b.w + b.x),
+        (a.w - a.x, b.w - b.x),
+        (a.w + a.y, b.w + b.y),
+        (a.w - a.y, b.w - b.y),
+    ] {
+        let slope = f1 - f0;
+        if slope == 0.0 {
+            if f0 < 0.0 {
+                return None;
+            }
+        } else if slope > 0.0 {
+            low = low.max(-f0 / slope);
+        } else {
+            high = high.min(-f0 / slope);
+        }
+    }
+    (low <= high).then_some((low, high))
+}
+
+/// The point of edge `a..b` nearest the pointer on screen, when within `EDGE_CLICK_PIXELS`.
+/// The screen segment is interpolated, then mapped back to the clip-space parameter so the
+/// returned world point is perspective-correct.
+fn edge_candidate(frame: &PickFrame, a: Vec3, b: Vec3) -> Result<Option<EdgeHit>, ViewError> {
+    let (clip_a, clip_b) = (frame.matrix * a.extend(1.0), frame.matrix * b.extend(1.0));
+    if !clip_a.is_finite() || !clip_b.is_finite() {
+        return Err(ViewError::NonFiniteWorld);
+    }
+    let (clip_a, clip_b) = (clip_a.as_dvec4(), clip_b.as_dvec4());
+    let Some((low, high)) = clip_segment(clip_a, clip_b) else {
+        return Ok(None);
+    };
+    let at = |t: f64| clip_a + (clip_b - clip_a) * t;
+    let (start, end) = (at(low), at(high));
+    if start.w <= 0.0 || end.w <= 0.0 {
+        return Ok(None);
+    }
+    let size = frame.size.as_dvec2();
+    let pixel = |clip: DVec4| DVec2::new(clip.x / clip.w + 1.0, 1.0 - clip.y / clip.w) * 0.5 * size;
+    let (from, to) = (pixel(start), pixel(end));
+    let pointer = frame.pointer.as_dvec2();
+    let along = to - from;
+    let length_squared = along.length_squared();
+    let mut s = if length_squared > 0.0 {
+        ((pointer - from).dot(along) / length_squared).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    if !s.is_finite() {
+        s = 0.0;
+    }
+    let pixels = (from + along * s - pointer).length();
+    if !pixels.is_finite() {
+        return Err(ViewError::NonFiniteWorld);
+    }
+    if pixels > f64::from(EDGE_CLICK_PIXELS) {
+        return Ok(None);
+    }
+    let t = low + (high - low) * (s * start.w / (end.w + s * (start.w - end.w)));
+    let clip = at(t);
+    let point = a.as_dvec3() + (b.as_dvec3() - a.as_dvec3()) * t;
+    let ndc = glam::DVec3::new(clip.x, clip.y, clip.z) / clip.w;
+    let ndc = ndc.as_vec3();
+    if !point.is_finite() || !ndc.is_finite() {
+        return Err(ViewError::NonFiniteWorld);
+    }
+    Ok(Some(EdgeHit {
+        point: point.as_vec3(),
+        ndc,
+        pixels: pixels as f32,
+    }))
+}
+
+/// Refuses a pick whose occlusion work (candidates x scene triangles) exceeds the budget.
+fn admit_pick_work(scene: &ViewScene, eligible: usize) -> Result<(), ViewError> {
+    let mut triangles = 0usize;
+    for instance in scene.instances() {
+        for face in instance.faces() {
+            triangles = triangles
+                .checked_add(face.triangles().count())
+                .ok_or(ViewError::ResourceLimit)?;
+        }
+    }
+    face_center_work(eligible, triangles)
+}
+
+fn instance_path(instance: &ViewInstance) -> Result<Vec<NativeId>, ViewError> {
+    let mut path = Vec::new();
+    path.try_reserve_exact(instance.path().len())
+        .map_err(|_| ViewError::ResourceLimit)?;
+    path.extend_from_slice(instance.path());
+    Ok(path)
+}
+
 pub(crate) fn face_center_work(eligible: usize, triangles: usize) -> Result<(), ViewError> {
     match eligible.checked_mul(triangles) {
         Some(checks) if checks <= MAX_FACE_CENTER_INTERSECTIONS => Ok(()),
@@ -626,14 +898,10 @@ pub(crate) fn face_center_work(eligible: usize, triangles: usize) -> Result<(), 
 }
 
 fn face_target(instance: &ViewInstance, face_index: usize) -> Result<FaceTarget, ViewError> {
-    let mut path = Vec::new();
-    path.try_reserve_exact(instance.path().len())
-        .map_err(|_| ViewError::ResourceLimit)?;
-    path.extend_from_slice(instance.path());
     Ok(FaceTarget {
         transform: instance.transform(),
         shape: instance.shape(),
-        path,
+        path: instance_path(instance)?,
         face_index,
     })
 }
