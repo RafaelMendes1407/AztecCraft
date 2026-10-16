@@ -2,7 +2,9 @@
 use azteccraft::native_scene::NativeTransform;
 use azteccraft::{
     history::{ManipulationError, ManipulationFinish, ManipulationId},
-    native_scene::{FaceTarget, NativeError, NativeId, TransformTarget, WorldAxis},
+    native_scene::{
+        EdgeTarget, FaceTarget, NativeError, NativeId, TransformTarget, VertexTarget, WorldAxis,
+    },
     scene::{NodeId, Primitive},
     viewport::InvalidCameraInput,
 };
@@ -78,27 +80,21 @@ pub enum SelectionMode {
     Object,
     Face,
     Hierarchy,
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "no user surface selects it until the selection operations land"
-        )
-    )]
     Vertex,
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "no user surface selects it until the selection operations land"
-        )
-    )]
     Edge,
 }
 
 impl SelectionMode {
     pub fn is_component(self) -> bool {
         matches!(self, Self::Vertex | Self::Edge | Self::Face)
+    }
+    pub fn component_noun(self) -> Option<&'static str> {
+        match self {
+            Self::Vertex => Some("Vertex"),
+            Self::Edge => Some("Edge"),
+            Self::Face => Some("Face"),
+            Self::Object | Self::Hierarchy => None,
+        }
     }
 }
 /// Session-only viewport shading, like grid visibility; never saved or dirtying.
@@ -180,6 +176,26 @@ pub enum Operation {
     SetSelectionMode(SelectionMode),
     SelectFace {
         target: Option<FaceTarget>,
+    },
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "no user surface selects vertices until MCP and the viewport click land"
+        )
+    )]
+    SelectVertex {
+        target: Option<VertexTarget>,
+    },
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "no user surface selects edges until MCP and the viewport click land"
+        )
+    )]
+    SelectEdge {
+        target: Option<EdgeTarget>,
     },
     NewScene,
     RequestClose,

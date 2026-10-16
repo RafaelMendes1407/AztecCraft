@@ -12,7 +12,7 @@ use crate::editor_operations::{
 use azteccraft::native_scene::{LinearUnit, NativeTransform};
 use azteccraft::{
     history::{Command, EditOutcome, History, ManipulationProvenance},
-    native_scene::{AngularUnit, FaceTarget, NativeId},
+    native_scene::{AngularUnit, EdgeTarget, FaceTarget, NativeId, VertexTarget},
     scene::{NodeId, Primitive},
     view_scene::ViewScene,
     viewport::Camera,
@@ -63,6 +63,8 @@ pub struct Editor {
     selected_path: Vec<NativeId>,
     selection_mode: SelectionMode,
     remembered_face: Option<FaceTarget>,
+    remembered_vertex: Option<VertexTarget>,
+    remembered_edge: Option<EdgeTarget>,
     camera: Camera,
     grid_visible: bool,
     shading: ShadingMode,
@@ -103,6 +105,8 @@ impl Default for Editor {
             selected_path: Vec::new(),
             selection_mode: SelectionMode::default(),
             remembered_face: None,
+            remembered_vertex: None,
+            remembered_edge: None,
             camera: Camera::default(),
             grid_visible: true,
             shading: ShadingMode::default(),
@@ -134,16 +138,24 @@ impl Default for Editor {
 }
 
 impl Editor {
-    /// Names the component type in refusal text; Face when no component mode is active.
-    fn component_noun(&self) -> &'static str {
-        match self.selection_mode {
-            SelectionMode::Vertex => "Vertex",
-            SelectionMode::Edge => "Edge",
-            _ => "Face",
+    /// Hover text for a disabled Delete control: the component refusal in a component mode,
+    /// otherwise the read-only reason, otherwise the missing selection.
+    fn delete_disabled_hover(&self, read_only: Option<&str>, menu: bool) -> String {
+        match self.selection_mode.component_noun() {
+            Some(noun) if menu => format!(
+                "Object or Hierarchy selection required; {} deletion is unsupported",
+                noun.to_lowercase()
+            ),
+            Some(noun) => {
+                format!("{noun} deletion is unsupported; switch to Object or Hierarchy selection")
+            }
+            None => read_only.map_or_else(|| "Select an object to delete".into(), str::to_owned),
         }
     }
     fn clear_remembered_components(&mut self) {
         self.remembered_face = None;
+        self.remembered_vertex = None;
+        self.remembered_edge = None;
     }
 
     pub(super) fn sidebar_panel_visible(&self, panel: SidebarPanel) -> bool {

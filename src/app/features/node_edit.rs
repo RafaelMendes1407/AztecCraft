@@ -1,6 +1,19 @@
 use crate::app::*;
 
 impl Editor {
+    /// A remembered component is stale unless it still belongs to the selected instance and resolves.
+    fn stale_component(
+        &self,
+        transform: NodeId,
+        path: &[NativeId],
+        resolves: impl FnOnce() -> bool,
+    ) -> bool {
+        Some(transform) != self.selected
+            || path
+                .split_last()
+                .is_none_or(|(_, owner)| owner != self.selected_path)
+            || !resolves()
+    }
     pub(in crate::app) fn sync_fields(&mut self) {
         self.material_draft = None;
         self.channel_intents = [false; 9];
@@ -18,20 +31,34 @@ impl Editor {
             self.material_shape = None;
             return;
         };
-        let stale_component = self.remembered_face.as_ref().is_some_and(|target| {
-            Some(target.transform) != self.selected
-                || target
-                    .path
-                    .split_last()
-                    .is_none_or(|(_, path)| path != self.selected_path)
-                || self.history.scene().resolve_face_target(target).is_err()
+        let scene = self.history.scene();
+        let stale_face = self.remembered_face.as_ref().is_some_and(|target| {
+            self.stale_component(target.transform, &target.path, || {
+                scene.resolve_face_target(target).is_ok()
+            })
+        });
+        let stale_vertex = self.remembered_vertex.as_ref().is_some_and(|target| {
+            self.stale_component(target.transform, &target.path, || {
+                scene.resolve_vertex_target(target).is_ok()
+            })
+        });
+        let stale_edge = self.remembered_edge.as_ref().is_some_and(|target| {
+            self.stale_component(target.transform, &target.path, || {
+                scene.resolve_edge_target(target).is_ok()
+            })
         });
         self.name = node.name().into();
         let values = node.transform().values();
         self.channels = values.map(|value| value.to_string());
         let transform = node.transform_id();
-        if stale_component {
-            self.clear_remembered_components();
+        if stale_face {
+            self.remembered_face = None;
+        }
+        if stale_vertex {
+            self.remembered_vertex = None;
+        }
+        if stale_edge {
+            self.remembered_edge = None;
         }
         if !self
             .material_shape
@@ -189,10 +216,14 @@ impl Editor {
     }
     pub(in crate::app) fn channels(&mut self, ui: &mut egui::Ui, delete_intent: &mut bool) {
         ui.label(RichText::new("Channel Box").strong());
-        let read_only_reason = self.history.scene().authoring_read_only_reason();
+        let read_only_reason = self
+            .history
+            .scene()
+            .authoring_read_only_reason()
+            .map(|reason| reason.to_string());
         let authoring = read_only_reason.is_none();
-        if let Some(reason) = read_only_reason {
-            ui.weak(reason.to_string());
+        if let Some(reason) = &read_only_reason {
+            ui.weak(reason);
         }
         if !self.history.scene().curves().is_empty() {
             ui.weak("Curves: select in the Outliner and frame with F. Viewport curve picking and CV editing are unavailable.");
@@ -211,10 +242,7 @@ impl Editor {
                 authoring && !self.selection_mode.is_component(),
                 egui::Button::new("Delete selected"),
             )
-            .on_disabled_hover_text(format!(
-                "{} deletion is unsupported; switch to Object or Hierarchy selection",
-                self.component_noun()
-            ))
+            .on_disabled_hover_text(self.delete_disabled_hover(read_only_reason.as_deref(), false))
             .clicked()
         {
             *delete_intent = true;

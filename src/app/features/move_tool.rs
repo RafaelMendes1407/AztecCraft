@@ -107,6 +107,8 @@ impl Editor {
                     | Operation::Select { .. }
                     | Operation::SetSelectionMode(_)
                     | Operation::SelectFace { .. }
+                    | Operation::SelectVertex { .. }
+                    | Operation::SelectEdge { .. }
                     | Operation::NewScene
                     | Operation::OpenScene { .. }
                     | Operation::RequestClose

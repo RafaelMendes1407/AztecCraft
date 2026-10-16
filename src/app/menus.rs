@@ -127,10 +127,9 @@ impl Editor {
                         authoring && self.selected.is_some() && !self.selection_mode.is_component(),
                         egui::Button::new("Delete"),
                     )
-                    .on_disabled_hover_text(format!(
-                        "Object or Hierarchy selection required; {} deletion is unsupported",
-                        self.component_noun().to_lowercase()
-                    ))
+                    .on_disabled_hover_text(
+                        self.delete_disabled_hover(read_only_reason.as_deref(), true),
+                    )
                     .clicked()
                 {
                     *delete_intent = true;
