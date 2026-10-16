@@ -111,6 +111,7 @@ mod official_client {
     mod selection;
     mod session;
     mod snapshots;
+    mod sphere;
 
     async fn call_response(
         editor: &mut Editor,
