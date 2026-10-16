@@ -419,6 +419,97 @@ fn face_target_validates_full_native_identity_path_and_original_face_bounds() {
 }
 
 #[test]
+fn vertex_and_edge_targets_validate_identity_path_and_original_bounds() {
+    let (scene, root, child, shape) = grouped_shape();
+    let path = vec![
+        scene.node(root).unwrap().transform_id,
+        scene.node(child).unwrap().transform_id,
+        shape,
+    ];
+    let mesh = scene.shape(shape).unwrap().mesh();
+    let (points, edges) = (mesh.point_count(), mesh.edges().len());
+    let vertex = |path: Vec<NativeId>, transform, shape, vertex_index| VertexTarget {
+        transform,
+        shape,
+        path,
+        vertex_index,
+    };
+    let edge = |path: Vec<NativeId>, transform, shape, edge_index| EdgeTarget {
+        transform,
+        shape,
+        path,
+        edge_index,
+    };
+    for index in [0, points - 1] {
+        let target = vertex(path.clone(), child, shape, index);
+        assert_eq!(scene.resolve_vertex_target(&target).unwrap().id(), shape);
+    }
+    for index in [0, edges - 1] {
+        let target = edge(path.clone(), child, shape, index);
+        assert_eq!(scene.resolve_edge_target(&target).unwrap().id(), shape);
+    }
+    for index in [points, usize::MAX] {
+        assert_eq!(
+            scene.resolve_vertex_target(&vertex(path.clone(), child, shape, index)),
+            Err(SceneError::MissingVertex(index).into())
+        );
+    }
+    for index in [edges, usize::MAX] {
+        assert_eq!(
+            scene.resolve_edge_target(&edge(path.clone(), child, shape, index)),
+            Err(SceneError::MissingEdge(index).into())
+        );
+    }
+    let other = NativeId::from_decimal("999999").unwrap();
+    let bad_paths = [
+        vec![],
+        vec![shape],
+        path[1..].to_vec(),
+        vec![path[0], shape],
+        vec![path[0], path[1], path[1], shape],
+        vec![path[0], path[1], shape, shape],
+    ];
+    for bad in bad_paths {
+        assert_eq!(
+            scene.resolve_vertex_target(&vertex(bad.clone(), child, shape, 0)),
+            Err(NativeError::InvalidInstancePath)
+        );
+        assert_eq!(
+            scene.resolve_edge_target(&edge(bad, child, shape, 0)),
+            Err(NativeError::InvalidInstancePath)
+        );
+    }
+    assert_eq!(
+        scene.resolve_vertex_target(&vertex(path.clone(), root, shape, 0)),
+        Err(NativeError::InvalidInstancePath)
+    );
+    assert_eq!(
+        scene.resolve_edge_target(&edge(path.clone(), root, shape, 0)),
+        Err(NativeError::InvalidInstancePath)
+    );
+    assert_eq!(
+        scene.resolve_vertex_target(&vertex(path.clone(), child, other, 0)),
+        Err(NativeError::MissingShape(other))
+    );
+    assert_eq!(
+        scene.resolve_edge_target(&edge(path.clone(), child, other, 0)),
+        Err(NativeError::MissingShape(other))
+    );
+    let (mut scene, gone) = cube();
+    let shape = scene.shapes[0].id;
+    let path = vec![scene.node(gone).unwrap().transform_id, shape];
+    scene.remove(gone).unwrap();
+    assert_eq!(
+        scene.resolve_vertex_target(&vertex(path.clone(), gone, shape, 0)),
+        Err(SceneError::MissingNode(gone).into())
+    );
+    assert_eq!(
+        scene.resolve_edge_target(&edge(path, gone, shape, 0)),
+        Err(SceneError::MissingNode(gone).into())
+    );
+}
+
+#[test]
 fn invalid_dag_cycles_duplicates_roles_and_dangling_ids_are_rejected() {
     let (original, root, child, shape) = grouped_shape();
     let root_native = original.node(root).unwrap().transform_id;

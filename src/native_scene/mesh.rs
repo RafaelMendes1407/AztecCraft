@@ -256,6 +256,11 @@ impl NativeMesh {
             .collect();
         self.faces[0].holes.push(loop_edges);
     }
+    /// Appends an edge no face uses, without validating its endpoints.
+    #[cfg(test)]
+    pub(super) fn add_loose_edge_fixture(&mut self, endpoints: [usize; 2]) {
+        self.append_edge(endpoints);
+    }
     #[cfg(test)]
     pub(super) fn triangle_double_fixture() -> Self {
         Self {

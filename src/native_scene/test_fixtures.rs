@@ -88,6 +88,11 @@ pub(crate) fn polygon_shape(points: Vec<[f64; 3]>, loops: &[Vec<usize>]) -> (Nat
     (scene, id)
 }
 
+/// Skips `validate` so a test can feed the view builder an edge it must refuse.
+pub(crate) fn add_loose_edge_unvalidated(scene: &mut NativeScene, endpoints: [usize; 2]) {
+    scene.shapes[0].mesh.add_loose_edge_fixture(endpoints);
+}
+
 pub(crate) fn add_hole_to_first_face(scene: &mut NativeScene, hole: &[usize]) {
     scene.shapes[0].mesh.add_hole_fixture(hole);
     scene.validate().unwrap();

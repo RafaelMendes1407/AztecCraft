@@ -288,6 +288,8 @@ pub enum SceneError {
     InvalidIds,
     InvalidMesh,
     MissingFace(usize),
+    MissingVertex(usize),
+    MissingEdge(usize),
     UnsupportedAllFacesExtrusion,
     InvalidExtrusionDistance,
     UndefinedFaceNormal,
@@ -312,6 +314,8 @@ impl fmt::Display for SceneError {
                 "mesh coordinates must be finite and each quad must have four unique valid indices",
             ),
             Self::MissingFace(index) => write!(f, "mesh face {index} does not exist"),
+            Self::MissingVertex(index) => write!(f, "mesh vertex {index} does not exist"),
+            Self::MissingEdge(index) => write!(f, "mesh edge {index} does not exist"),
             Self::UnsupportedAllFacesExtrusion => {
                 f.write_str("extruding all faces of a mesh is not supported")
             }

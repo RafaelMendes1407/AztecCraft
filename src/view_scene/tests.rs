@@ -2136,3 +2136,70 @@ fn recolouring_a_material_updates_its_instances_and_other_shapes_keep_grey() {
         assert_eq!(instance.base_rgb(), expected);
     }
 }
+
+fn native_edges(native: &NativeScene) -> Vec<[usize; 2]> {
+    native.shapes()[0]
+        .mesh()
+        .edges()
+        .iter()
+        .map(|edge| edge.endpoints())
+        .collect()
+}
+
+#[test]
+fn instance_edges_equal_native_edge_order_for_primitives_and_mixed_polygons() {
+    for primitive in [Primitive::Cube, Primitive::Sphere] {
+        let mut native = NativeScene::default();
+        native.create(primitive, "shape").unwrap();
+        let view = ViewScene::from_native(&native, VIEW_BUDGET).unwrap();
+        let edges = native_edges(&native);
+        assert!(!edges.is_empty());
+        assert_eq!(view.instances()[0].edges(), edges);
+    }
+    let points = vec![
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [2.0, 0.5, 0.0],
+        [1.5, 1.6, 0.0],
+        [0.5, 2.2, 0.0],
+        [-0.5, 1.6, 0.0],
+    ];
+    let loops = [vec![0, 1, 2, 3], vec![1, 4, 2], vec![3, 2, 5, 6, 7]];
+    let (native, _) = test_fixtures::polygon_shape(points, &loops);
+    let view = ViewScene::from_native(&native, VIEW_BUDGET).unwrap();
+    assert_eq!(view.instances()[0].edges().len(), 12);
+    assert_eq!(view.instances()[0].edges(), native_edges(&native));
+}
+
+#[test]
+fn loose_edge_is_carried_and_a_bad_endpoint_is_invalid_geometry() {
+    let points = ngon_points(5, 1.0);
+    let (mut native, _) = test_fixtures::polygon_shape(points.clone(), &[(0..5).collect()]);
+    test_fixtures::add_loose_edge_unvalidated(&mut native, [0, 2]);
+    let view = ViewScene::from_native(&native, VIEW_BUDGET).unwrap();
+    assert_eq!(view.instances()[0].edges().last(), Some(&[0, 2]));
+    for endpoints in [[0, 5], [5, 0], [usize::MAX, 1]] {
+        let (mut native, _) = test_fixtures::polygon_shape(points.clone(), &[(0..5).collect()]);
+        test_fixtures::add_loose_edge_unvalidated(&mut native, endpoints);
+        assert!(matches!(
+            ViewScene::from_native(&native, VIEW_BUDGET),
+            Err(ViewError::InvalidGeometry)
+        ));
+    }
+}
+
+#[test]
+fn view_budget_charges_every_source_edge_per_instance() {
+    let required = |loose: usize| {
+        let (mut native, _) =
+            test_fixtures::polygon_shape(ngon_points(5, 1.0), &[(0..5).collect()]);
+        for _ in 0..loose {
+            test_fixtures::add_loose_edge_unvalidated(&mut native, [0, 2]);
+        }
+        let graph = Graph::prepare(&native, VIEW_BUDGET).unwrap();
+        graph.requirements(VIEW_BUDGET).unwrap().bytes
+    };
+    assert_eq!(required(100) - required(0), 100 * size_of::<[usize; 2]>());
+}
