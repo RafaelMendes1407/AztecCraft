@@ -157,6 +157,9 @@
         }
       }
     ],
+    "sidebar_panels": {
+      "channel_box": true
+    },
     "source_appearance": {
       "checked_source_bindings": 0,
       "issues": {

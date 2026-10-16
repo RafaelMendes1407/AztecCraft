@@ -1,6 +1,7 @@
 use super::*;
 use crate::app::tests::frame_with;
-use crate::editor_operations::SelectionMode;
+use crate::app::{channel_edit_id, text_edit_focused};
+use crate::editor_operations::{SelectionMode, SidebarPanel};
 use azteccraft::scene::NodeId;
 use eframe::egui::{Event, Key, Modifiers, PointerButton, Pos2, Rect, Vec2, accesskit};
 
@@ -11,6 +12,7 @@ const MODES: [&str; 3] = [
     "Component selection",
 ];
 const HIERARCHY: &str = "Hierarchy selection";
+const CHANNEL_BOX: &str = "Channel Box / Layer Editor";
 const TOGGLES: [&str; 5] = [
     "Modeling Toolkit",
     "HumanIK",
@@ -190,10 +192,9 @@ fn clicking_disabled_strip_buttons_changes_nothing() {
     frame_with(&mut editor, &context, SIZE, 1.0, vec![]);
     let output = frame_with(&mut editor, &context, SIZE, 1.0, vec![]);
     let before = snapshot(&editor);
-    for control in strip(&output)
-        .iter()
-        .filter(|c| c.label == HIERARCHY || TOGGLES.contains(&c.label.as_str()))
-    {
+    for control in strip(&output).iter().filter(|c| {
+        c.label == HIERARCHY || (TOGGLES.contains(&c.label.as_str()) && c.label != CHANNEL_BOX)
+    }) {
         assert!(control.disabled, "{}", control.label);
         click(&mut editor, &context, control.rect.center());
         assert_eq!(snapshot(&editor), before, "{}", control.label);
@@ -245,7 +246,7 @@ fn every_strip_control_has_its_label_and_disabled_state() {
         assert_eq!(control.role, accesskit::Role::Button, "{name}");
         assert_eq!(
             control.disabled,
-            *name == HIERARCHY || TOGGLES.contains(name),
+            *name == HIERARCHY || (TOGGLES.contains(name) && *name != CHANNEL_BOX),
             "{name}"
         );
     }
@@ -269,7 +270,10 @@ fn tab_to_combo(editor: &mut Editor, context: &egui::Context) {
         let focused = found.iter().find(|c| Some(c.id) == focus);
         match focused {
             Some(c) if c.role == accesskit::Role::ComboBox => return,
-            Some(c) if c.label == HIERARCHY || TOGGLES.contains(&c.label.as_str()) => {
+            Some(c)
+                if c.label == HIERARCHY
+                    || (TOGGLES.contains(&c.label.as_str()) && c.label != CHANNEL_BOX) =>
+            {
                 panic!("Tab focused disabled strip button {}", c.label)
             }
             Some(_) => {}
@@ -295,7 +299,8 @@ fn keyboard_activates_the_enabled_combo_and_skips_disabled_buttons() {
         let focused = controls(&output).into_iter().find(|c| Some(c.id) == focus);
         if let Some(c) = focused {
             assert!(
-                c.label != HIERARCHY && !TOGGLES.contains(&c.label.as_str()),
+                c.label != HIERARCHY
+                    && (!TOGGLES.contains(&c.label.as_str()) || c.label == CHANNEL_BOX),
                 "Tab focused disabled {}",
                 c.label
             );
@@ -603,4 +608,241 @@ fn strip_click_with_a_popup_open_is_dropped_like_the_menu_path() {
     assert_eq!(editor.selection_mode, SelectionMode::Object);
     assert!(!editor.error);
     assert_eq!(snapshot(&editor).3, before.3);
+}
+
+fn channel_panel_drawn(output: &egui::FullOutput) -> bool {
+    output.shapes.iter().any(|shape| {
+        matches!(&shape.shape, egui::Shape::Text(text) if text.galley.job.text == "Channel Box")
+    })
+}
+
+#[test]
+fn channel_box_toggle_hides_and_shows_the_panel_after_the_click_frame() {
+    let (mut editor, context) = setup();
+    let output = strip_output(&mut editor, &context);
+    assert!(channel_panel_drawn(&output));
+    let at = button_center(&output, CHANNEL_BOX);
+    let token = editor.scene_token;
+    for visible in [false, true] {
+        click(&mut editor, &context, at);
+        assert_eq!(
+            editor.sidebar_panel_visible(SidebarPanel::ChannelBox),
+            visible
+        );
+        let output = frame_with(&mut editor, &context, SIZE, 1.0, vec![]);
+        assert_eq!(channel_panel_drawn(&output), visible);
+        let control = strip(&output)
+            .into_iter()
+            .find(|c| c.label == CHANNEL_BOX)
+            .unwrap();
+        assert_eq!(control.selected, Some(visible));
+        assert!(!control.disabled);
+        assert_eq!(editor.scene_token, token);
+        assert!(editor.sidebar_panel_request.is_none());
+    }
+}
+
+#[test]
+fn channel_box_toggle_is_disabled_for_modal_closing_and_move() {
+    for blocked in 0..3 {
+        let (mut editor, context) = setup();
+        match blocked {
+            0 => {
+                editor.new_document().unwrap();
+            }
+            1 => {
+                editor.close_document().unwrap();
+            }
+            _ => {
+                let target = editor.selected_move_target().unwrap();
+                editor
+                    .apply_operation(crate::editor_operations::Operation::BeginMove {
+                        target,
+                        axis: azteccraft::native_scene::WorldAxis::X,
+                    })
+                    .unwrap();
+            }
+        }
+        let output = strip_output(&mut editor, &context);
+        let toggle = &SIDEBAR_TOGGLES[4];
+        let expected = ["a dialog is open", "a dialog is open", "a Move is active"];
+        assert_eq!(
+            editor.sidebar_toggle_hover(toggle),
+            format!(
+                "Channel Box / Layer Editor: unavailable while {}",
+                expected[blocked]
+            )
+        );
+        let control = strip(&output)
+            .into_iter()
+            .find(|c| c.label == CHANNEL_BOX)
+            .unwrap();
+        assert!(control.disabled, "blocked {blocked}");
+        click(&mut editor, &context, control.rect.center());
+        assert!(
+            editor.sidebar_panel_visible(SidebarPanel::ChannelBox),
+            "blocked {blocked}"
+        );
+    }
+}
+
+fn press_release(at: Pos2) -> [Event; 2] {
+    [true, false].map(|pressed| Event::PointerButton {
+        pos: at,
+        button: PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    })
+}
+
+fn translate_x(editor: &Editor) -> f64 {
+    editor.history.scene().nodes()[0].transform().translation[0]
+}
+
+#[test]
+fn same_frame_click_then_text_commits_the_draft_before_the_panel_hides() {
+    let (mut editor, context) = setup();
+    let output = strip_output(&mut editor, &context);
+    let at = button_center(&output, CHANNEL_BOX);
+    // Pre-focus in earlier frames: the first click on a field can lose text (known-issues).
+    context.memory_mut(|memory| memory.request_focus(channel_edit_id(0)));
+    frame_with(&mut editor, &context, SIZE, 1.0, vec![]);
+    frame_with(
+        &mut editor,
+        &context,
+        SIZE,
+        1.0,
+        vec![Event::PointerMoved(at)],
+    );
+    assert!(text_edit_focused(&context));
+    let command = Modifiers::COMMAND;
+    let mut events = vec![
+        Event::ModifiersChanged(command),
+        Event::Key {
+            key: Key::A,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: command,
+        },
+        Event::ModifiersChanged(Modifiers::NONE),
+        Event::Text("7".into()),
+    ];
+    events.extend(press_release(at));
+    frame_with(&mut editor, &context, SIZE, 1.0, events);
+    assert_eq!(translate_x(&editor), 7.0);
+    assert!(!editor.has_draft());
+    assert_eq!(editor.channels[0], "7");
+    assert!(!editor.sidebar_panel_visible(SidebarPanel::ChannelBox));
+    assert!(editor.history.can_undo());
+    let output = frame_with(&mut editor, &context, SIZE, 1.0, vec![]);
+    assert!(!channel_panel_drawn(&output));
+    assert_eq!(translate_x(&editor), 7.0);
+}
+
+#[test]
+fn new_scene_in_the_same_frame_drops_the_toggle_request() {
+    // Fallback path, not the Space-plus-click frame. Spiked: Space alone activates the toggle
+    // with the File popup open, but a pointer press on "New scene" in that frame moves focus
+    // to that item first, so Space activates the item and no toggle request exists to drop.
+    let mut editor = Editor {
+        renderer: Some(crate::viewport_renderer::tests::renderer_handle()),
+        ..Editor::default()
+    };
+    let context = egui::Context::default();
+    strip_output(&mut editor, &context);
+    let old = editor.scene_token;
+    editor.sidebar_panel_request = Some((SidebarPanel::ChannelBox, false));
+    // The menu bar draws before viewport(), so New scene has run when the request is consumed.
+    editor.request_new();
+    assert_ne!(editor.scene_token, old, "a clean New replaces the document");
+    let mut output = context.run_ui(egui::RawInput::default(), |ui| {
+        editor.viewport(ui, old, None, None, false, true)
+    });
+    output.textures_delta.clear();
+    assert!(editor.sidebar_panel_visible(SidebarPanel::ChannelBox));
+    assert!(editor.sidebar_panel_request.is_none());
+}
+
+#[test]
+fn token_change_between_request_and_viewport_dispatches_nothing() {
+    let (mut editor, context) = setup();
+    strip_output(&mut editor, &context);
+    let old = editor.scene_token;
+    editor.sidebar_panel_request = Some((SidebarPanel::ChannelBox, false));
+    // The scene changed after the frame began, as a menu item would.
+    editor.scene_token = uuid::Uuid::new_v4();
+    let current = editor.scene_token;
+    for _ in 0..2 {
+        let mut output = context.run_ui(egui::RawInput::default(), |ui| {
+            editor.viewport(ui, old, None, None, false, true)
+        });
+        output.textures_delta.clear();
+        assert!(editor.sidebar_panel_visible(SidebarPanel::ChannelBox));
+        assert!(editor.sidebar_panel_request.is_none(), "request consumed");
+        assert_eq!(editor.scene_token, current);
+    }
+}
+
+#[test]
+fn a_stale_request_does_not_survive_into_a_later_render() {
+    let (mut editor, context) = setup();
+    strip_output(&mut editor, &context);
+    editor.sidebar_panel_request = Some((SidebarPanel::ChannelBox, false));
+    let token = editor.scene_token;
+    let output = frame_with(&mut editor, &context, SIZE, 1.0, vec![]);
+    assert!(editor.sidebar_panel_visible(SidebarPanel::ChannelBox));
+    assert!(channel_panel_drawn(&output));
+    assert_eq!(editor.scene_token, token);
+    assert!(editor.sidebar_panel_request.is_none());
+}
+
+#[test]
+fn showing_again_restores_width_and_values_hiding_blurs_and_selected_follows() {
+    let (mut editor, context) = setup();
+    let output = strip_output(&mut editor, &context);
+    let at = button_center(&output, CHANNEL_BOX);
+    editor.channels[1] = "3".into();
+    let width = |output: &egui::FullOutput| {
+        controls(output)
+            .into_iter()
+            .find(|c| c.label == "Object name")
+            .map(|c| c.rect.width())
+    };
+    let before = width(&frame_with(&mut editor, &context, SIZE, 1.0, vec![]));
+    context.memory_mut(|memory| memory.request_focus(channel_edit_id(2)));
+    frame_with(&mut editor, &context, SIZE, 1.0, vec![]);
+    assert!(text_edit_focused(&context));
+    click(&mut editor, &context, at);
+    let output = frame_with(&mut editor, &context, SIZE, 1.0, vec![]);
+    assert!(!channel_panel_drawn(&output));
+    assert!(!text_edit_focused(&context), "hiding blurs the field");
+    let control = strip(&output)
+        .into_iter()
+        .find(|c| c.label == CHANNEL_BOX)
+        .unwrap();
+    assert_eq!(control.selected, Some(false));
+    click(&mut editor, &context, at);
+    frame_with(&mut editor, &context, SIZE, 1.0, vec![]);
+    let output = frame_with(&mut editor, &context, SIZE, 1.0, vec![]);
+    assert!(channel_panel_drawn(&output));
+    assert_eq!(editor.channels[1], "3");
+    assert_eq!(width(&output), before);
+    let control = strip(&output)
+        .into_iter()
+        .find(|c| c.label == CHANNEL_BOX)
+        .unwrap();
+    assert_eq!(control.selected, Some(true));
+}
+
+#[test]
+fn closing_without_a_dialog_shows_the_closing_hover_on_the_toggle() {
+    let mut editor = Editor::default();
+    editor.close_document().unwrap();
+    assert!(editor.files.is_closing() && !editor.files.is_modal());
+    let toggle = &SIDEBAR_TOGGLES[4];
+    assert_eq!(
+        editor.sidebar_toggle_hover(toggle),
+        "Channel Box / Layer Editor: unavailable while the window is closing"
+    );
 }

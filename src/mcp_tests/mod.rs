@@ -112,6 +112,7 @@ mod official_client {
     mod session;
     mod snapshots;
     mod sphere;
+    mod status_line;
 
     async fn call_response(
         editor: &mut Editor,

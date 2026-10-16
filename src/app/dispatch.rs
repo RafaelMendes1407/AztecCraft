@@ -13,7 +13,8 @@ impl Editor {
             | Operation::SetSelectionMode(_)
             | Operation::FrameSelected
             | Operation::SetActiveTool(_)
-            | Operation::SetGridVisible { .. } => None,
+            | Operation::SetGridVisible { .. }
+            | Operation::SetSidebarPanelVisible { .. } => None,
             Operation::Orbit { .. } | Operation::Pan { .. } | Operation::Dolly { .. } => None,
             Operation::Undo => Some("Undo"),
             Operation::Redo => Some("Redo"),
@@ -135,7 +136,11 @@ impl Editor {
         if self.files.is_closing() {
             return Err(OperationError::BusyEditing);
         }
-        if matches!(operation, Operation::SetGridVisible { .. }) && self.files.is_modal() {
+        if matches!(
+            operation,
+            Operation::SetGridVisible { .. } | Operation::SetSidebarPanelVisible { .. }
+        ) && self.files.is_modal()
+        {
             return Err(OperationError::BusyEditing);
         }
         match &operation {
@@ -244,6 +249,19 @@ impl Editor {
                 let changed = self.grid_visible != visible;
                 self.grid_visible = visible;
                 return Ok(if changed {
+                    OperationReply::Changed
+                } else {
+                    OperationReply::Unchanged
+                });
+            }
+            Operation::SetSidebarPanelVisible { panel, visible } => {
+                let before = self.sidebar_dock;
+                if visible {
+                    self.sidebar_dock = Some(panel);
+                } else if before == Some(panel) {
+                    self.sidebar_dock = None;
+                }
+                return Ok(if before != self.sidebar_dock {
                     OperationReply::Changed
                 } else {
                     OperationReply::Unchanged

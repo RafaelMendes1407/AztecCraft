@@ -201,7 +201,7 @@ fn remote_numeric_move_survives_successive_actual_hidden_editor_callbacks() {
 #[test]
 fn camera_sparse_extrusion_and_grid_requests_keep_human_and_closed_bridge_guards() {
     for condition in 0..8 {
-        for operation_index in 0..6 {
+        for operation_index in 0..7 {
             let context = egui::Context::default();
             let (bridge, ingress) = mcp::test_bridge(context.clone());
             let mut editor = Editor::default();
@@ -232,7 +232,11 @@ fn camera_sparse_extrusion_and_grid_requests_keep_human_and_closed_bridge_guards
                     },
                     distance: 1.0,
                 },
-                _ => Operation::SetGridVisible { visible: false },
+                5 => Operation::SetGridVisible { visible: false },
+                _ => Operation::SetSidebarPanelVisible {
+                    panel: SidebarPanel::ChannelBox,
+                    visible: false,
+                },
             };
             match condition {
                 0 => editor.name = "human_draft".into(),
@@ -289,6 +293,7 @@ fn camera_sparse_extrusion_and_grid_requests_keep_human_and_closed_bridge_guards
             assert_eq!(editor.history.can_undo(), undo);
             assert_eq!(editor.history.can_redo(), redo);
             assert!(editor.grid_visible);
+            assert!(editor.sidebar_panel_visible(SidebarPanel::ChannelBox));
         }
     }
 }

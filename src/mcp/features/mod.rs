@@ -6,4 +6,5 @@ pub(super) mod material;
 pub(super) mod move_tool;
 pub(super) mod node_edit;
 pub(super) mod selection;
+pub(super) mod status_line;
 pub(super) mod view;

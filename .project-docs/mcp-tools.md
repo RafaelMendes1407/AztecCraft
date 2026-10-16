@@ -2,7 +2,7 @@
 
 Generated from the tool registry in `src/mcp/registry.rs`; do not edit by hand. Regenerate with `UPDATE_DOCS=1 cargo test --features mcp registry::tests::tool_doc`. Argument schemas are served by `tools/list`; see [mcp.md](mcp.md) for behaviour and limits.
 
-28 tools.
+29 tools.
 
 | Tool | Access | Idempotent | Description |
 |---|---|---|---|
@@ -28,6 +28,7 @@ Generated from the tool registry in `src/mcp/registry.rs`; do not edit by hand. 
 | `orbit_camera` | mutating | no | Orbit the live camera by [yaw, pitch] radians; pitch clamps near the poles |
 | `pan_camera` | mutating | no | Translate the live camera target by [right, up] camera-plane world units |
 | `dolly_camera` | mutating | no | Multiply live camera distance by a positive finite factor; below one moves closer |
+| `set_sidebar_panel_visibility` | mutating | yes | Set one sidebar panel's visibility explicitly. Session-only and idempotent; does not edit the scene. Only channel_box is implemented |
 | `open_scene` | mutating | no | Open a Maya binary .mb, supported read-only static cubic Maya ASCII .ma, or legacy .aztec scene from a local UTF-8 path (1 to 4096 bytes, no NUL). ASCII scripts stay inert; unsupported commands/effects refuse the whole candidate. Dirty documents require confirmation. ASCII native writing is unavailable |
 | `save_scene` | mutating | no | Save the active supported Maya binary document, or reconcile an earlier uncertain installation without another write |
 | `save_scene_as` | mutating | no | Save a supported Maya binary scene to a fresh .mb path without overwriting; an uncertain prior save is reconciled instead |

@@ -1551,6 +1551,253 @@ fn sparse_nonfinite_intents_preserve_scene_fields_and_redo() {
     }
 }
 
+fn sidebar_op(visible: bool) -> Operation {
+    Operation::SetSidebarPanelVisible {
+        panel: SidebarPanel::ChannelBox,
+        visible,
+    }
+}
+
+#[test]
+fn sidebar_setter_is_idempotent_and_preserves_scene_history_and_editor_baseline() {
+    let mut editor = Editor::default();
+    assert!(editor.sidebar_panel_visible(SidebarPanel::ChannelBox));
+    editor.create(Primitive::Cube);
+    let id = editor.selected.unwrap();
+    remote(
+        &mut editor,
+        Operation::Rename {
+            id,
+            name: "renamed".into(),
+        },
+    )
+    .unwrap();
+    remote(&mut editor, Operation::Undo).unwrap();
+    assert!(editor.history.can_redo());
+    let scene = editor.history.scene().clone();
+    let before = serde_json::to_value(editor.inspect(false).unwrap()).unwrap();
+    let fields = (editor.name.clone(), editor.channels.clone());
+    let status = (editor.status.clone(), editor.error);
+    let token = editor.scene_token;
+    for (visible, changed) in [(true, false), (false, true), (false, false), (true, true)] {
+        let reply = remote(&mut editor, sidebar_op(visible)).unwrap();
+        assert_eq!(matches!(reply, OperationReply::Changed), changed);
+        assert_eq!(matches!(reply, OperationReply::Unchanged), !changed);
+        assert_eq!(
+            editor.sidebar_dock,
+            visible.then_some(SidebarPanel::ChannelBox)
+        );
+        let mut actual = serde_json::to_value(editor.inspect(false).unwrap()).unwrap();
+        assert_eq!(actual["sidebar_panels"]["channel_box"], visible);
+        actual["sidebar_panels"]["channel_box"] = serde_json::Value::Bool(true);
+        assert_eq!(actual, before);
+        assert_eq!(editor.history.scene(), &scene);
+        assert_eq!((editor.name.clone(), editor.channels.clone()), fields);
+        assert_eq!((editor.status.clone(), editor.error), status);
+        assert_eq!(editor.scene_token, token);
+    }
+}
+
+#[test]
+fn sidebar_visible_true_activates_the_panel_and_false_only_hides_the_active_one() {
+    // ChannelBox is the only panel, so hiding a non-active panel is reachable only with the
+    // dock already hidden, and Unchanged arises only from a repeat.
+    let mut editor = Editor {
+        sidebar_dock: None,
+        ..Editor::default()
+    };
+    assert!(!editor.sidebar_panel_visible(SidebarPanel::ChannelBox));
+    assert!(matches!(
+        editor.apply_operation(sidebar_op(false)),
+        Ok(OperationReply::Unchanged)
+    ));
+    assert_eq!(editor.sidebar_dock, None);
+    assert!(matches!(
+        editor.apply_operation(sidebar_op(true)),
+        Ok(OperationReply::Changed)
+    ));
+    assert_eq!(editor.sidebar_dock, Some(SidebarPanel::ChannelBox));
+    assert!(matches!(
+        editor.apply_operation(sidebar_op(false)),
+        Ok(OperationReply::Changed)
+    ));
+    assert_eq!(editor.sidebar_dock, None);
+}
+
+#[test]
+fn sidebar_native_draft_policy_and_remote_draft_refusal_share_the_typed_setter() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let scene = editor.history.scene().clone();
+    editor.channels[0] = "invalid".into();
+    assert!(matches!(
+        editor.apply_operation(sidebar_op(false)),
+        Err(OperationError::InvalidInput(_))
+    ));
+    editor.native_operation(sidebar_op(false));
+    assert!(editor.error);
+    assert!(editor.sidebar_panel_visible(SidebarPanel::ChannelBox));
+    assert_eq!(editor.history.scene(), &scene);
+    assert_eq!(editor.channels[0], "invalid");
+    for draft in ["2", "invalid"] {
+        editor.channels[0] = draft.into();
+        assert!(matches!(
+            remote(&mut editor, sidebar_op(false)),
+            Err(OperationError::BusyEditing)
+        ));
+        assert_eq!(editor.history.scene(), &scene);
+        assert_eq!(editor.channels[0], draft);
+        assert!(editor.sidebar_panel_visible(SidebarPanel::ChannelBox));
+    }
+    editor.channels[0] = "2".into();
+    editor.native_operation(sidebar_op(false));
+    assert!(!editor.sidebar_panel_visible(SidebarPanel::ChannelBox));
+    assert!(!editor.has_draft());
+    assert_eq!(
+        editor.history.scene().nodes()[0].transform().translation[0],
+        2.0
+    );
+    editor.history_step(false);
+    assert_eq!(editor.history.scene(), &scene);
+    assert!(!editor.sidebar_panel_visible(SidebarPanel::ChannelBox));
+}
+
+#[test]
+fn sidebar_native_toggle_reports_no_scene_edit_status() {
+    let mut editor = Editor {
+        status: "sentinel".into(),
+        ..Editor::default()
+    };
+    editor.native_operation(sidebar_op(false));
+    assert!(!editor.sidebar_panel_visible(SidebarPanel::ChannelBox));
+    assert_eq!(editor.status, "sentinel");
+    editor.native_operation(sidebar_op(false));
+    assert_eq!(editor.status, "sentinel");
+}
+
+#[test]
+fn sidebar_remote_refuses_stale_token_text_focus_modal_and_close_with_baseline_intact() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let before = serde_json::to_value(editor.inspect(false).unwrap()).unwrap();
+    let stale = editor.remote_operation(
+        RemoteRequest {
+            expected_scene_token: Some(Uuid::new_v4()),
+            operation: sidebar_op(false),
+        },
+        &egui::Context::default(),
+    );
+    assert!(matches!(stale, Err(OperationError::StaleScene)));
+    assert_eq!(
+        serde_json::to_value(editor.inspect(false).unwrap()).unwrap(),
+        before
+    );
+    let context = egui::Context::default();
+    context.memory_mut(|memory| memory.request_focus(egui::Id::new("node_name")));
+    frame(&mut editor, &context, vec![]);
+    assert!(text_edit_focused(&context));
+    let focused = editor.remote_operation(
+        RemoteRequest {
+            expected_scene_token: Some(editor.scene_token),
+            operation: sidebar_op(false),
+        },
+        &context,
+    );
+    assert!(matches!(focused, Err(OperationError::BusyEditing)));
+    assert!(editor.sidebar_panel_visible(SidebarPanel::ChannelBox));
+    editor.new_document().unwrap();
+    assert!(editor.files.is_modal());
+    let modal = serde_json::to_value(editor.inspect(false).unwrap()).unwrap();
+    assert!(matches!(
+        remote(&mut editor, sidebar_op(false)),
+        Err(OperationError::BusyEditing)
+    ));
+    assert_eq!(
+        serde_json::to_value(editor.inspect(false).unwrap()).unwrap(),
+        modal
+    );
+    let mut closing = Editor::default();
+    closing.close_document().unwrap();
+    assert!(matches!(
+        remote(&mut closing, sidebar_op(false)),
+        Err(OperationError::BusyEditing)
+    ));
+    assert!(closing.sidebar_panel_visible(SidebarPanel::ChannelBox));
+}
+
+#[test]
+fn sidebar_native_modal_and_close_refuse_before_committing_drafts() {
+    for closing in [false, true] {
+        let mut editor = Editor::default();
+        if closing {
+            editor.close_document().unwrap();
+        } else {
+            editor.create(Primitive::Cube);
+            editor.new_document().unwrap();
+        }
+        editor.name = "pending draft".into();
+        let before = serde_json::to_value(editor.inspect(false).unwrap()).unwrap();
+        let scene = editor.history.scene().clone();
+        assert!(matches!(
+            editor.apply_operation(sidebar_op(false)),
+            Err(OperationError::BusyEditing)
+        ));
+        assert_eq!(
+            serde_json::to_value(editor.inspect(false).unwrap()).unwrap(),
+            before
+        );
+        assert_eq!(editor.history.scene(), &scene);
+        assert_eq!(editor.name, "pending draft");
+    }
+}
+
+#[test]
+fn sidebar_session_setting_survives_successful_and_canceled_new_and_open() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("empty.aztec");
+    azteccraft::document::save_new(&path, &azteccraft::scene::Scene::default()).unwrap();
+    let mut editor = Editor::default();
+    remote(&mut editor, sidebar_op(false)).unwrap();
+    for open in [false, true] {
+        let operation = if open {
+            Operation::OpenScene { path: path.clone() }
+        } else {
+            Operation::NewScene
+        };
+        assert!(matches!(
+            remote(&mut editor, operation).unwrap(),
+            OperationReply::DocumentApplied { .. }
+        ));
+        assert!(!editor.sidebar_panel_visible(SidebarPanel::ChannelBox));
+        editor.create(Primitive::Cube);
+        let scene = editor.history.scene().clone();
+        let token = editor.scene_token;
+        let operation = if open {
+            Operation::OpenScene { path: path.clone() }
+        } else {
+            Operation::NewScene
+        };
+        let OperationReply::PendingConfirmation {
+            pending_action_id, ..
+        } = remote(&mut editor, operation).unwrap()
+        else {
+            panic!("expected unsaved confirmation");
+        };
+        remote(
+            &mut editor,
+            Operation::ResolveFileAction {
+                pending_id: Uuid::parse_str(&pending_action_id).unwrap(),
+                decision: crate::editor_operations::FileDecision::Cancel,
+            },
+        )
+        .unwrap();
+        assert!(!editor.sidebar_panel_visible(SidebarPanel::ChannelBox));
+        assert_eq!(editor.scene_token, token);
+        assert_eq!(editor.history.scene(), &scene);
+        editor.history_step(false);
+    }
+}
+
 #[test]
 fn remote_operations_share_native_scene_selection_history_and_camera() {
     let mut editor = Editor::default();

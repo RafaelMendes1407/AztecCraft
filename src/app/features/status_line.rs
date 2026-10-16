@@ -1,5 +1,5 @@
 use crate::app::{Editor, SelectionModeIntent};
-use crate::editor_operations::SelectionMode;
+use crate::editor_operations::{SelectionMode, SidebarPanel};
 use crate::tool_icons::icon_button;
 use azteccraft::ui_icons::UiIcon;
 use eframe::egui::{self, Align, Layout};
@@ -13,6 +13,8 @@ struct StripButton {
     label: &'static str,
     icon: UiIcon,
     hover: &'static str,
+    /// `None` while the panel is unsupported.
+    panel: Option<SidebarPanel>,
 }
 
 struct ModeButton {
@@ -50,32 +52,50 @@ const SIDEBAR_TOGGLES: [StripButton; 5] = [
         label: "Modeling Toolkit",
         icon: UiIcon::SidebarModelingToolkit,
         hover: "Modeling Toolkit: not implemented yet",
+        panel: None,
     },
     StripButton {
         label: "HumanIK",
         icon: UiIcon::SidebarHumanIk,
         hover: "HumanIK: not implemented yet",
+        panel: None,
     },
     StripButton {
         label: "Attribute Editor",
         icon: UiIcon::SidebarAttributeEditor,
         hover: "Attribute Editor: not implemented yet",
+        panel: None,
     },
     StripButton {
         label: "Tool Settings",
         icon: UiIcon::SidebarToolSettings,
         hover: "Tool Settings: not implemented yet",
+        panel: None,
     },
     StripButton {
         label: "Channel Box / Layer Editor",
         icon: UiIcon::SidebarChannelBox,
-        hover: "Channel Box / Layer Editor: not implemented yet",
+        hover: "Show or hide the Channel Box / Layer Editor",
+        panel: Some(SidebarPanel::ChannelBox),
     },
 ];
 
 impl Editor {
+    /// Enabled hover text, or the reason a live toggle is disabled.
+    fn sidebar_toggle_hover(&self, button: &StripButton) -> &'static str {
+        if self.files.is_closing() {
+            "Channel Box / Layer Editor: unavailable while the window is closing"
+        } else if self.files.is_modal() {
+            "Channel Box / Layer Editor: unavailable while a dialog is open"
+        } else if self.history.active_manipulation().is_some() {
+            "Channel Box / Layer Editor: unavailable while a Move is active"
+        } else {
+            button.hover
+        }
+    }
+
     pub(in crate::app) fn status_line(
-        &self,
+        &mut self,
         ui: &mut egui::Ui,
         selection_intent: &mut Option<SelectionModeIntent>,
     ) {
@@ -102,7 +122,24 @@ impl Editor {
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 for button in SIDEBAR_TOGGLES.iter().rev() {
-                    strip_button(ui, button);
+                    match button.panel {
+                        Some(panel) => {
+                            let visible = self.sidebar_panel_visible(panel);
+                            let enabled = admitted && self.history.active_manipulation().is_none();
+                            let response = icon_button(
+                                ui,
+                                button.label,
+                                button.icon,
+                                enabled,
+                                visible,
+                                self.sidebar_toggle_hover(button),
+                            );
+                            if response.clicked() {
+                                self.sidebar_panel_request = Some((panel, !visible));
+                            }
+                        }
+                        None => strip_button(ui, button),
+                    }
                 }
             });
         });

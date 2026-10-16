@@ -191,9 +191,11 @@ impl ServerHandler for EditorServer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::editor_operations::{FileDecision, MAX_NAME_BYTES, MoveDistance, Operation};
+    use crate::editor_operations::{
+        FileDecision, MAX_NAME_BYTES, MoveDistance, Operation, SidebarPanel,
+    };
     use crate::mcp::tool_names;
-    use rmcp::model::JsonObject;
+    use rmcp::model::{ErrorCode, JsonObject};
     use uuid::Uuid;
 
     #[test]
@@ -342,6 +344,9 @@ mod tests {
                 "pan_camera" => json!({"scene_token":token,"world_units":[0,0]}),
                 "dolly_camera" => json!({"scene_token":token,"factor":1}),
                 "set_grid_visibility" => json!({"scene_token":token,"visible":true}),
+                "set_sidebar_panel_visibility" => {
+                    json!({"scene_token":token,"panel":"channel_box","visible":true})
+                }
                 "open_scene" | "save_scene_as" => json!({"scene_token":token,"path":"scene.mb"}),
                 "resolve_file_action" => {
                     json!({"scene_token":token,"pending_action_id":Uuid::new_v4().to_string(),"decision":"cancel"})
@@ -358,6 +363,7 @@ mod tests {
             let expected = matches!(
                 tool.name.as_ref(),
                 "set_grid_visibility"
+                    | "set_sidebar_panel_visibility"
                     | "set_active_tool"
                     | "select_node"
                     | "set_selection_mode"
@@ -559,6 +565,68 @@ mod tests {
             assert!(
                 matches!(request.operation, Operation::SetGridVisible { visible: actual } if actual == visible)
             );
+        }
+    }
+
+    #[test]
+    fn sidebar_panel_schema_and_decoder_require_token_panel_and_explicit_boolean() {
+        let token = Uuid::new_v4().to_string();
+        let tool = catalog()
+            .into_iter()
+            .find(|tool| tool.name == "set_sidebar_panel_visibility")
+            .unwrap();
+        assert_eq!(
+            tool.input_schema["properties"]["visible"]["type"],
+            "boolean"
+        );
+        assert_eq!(tool.input_schema["additionalProperties"], false);
+        let required = tool.input_schema["required"].as_array().unwrap();
+        assert_eq!(required.len(), 3);
+        for field in ["scene_token", "panel", "visible"] {
+            assert!(required.contains(&json!(field)), "{field}");
+        }
+        let annotations = tool.annotations.unwrap();
+        assert_eq!(annotations.read_only_hint, Some(false));
+        assert_eq!(annotations.idempotent_hint, Some(true));
+        assert_eq!(annotations.open_world_hint, Some(false));
+        for arguments in [
+            json!({"panel": "channel_box", "visible": false}),
+            json!({"scene_token": token, "visible": false}),
+            json!({"scene_token": token, "panel": "channel_box"}),
+            json!({"scene_token": token, "panel": "channel_box", "visible": null}),
+            json!({"scene_token": token, "panel": "channel_box", "visible": "true"}),
+            json!({"scene_token": token, "panel": "channel_box", "visible": false, "extra": 1}),
+            json!({"scene_token": token, "panel": "attribute_editor", "visible": false}),
+            json!({"scene_token": token, "panel": "ChannelBox", "visible": false}),
+            json!({"scene_token": token, "panel": null, "visible": false}),
+            json!({"scene_token": "invalid", "panel": "channel_box", "visible": false}),
+        ] {
+            let Err(error) = parse_request(
+                "set_sidebar_panel_visibility",
+                arguments.as_object().unwrap().clone(),
+            ) else {
+                panic!("accepted {arguments}");
+            };
+            assert_eq!(error.code, ErrorCode::INVALID_PARAMS, "{arguments}");
+        }
+        for visible in [false, true] {
+            let request = parse_request(
+                "set_sidebar_panel_visibility",
+                json!({"scene_token": token, "panel": "channel_box", "visible": visible})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
+            .unwrap();
+            assert_eq!(
+                request.expected_scene_token,
+                Some(Uuid::parse_str(&token).unwrap())
+            );
+            assert!(matches!(
+                request.operation,
+                Operation::SetSidebarPanelVisible { panel: SidebarPanel::ChannelBox, visible: actual }
+                    if actual == visible
+            ));
         }
     }
 
