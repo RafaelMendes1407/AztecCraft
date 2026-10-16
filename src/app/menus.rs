@@ -1,4 +1,5 @@
 use super::*;
+use azteccraft::ui_icons::UiIcon;
 
 impl Editor {
     pub(super) fn menus(
@@ -134,41 +135,27 @@ impl Editor {
         ui.horizontal(|ui| {
             ui.label(RichText::new("Modeling").strong());
             ui.separator();
-            if crate::tool_icons::button(ui, "Cube", crate::tool_icons::Icon::Cube, authoring)
-                .clicked()
-            {
+            if crate::tool_icons::button(ui, "Cube", UiIcon::PolyCube, authoring).clicked() {
                 self.create(Primitive::Cube);
             }
-            if crate::tool_icons::button(ui, "Plane", crate::tool_icons::Icon::Plane, authoring)
-                .clicked()
-            {
+            if crate::tool_icons::button(ui, "Plane", UiIcon::PolyPlane, authoring).clicked() {
                 self.create(Primitive::Plane);
             }
             ui.separator();
-            if crate::tool_icons::button(
-                ui,
-                "Undo",
-                crate::tool_icons::Icon::Undo,
-                self.history.can_undo(),
-            )
-            .clicked()
+            if crate::tool_icons::button(ui, "Undo", UiIcon::Undo, self.history.can_undo())
+                .clicked()
             {
                 self.history_step(false);
             }
-            if crate::tool_icons::button(
-                ui,
-                "Redo",
-                crate::tool_icons::Icon::Redo,
-                self.history.can_redo(),
-            )
-            .clicked()
+            if crate::tool_icons::button(ui, "Redo", UiIcon::Redo, self.history.can_redo())
+                .clicked()
             {
                 self.history_step(true);
             }
             if crate::tool_icons::button(
                 ui,
                 "Frame selected  F",
-                crate::tool_icons::Icon::Frame,
+                UiIcon::FrameSelected,
                 self.selected.is_some(),
             )
             .clicked()

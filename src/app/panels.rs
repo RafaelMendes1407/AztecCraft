@@ -1,4 +1,5 @@
 use super::*;
+use azteccraft::ui_icons::UiIcon;
 
 impl Editor {
     pub(super) fn render(&mut self, ui: &mut egui::Ui) {
@@ -53,37 +54,59 @@ impl Editor {
             );
         });
         egui::Panel::left("toolbox")
-            .exact_size(crate::tool_icons::toolbox_width(ui))
+            .exact_size(crate::tool_icons::toolbox_width(ui, &["Snap"]))
             .resizable(false)
             .show(ui, |ui| {
                 ui.label("Tools");
                 ui.separator();
-                for (label, icon, tool) in [
+                let live = !self.files.is_closing() && !self.files.is_modal();
+                for (label, icon, tool, hover) in [
                     (
                         "Select",
-                        crate::tool_icons::Icon::Select,
-                        ActiveTool::Select,
+                        UiIcon::Select,
+                        Some(ActiveTool::Select),
+                        "Select tool (Q)",
                     ),
-                    ("Move", crate::tool_icons::Icon::Move, ActiveTool::Move),
+                    ("Lasso", UiIcon::Lasso, None, "Lasso: not implemented yet"),
+                    (
+                        "Paint Selection",
+                        UiIcon::PaintSelect,
+                        None,
+                        "Paint Selection: not implemented yet",
+                    ),
+                    (
+                        "Move",
+                        UiIcon::Move,
+                        Some(ActiveTool::Move),
+                        "Move tool (W)",
+                    ),
+                    (
+                        "Rotate",
+                        UiIcon::Rotate,
+                        None,
+                        "Rotate: not implemented yet",
+                    ),
+                    ("Scale", UiIcon::Scale, None, "Scale: not implemented yet"),
+                    (
+                        "Last Used",
+                        UiIcon::LastUsed,
+                        None,
+                        "Last Used: not implemented yet; dynamic last-used behaviour unsupported",
+                    ),
                 ] {
-                    if crate::tool_icons::tool_button(
+                    let response = crate::tool_icons::icon_button(
                         ui,
                         label,
                         icon,
-                        !self.files.is_closing() && !self.files.is_modal(),
-                        self.active_tool == tool,
-                    )
-                    .clicked()
+                        tool.is_some() && live,
+                        tool.is_some_and(|tool| self.active_tool == tool),
+                        hover,
+                    );
+                    if let Some(tool) = tool
+                        && response.clicked()
                     {
                         self.native_operation(Operation::SetActiveTool(tool));
                     }
-                }
-                for (label, icon) in [
-                    ("Rotate", crate::tool_icons::Icon::Rotate),
-                    ("Scale", crate::tool_icons::Icon::Scale),
-                ] {
-                    crate::tool_icons::button(ui, label, icon, false)
-                        .on_disabled_hover_text("Not implemented in this build");
                 }
                 unsupported(ui, "Snap");
             });

@@ -2999,3 +2999,285 @@ fn channel_box_visibility_row_is_read_only_and_never_defaults_to_on() {
         assert_eq!(editor.history.scene(), &before);
     }
 }
+
+mod toolbox_wire {
+    use super::*;
+    use eframe::egui::accesskit::Role;
+
+    const TOOLBOX: [&str; 7] = [
+        "Select",
+        "Lasso",
+        "Paint Selection",
+        "Move",
+        "Rotate",
+        "Scale",
+        "Last Used",
+    ];
+
+    struct Control {
+        label: String,
+        rect: egui::Rect,
+        disabled: bool,
+        selected: Option<bool>,
+    }
+
+    fn controls(output: &egui::FullOutput) -> Vec<Control> {
+        let update = output
+            .platform_output
+            .accesskit_update
+            .as_ref()
+            .expect("accesskit enabled");
+        update
+            .nodes
+            .iter()
+            .filter(|(_, node)| node.role() == Role::Button)
+            .filter_map(|(_, node)| {
+                let bounds = node.bounds()?;
+                Some(Control {
+                    label: node.label()?.to_owned(),
+                    rect: egui::Rect::from_min_max(
+                        egui::pos2(bounds.x0 as f32, bounds.y0 as f32),
+                        egui::pos2(bounds.x1 as f32, bounds.y1 as f32),
+                    ),
+                    disabled: node.is_disabled(),
+                    selected: node
+                        .toggled()
+                        .map(|t| t == eframe::egui::accesskit::Toggled::True),
+                })
+            })
+            .collect()
+    }
+
+    fn setup() -> (Editor, egui::Context) {
+        let context = egui::Context::default();
+        context.enable_accesskit();
+        let mut editor = Editor {
+            renderer: Some(crate::viewport_renderer::tests::renderer_handle()),
+            ..Editor::default()
+        };
+        editor.create(Primitive::Cube);
+        (editor, context)
+    }
+
+    fn toolbox(output: &egui::FullOutput) -> Vec<Control> {
+        let mut found: Vec<Control> = controls(output)
+            .into_iter()
+            .filter(|c| TOOLBOX.contains(&c.label.as_str()) && c.rect.right() < 100.0)
+            .collect();
+        found.sort_by(|a, b| a.rect.top().total_cmp(&b.rect.top()));
+        found
+    }
+
+    fn click(editor: &mut Editor, context: &egui::Context, at: egui::Pos2) {
+        frame(editor, context, vec![egui::Event::PointerMoved(at)]);
+        for pressed in [true, false] {
+            frame(
+                editor,
+                context,
+                vec![egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            );
+        }
+    }
+
+    fn center_of(output: &egui::FullOutput, label: &str) -> egui::Pos2 {
+        let found = controls(output)
+            .into_iter()
+            .find(|c| c.label == label && !c.disabled)
+            .unwrap_or_else(|| panic!("enabled control {label}"));
+        found.rect.center()
+    }
+
+    #[test]
+    fn toolbox_is_seven_labelled_icon_buttons_in_documented_order() {
+        let (mut editor, context) = setup();
+        let output = frame(&mut editor, &context, vec![]);
+        let found = toolbox(&output);
+        let labels: Vec<&str> = found.iter().map(|c| c.label.as_str()).collect();
+        assert_eq!(labels, TOOLBOX);
+        for control in &found {
+            let live = matches!(control.label.as_str(), "Select" | "Move");
+            assert_eq!(control.disabled, !live, "{}", control.label);
+        }
+        assert_eq!(found[0].selected, Some(true));
+        assert_eq!(found[3].selected, Some(false));
+        for shape in &output.shapes {
+            if let egui::Shape::Text(text) = &shape.shape
+                && shape.clip_rect.right() < 100.0
+            {
+                let t = text.galley.job.text.as_str();
+                assert!(
+                    !matches!(t, "Move" | "Rotate" | "Scale" | "Select"),
+                    "toolbox painted text {t}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn select_and_move_toggle_the_active_tool_and_others_do_nothing() {
+        let (mut editor, context) = setup();
+        let output = frame(&mut editor, &context, vec![]);
+        let found = toolbox(&output);
+        let move_at = found[3].rect.center();
+        let select_at = found[0].rect.center();
+        click(&mut editor, &context, move_at);
+        assert_eq!(editor.active_tool, ActiveTool::Move);
+        click(&mut editor, &context, select_at);
+        assert_eq!(editor.active_tool, ActiveTool::Select);
+        let scene = editor.history.scene().clone();
+        let token = editor.scene_token;
+        for index in [1, 2, 4, 5, 6] {
+            click(&mut editor, &context, found[index].rect.center());
+            assert_eq!(
+                editor.active_tool,
+                ActiveTool::Select,
+                "{}",
+                found[index].label
+            );
+            assert_eq!(editor.history.scene(), &scene);
+            assert_eq!(editor.scene_token, token);
+            assert!(!editor.history.can_redo());
+        }
+    }
+
+    #[test]
+    fn hovering_enabled_and_disabled_icons_shows_their_tooltips() {
+        for (index, expected) in [
+            (0, "Select tool (Q)"),
+            (3, "Move tool (W)"),
+            (1, "Lasso: not implemented yet"),
+            (
+                6,
+                "Last Used: not implemented yet; dynamic last-used behaviour unsupported",
+            ),
+        ] {
+            let (mut editor, context) = setup();
+            let output = frame(&mut editor, &context, vec![]);
+            let at = toolbox(&output)[index].rect.center();
+            let mut shown = false;
+            for step in 1..=6 {
+                let mut output = context.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(1440.0, 900.0),
+                        )),
+                        time: Some(f64::from(step)),
+                        events: if step == 1 {
+                            vec![egui::Event::PointerMoved(at)]
+                        } else {
+                            vec![]
+                        },
+                        ..Default::default()
+                    },
+                    |ui| editor.render(ui),
+                );
+                output.textures_delta.clear();
+                shown |= output.shapes.iter().any(|shape| {
+                    matches!(&shape.shape, egui::Shape::Text(text) if text.galley.job.text == expected)
+                });
+            }
+            assert!(shown, "tooltip {expected}");
+        }
+    }
+
+    fn selected_name(editor: &Editor) -> String {
+        editor
+            .history
+            .scene()
+            .node(editor.selected.expect("selection"))
+            .unwrap()
+            .name()
+            .to_owned()
+    }
+
+    fn disabled(output: &egui::FullOutput, label: &str) -> bool {
+        controls(output)
+            .into_iter()
+            .find(|c| c.label == label)
+            .unwrap_or_else(|| panic!("control {label}"))
+            .disabled
+    }
+
+    #[test]
+    fn select_and_move_are_disabled_and_inert_while_modal_or_closing() {
+        for closing in [false, true] {
+            let (mut editor, context) = setup();
+            if closing {
+                editor.close_document().unwrap();
+            } else {
+                editor.new_document().unwrap();
+            }
+            let output = frame(&mut editor, &context, vec![]);
+            let found = toolbox(&output);
+            for (index, start) in [(0, ActiveTool::Move), (3, ActiveTool::Select)] {
+                editor.active_tool = start;
+                assert!(found[index].disabled, "{}", found[index].label);
+                click(&mut editor, &context, found[index].rect.center());
+                assert_eq!(editor.active_tool, start, "{}", found[index].label);
+            }
+        }
+    }
+
+    #[test]
+    fn shelf_controls_are_disabled_without_their_preconditions() {
+        let context = egui::Context::default();
+        context.enable_accesskit();
+        let mut editor = Editor {
+            renderer: Some(crate::viewport_renderer::tests::renderer_handle()),
+            ..Editor::default()
+        };
+        let output = frame(&mut editor, &context, vec![]);
+        for label in ["Undo", "Redo", "Frame selected  F"] {
+            assert!(disabled(&output, label), "{label}");
+        }
+        for label in ["Cube", "Plane"] {
+            assert!(!disabled(&output, label), "{label}");
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("curve.ma");
+        std::fs::write(&path, ascii_fixture::specimen()).unwrap();
+        editor
+            .apply_operation(Operation::OpenScene { path })
+            .unwrap();
+        let output = frame(&mut editor, &context, vec![]);
+        for label in ["Cube", "Plane"] {
+            assert!(disabled(&output, label), "{label}");
+        }
+    }
+
+    #[test]
+    fn shelf_buttons_still_create_and_run_history_and_frame() {
+        let (mut editor, context) = setup();
+        let before = editor.camera.clone();
+        let output = frame(&mut editor, &context, vec![]);
+        click(
+            &mut editor,
+            &context,
+            center_of(&output, "Frame selected  F"),
+        );
+        assert_ne!(editor.camera, before);
+        let baseline = editor.history.scene().clone();
+        let output = frame(&mut editor, &context, vec![]);
+        click(&mut editor, &context, center_of(&output, "Plane"));
+        assert_ne!(editor.history.scene(), &baseline);
+        assert!(selected_name(&editor).contains("Plane"));
+        let with_plane = editor.history.scene().clone();
+        let output = frame(&mut editor, &context, vec![]);
+        click(&mut editor, &context, center_of(&output, "Cube"));
+        assert_ne!(editor.history.scene(), &with_plane);
+        assert!(selected_name(&editor).contains("Cube"));
+        let with_cube = editor.history.scene().clone();
+        let output = frame(&mut editor, &context, vec![]);
+        click(&mut editor, &context, center_of(&output, "Undo"));
+        assert_eq!(editor.history.scene(), &with_plane);
+        let output = frame(&mut editor, &context, vec![]);
+        click(&mut editor, &context, center_of(&output, "Redo"));
+        assert_eq!(editor.history.scene(), &with_cube);
+    }
+}
