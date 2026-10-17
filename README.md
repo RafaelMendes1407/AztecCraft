@@ -62,7 +62,7 @@ For MCP, build with `cargo build --release --locked --features mcp` and configur
 
 ### CI builds
 
-Every push builds test binaries for macOS (aarch64, x86_64), Linux (x86_64) and Windows (x86_64). Open Actions, the run for a commit, then Artifacts. They are not on the Releases page, and each download is a zip containing the archive. The builds are not notarized: on macOS run `xattr -dr com.apple.quarantine AztecCraft.app` after unzipping (or right-click, Open); on Windows choose More info, Run anyway in SmartScreen; on Linux `chmod +x azteccraft` if needed. Details in [CI build downloads](.project-docs/development.md#download-ci-builds).
+Every push builds test binaries for macOS (aarch64, x86_64), Linux (x86_64) and Windows (x86_64). Open Actions, the run for a commit, then Artifacts. They are not on the Releases page, and each download is a zip containing the archive. The builds are not notarized: on macOS unzip, try to open the app once, then choose System Settings, Privacy & Security, Open Anyway (shown for about an hour; [Apple's instructions](https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unidentified-developer-mh40616/mac)), or run `xattr -dr com.apple.quarantine AztecCraft.app` in a terminal; on Windows choose More info, Run anyway in SmartScreen; on Linux `chmod +x azteccraft` if needed. Details in [CI build downloads](.project-docs/development.md#download-ci-builds).
 
 ## Architecture and platforms
 
