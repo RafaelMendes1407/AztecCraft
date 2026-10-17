@@ -1,0 +1,13 @@
+# cargo audit configuration (read by `cargo audit --deny warnings` in CI).
+#
+# Each ignore below must name a tracking issue and be removed once fixed upstream.
+
+[advisories]
+ignore = [
+    # zbus-family crates marked unmaintained on 2026-10-16 after merging into zbus 6.
+    # Pulled only on Linux via eframe -> accesskit_unix -> atspi / zbus 5; no
+    # accesskit release supports zbus 6 yet. Tracking: cristim/AztecCraft#181.
+    "RUSTSEC-2026-0370", # zvariant
+    "RUSTSEC-2026-0371", # zbus_names
+    "RUSTSEC-2026-0372", # zvariant_derive
+]
