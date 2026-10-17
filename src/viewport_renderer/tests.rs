@@ -2010,34 +2010,74 @@ fn headless_gpu_a_face_is_lit_differently_from_the_same_face_rotated() {
 
 #[test]
 #[ignore = "requires a real headless GPU adapter"]
-fn headless_gpu_offscreen_does_not_reproduce_issue_111() {
+fn headless_gpu_grid_is_hidden_by_opaque_faces_but_shows_through_wireframe() {
     let mut gpu = Offscreen::new();
-    let view = ViewScene::from_native(&cube(), VIEW_BUDGET).unwrap();
-    let camera = Camera::new(Vec3::ZERO, 0.4, 0.6, 5.0, 45_f32.to_radians(), 0.01, 100.0).unwrap();
-    let render = |gpu: &mut Offscreen, grid: bool| {
+    // Wholly above y=0, so every grid line crossing the silhouette is behind a front face. A
+    // cube straddling the plane legitimately shows grid lines in front of its lower half.
+    let mut scene = NativeScene::default();
+    let node = scene.create(Primitive::Cube, "raised").unwrap();
+    scene
+        .set_transform(
+            node,
+            NativeTransform {
+                translation: [0.0, 1.5, 0.0],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let view = ViewScene::from_native(&scene, VIEW_BUDGET).unwrap();
+    let camera = Camera::new(
+        Vec3::new(0.0, 1.5, 0.0),
+        0.4,
+        0.6,
+        5.0,
+        45_f32.to_radians(),
+        0.01,
+        100.0,
+    )
+    .unwrap();
+    let mut render = |grid: bool, shading: ShadingMode| {
         let submission = Submission::new(
             &view,
             &camera,
             [SIZE; 2],
             SelectionFeedback::Object(None),
             grid,
-            ShadingMode::SmoothShadeAll,
+            shading,
             FORMAT,
             u64::MAX,
         )
         .unwrap();
         gpu.render(TestFrame::Geometry(submission))
     };
-    let with_grid = render(&mut gpu, true);
-    let without_grid = render(&mut gpu, false);
-    let differing = |xs: std::ops::Range<u32>, ys: std::ops::Range<u32>| {
-        ys.flat_map(|y| xs.clone().map(move |x| (x, y)))
-            .filter(|&(x, y)| pixel(&with_grid, x, y) != pixel(&without_grid, x, y))
+    let pixels = || (0..SIZE).flat_map(|y| (0..SIZE).map(move |x| (x, y)));
+    let smooth = ShadingMode::SmoothShadeAll;
+    let (with_grid, without_grid) = (render(true, smooth), render(false, smooth));
+    let background = pixel(&without_grid, 0, 0).to_vec();
+    let covered = |x, y| pixel(&without_grid, x, y) != &background[..];
+    let changed = |x, y| pixel(&with_grid, x, y) != pixel(&without_grid, x, y);
+    assert!(pixels().filter(|&(x, y)| covered(x, y)).count() > 1000);
+    let through_faces: Vec<_> = pixels()
+        .filter(|&(x, y)| covered(x, y) && changed(x, y))
+        .collect();
+    assert!(
+        through_faces.is_empty(),
+        "grid drawn over opaque geometry at {through_faces:?}"
+    );
+    assert!(
+        pixels()
+            .filter(|&(x, y)| !covered(x, y) && changed(x, y))
             .count()
-    };
-    // Centre window shows no grid pixel in this harness; no inference about the app. Native
-    // macOS still shows grid lines across front faces, and #111 stays open.
-    assert_eq!(differing(58..70, 58..70), 0);
+            > 100
+    );
+
+    let wire = ShadingMode::Wireframe;
+    let (wire_grid, wire_plain) = (render(true, wire), render(false, wire));
+    let inside = |x, y| covered(x, y) && pixel(&wire_grid, x, y) != pixel(&wire_plain, x, y);
+    assert!(
+        pixels().filter(|&(x, y)| inside(x, y)).count() > 10,
+        "wireframe must show the grid"
+    );
 }
 
 #[test]
