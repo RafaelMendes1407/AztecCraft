@@ -643,3 +643,51 @@ fn pointers_outside_the_viewport_hit_no_handle_enabled_or_disabled() {
 fn near_f(actual: f64, expected: f64) -> bool {
     (actual - expected).abs() < 0.5
 }
+
+fn scale_shaft_length(handles: &ScaleHandles, index: usize) -> f64 {
+    let shaft = handles.axes()[index]
+        .geometry()
+        .unwrap()
+        .segments()
+        .next()
+        .unwrap();
+    (shaft.end - shaft.start).length()
+}
+
+#[test]
+fn scale_shafts_and_boxes_foreshorten_with_the_view() {
+    let front = world_scale(&camera_at(0.0, 0.0, 10.0));
+    // Shaft stops at the box edge, five pixels short of the 72 px tip.
+    near(scale_shaft_length(&front, 0), 72.0 - BOX_HALF, 1e-9);
+    let oblique = world_scale(&camera_at(std::f32::consts::FRAC_PI_4, 0.0, 10.0));
+    let tip = 72.0 * std::f64::consts::FRAC_1_SQRT_2;
+    near(scale_shaft_length(&oblique, 0), tip - BOX_HALF, 0.01);
+    near(scale_shaft_length(&oblique, 2), tip - BOX_HALF, 0.01);
+    near(scale_shaft_length(&oblique, 1), 72.0 - BOX_HALF, 1e-9);
+    let origin = DVec2::new(400.0, 300.0);
+    let box_center = |handles: &ScaleHandles, index: usize| {
+        let b = handles.axes()[index].geometry().unwrap().tip_box;
+        let points: Vec<DVec2> = b.iter().flatten().map(|s| s.start).collect();
+        points.iter().sum::<DVec2>() / points.len() as f64
+    };
+    near((box_center(&oblique, 0) - origin).length(), tip, 0.01);
+}
+
+#[test]
+fn an_end_on_scale_axis_collapses_into_the_center_box_and_steals_nothing() {
+    let handles = world_scale(&camera_at(0.02, 0.0, 10.0));
+    let z = handles.axes()[2].geometry().unwrap();
+    for segment in z.segments() {
+        assert!((segment.end - DVec2::new(400.0, 300.0)).length() < 12.0);
+    }
+    for x in [30.0, 60.0, 72.0] {
+        assert_eq!(
+            handles.hit_test(DVec2::new(400.0 + x, 300.0)),
+            Some(ScaleHandle::X)
+        );
+    }
+    assert_eq!(
+        handles.hit_test(DVec2::new(400.0, 300.0 - 60.0)),
+        Some(ScaleHandle::Y)
+    );
+}

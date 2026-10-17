@@ -7,6 +7,8 @@ use std::fmt;
 
 pub(crate) const ARROW_LENGTH: f64 = 72.0;
 pub(crate) const HIT_RADIUS: f64 = 6.0;
+const ARROWHEAD_LENGTH: f64 = 12.0;
+const ARROWHEAD_HALF_WIDTH: f64 = 4.0;
 const CENTER_EXCLUSION: f64 = 10.0;
 const PARALLEL_LIMIT: f64 = 1e-10;
 
@@ -226,6 +228,42 @@ impl ViewportCapture {
         Ok((clip, pixel))
     }
 
+    /// Fraction of a world axis that shows on screen: the sine of its angle to the view ray
+    /// through `origin_cm`. One when perpendicular to the view, zero when seen end-on.
+    /// A first-order approximation: exact at those two extremes, but for off-centre handles at
+    /// a wide field of view it can differ from the true projected segment length by roughly
+    /// 10-25%.
+    pub(crate) fn projected_fraction(
+        &self,
+        origin_cm: DVec3,
+        direction: DVec3,
+    ) -> Result<f64, HandleError> {
+        let to_origin = origin_cm - self.eye();
+        let length = to_origin.length();
+        if !length.is_finite() || length <= 0.0 {
+            return Err(HandleError::InvalidProjection);
+        }
+        let cosine = direction.dot(to_origin / length);
+        let fraction = (1.0 - cosine * cosine).max(0.0).sqrt();
+        if !fraction.is_finite() {
+            return Err(HandleError::InvalidProjection);
+        }
+        Ok(fraction)
+    }
+
+    /// Screen vector of a handle axis: its unit screen direction scaled to `ARROW_LENGTH` times
+    /// the projected fraction, so an axis seen end-on shrinks instead of keeping full length.
+    pub(crate) fn axis_screen_vector(
+        &self,
+        origin_cm: DVec3,
+        clip: DVec4,
+        direction: DVec3,
+    ) -> Result<(DVec2, f64), HandleError> {
+        let unit = self.screen_direction(clip, direction)?;
+        let length = ARROW_LENGTH * self.projected_fraction(origin_cm, direction)?;
+        Ok((unit, length))
+    }
+
     /// Unit screen direction of a world direction at a projected origin.
     pub(crate) fn screen_direction(
         &self,
@@ -297,10 +335,13 @@ impl WorldHandles {
         let axes = [WorldAxis::X, WorldAxis::Y, WorldAxis::Z].map(|axis| {
             let geometry = (|| {
                 axis_parameter(origin_cm, axis, capture.ray_at_pixel(origin)?)?;
-                let direction = capture.screen_direction(clip, axis.direction())?;
-                let tip = origin + direction * ARROW_LENGTH;
-                let base = tip - direction * 12.0;
-                let perpendicular = DVec2::new(-direction.y, direction.x) * 4.0;
+                let (direction, length) =
+                    capture.axis_screen_vector(origin_cm, clip, axis.direction())?;
+                let tip = origin + direction * length;
+                let head = length.min(ARROWHEAD_LENGTH);
+                let base = tip - direction * head;
+                let perpendicular = DVec2::new(-direction.y, direction.x)
+                    * (ARROWHEAD_HALF_WIDTH * head / ARROWHEAD_LENGTH);
                 let left = base + perpendicular;
                 let right = base - perpendicular;
                 let segments = [(origin, tip), (tip, left), (left, right), (right, tip)]

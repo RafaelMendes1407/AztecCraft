@@ -413,16 +413,17 @@ impl ScaleHandles {
     pub fn new(capture: &ViewportCapture, frame: &HandleFrame) -> Result<Self, HandleError> {
         let (clip, origin) = capture.project_origin(frame.origin)?;
         let size = capture.size();
-        let directions: [Result<DVec2, HandleError>; 3] = [0, 1, 2].map(|index| {
+        let directions: [Result<(DVec2, f64), HandleError>; 3] = [0, 1, 2].map(|index| {
             let axis = frame.axes[index];
             axis_parameter_along(frame.origin, axis, capture.ray_at_pixel(origin)?)?;
-            capture.screen_direction(clip, axis)
+            capture.axis_screen_vector(frame.origin, clip, axis)
         });
         let axes = [0, 1, 2].map(|index| {
-            let geometry = directions[index].map(|direction| {
-                let tip = origin + direction * ARROW_LENGTH;
+            let geometry = directions[index].map(|(direction, length)| {
+                let tip = origin + direction * length;
+                let shaft_end = origin + direction * (length - BOX_HALF).max(0.0);
                 ScaleGeometry {
-                    shaft: clip_segment(origin, tip - direction * BOX_HALF, size),
+                    shaft: clip_segment(origin, shaft_end, size),
                     tip_box: square(tip, BOX_HALF, size),
                 }
             });
@@ -444,7 +445,7 @@ impl ScaleHandles {
         let disabled = [(0, 1), (1, 2), (2, 0)]
             .into_iter()
             .filter_map(|(a, b)| {
-                let (da, db) = (directions[a].ok()?, directions[b].ok()?);
+                let (da, db) = (directions[a].ok()?.0, directions[b].ok()?.0);
                 let corner = |s: f64, t: f64| origin + (da * s + db * t) * ARROW_LENGTH;
                 let points = [
                     corner(PLANE_NEAR, PLANE_NEAR),
