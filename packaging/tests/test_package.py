@@ -5,8 +5,10 @@ import json
 import plistlib
 import stat
 import struct
+import subprocess
 import tarfile
 import zipfile
+from collections.abc import Iterator
 from pathlib import Path, PureWindowsPath
 from unittest.mock import MagicMock, patch
 
@@ -17,10 +19,18 @@ from package import (
     NOTICE_LIMIT,
     PROJECT_NOTICES,
     Platform,
+    ad_hoc_sign,
     archive_order,
     capture_atomic_notices,
     package,
 )
+
+
+@pytest.fixture(autouse=True)
+def no_codesign() -> Iterator[MagicMock]:
+    # Fixtures are not real Mach-O files; signing is covered by its own tests.
+    with patch("package.ad_hoc_sign") as signer:
+        yield signer
 
 
 def binary_fixture(directory: Path, target: Platform) -> Path:
@@ -328,3 +338,59 @@ def test_archive_order_is_case_sensitive_on_every_host() -> None:
         "licenses/craft-atomic",
         "licenses/emoji.txt",
     ]
+
+
+def test_macos_bundle_is_signed_after_it_is_complete(
+    tmp_path: Path, no_codesign: MagicMock
+) -> None:
+    binary = binary_fixture(tmp_path, "macos")
+    output = tmp_path / "artifacts"
+
+    def assert_complete(bundle: Path) -> None:
+        assert (bundle / "Contents" / "Info.plist").is_file()
+        assert (bundle / "Contents" / "MacOS" / "azteccraft").read_bytes() == binary.read_bytes()
+        assert (bundle / "Contents" / "Resources" / "licenses" / "NOTICE").is_file()
+        assert not output.joinpath("manifest.json").exists()
+
+    no_codesign.side_effect = assert_complete
+    package(binary, manifest_fixture(tmp_path), output, "macos")
+    no_codesign.assert_called_once_with(output / "AztecCraft.app")
+
+
+@pytest.mark.parametrize("target", ["linux", "windows"])
+def test_other_platforms_are_not_signed(
+    tmp_path: Path, target: Platform, no_codesign: MagicMock
+) -> None:
+    package(binary_fixture(tmp_path, target), manifest_fixture(tmp_path), tmp_path / "o", target)
+    no_codesign.assert_not_called()
+
+
+def test_ad_hoc_sign_signs_then_strictly_verifies(tmp_path: Path) -> None:
+    with patch("subprocess.run") as run:
+        ad_hoc_sign(tmp_path / "AztecCraft.app")
+    commands = [call.args[0] for call in run.call_args_list]
+    bundle = str(tmp_path / "AztecCraft.app")
+    assert commands == [
+        ["codesign", "--force", "--sign", "-", bundle],
+        ["codesign", "--verify", "--strict", "--verbose=2", bundle],
+    ]
+
+
+def test_failed_verification_fails_packaging(tmp_path: Path) -> None:
+    def fake_run(command: list[str], **_: object) -> None:
+        if "--verify" in command:
+            raise subprocess.CalledProcessError(1, command, stderr="invalid signature")
+
+    with (
+        patch("subprocess.run", side_effect=fake_run),
+        pytest.raises(RuntimeError, match="invalid signature"),
+    ):
+        ad_hoc_sign(tmp_path)
+
+
+def test_missing_codesign_fails_loudly(tmp_path: Path) -> None:
+    with (
+        patch("subprocess.run", side_effect=FileNotFoundError),
+        pytest.raises(RuntimeError, match="codesign is required"),
+    ):
+        ad_hoc_sign(tmp_path)
