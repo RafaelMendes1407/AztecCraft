@@ -5696,12 +5696,14 @@ fn native_selection_changes_refuse_modal_before_committing_drafts() {
             Operation::SetSelectionMode(SelectionMode::Object),
             Operation::SetSelectionMode(mode),
         ] {
+            let refusal = editor.apply_operation(operation);
             assert!(
-                matches!(
-                    editor.apply_operation(operation),
-                    Err(OperationError::BusyEditing)
-                ),
+                matches!(refusal, Err(OperationError::BusyEditing)),
                 "{mode:?}"
+            );
+            assert_eq!(
+                refusal.unwrap_err().to_string(),
+                "The editor is busy with a text edit, dialog, close or pending input; try again when it finishes"
             );
             assert_eq!(state(&editor), before);
         }

@@ -40,9 +40,9 @@
     pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
     material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
     session_materials=[] modal=false closing=true pending_action=- dirty=true can_undo=true can_redo=true
-  save_scene => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
-  save_scene_as => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
-  resolve_file_action(save) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
+  save_scene => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
+  save_scene_as => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
+  resolve_file_action(save) => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
 
 ## closing / remote
   baseline:
@@ -53,9 +53,9 @@
     pointer_suppress_primary=false has_draft=false has_channel_draft=false name_intent=false
     material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
     session_materials=[] modal=false closing=true pending_action=- dirty=true can_undo=true can_redo=true
-  save_scene => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
-  save_scene_as => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
-  resolve_file_action(save) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
+  save_scene => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
+  save_scene_as => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
+  resolve_file_action(save) => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
 
 ## modal / native
   baseline:
@@ -67,8 +67,8 @@
     material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
     session_materials=[] modal=true closing=false pending_action=New dirty=true can_undo=true
     can_redo=true
-  save_scene => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
-  save_scene_as => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
+  save_scene => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
+  save_scene_as => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
   resolve_file_action(save) => Err(NativeSave: this native scene or platform cannot be written) | no state change
 
 ## modal / remote
@@ -81,8 +81,8 @@
     material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
     session_materials=[] modal=true closing=false pending_action=New dirty=true can_undo=true
     can_redo=true
-  save_scene => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
-  save_scene_as => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
+  save_scene => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
+  save_scene_as => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
   resolve_file_action(save) => Err(NativeSave: this native scene or platform cannot be written) | no state change
 
 ## local_move / native
@@ -165,9 +165,9 @@
     material_draft=- name_field="draft name" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
     session_materials=[] modal=false closing=false pending_action=- dirty=true can_undo=true
     can_redo=true
-  save_scene => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
-  save_scene_as => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
-  resolve_file_action(save) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
+  save_scene => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
+  save_scene_as => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
+  resolve_file_action(save) => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
 
 ## material_draft / native
   baseline:
@@ -193,9 +193,9 @@
     has_draft=true has_channel_draft=false name_intent=false material_draft=text=0.5 intent=false
     name_field="object" channel_fields=1,2,3,0,0,0,1,1,1 channel_intents=000000000 session_materials=[]
     modal=false closing=false pending_action=- dirty=true can_undo=false can_redo=false
-  save_scene => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
-  save_scene_as => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
-  resolve_file_action(save) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
+  save_scene => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
+  save_scene_as => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
+  resolve_file_action(save) => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
 
 ## channel_draft / native
   baseline:
@@ -221,9 +221,9 @@
     material_draft=- name_field="pCube1" channel_fields=5,0,0,0,0,0,1,1,1 channel_intents=000000000
     session_materials=[] modal=false closing=false pending_action=- dirty=true can_undo=true
     can_redo=true
-  save_scene => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
-  save_scene_as => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
-  resolve_file_action(save) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
+  save_scene => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
+  save_scene_as => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
+  resolve_file_action(save) => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
 
 ## text_focus / native
   baseline:
@@ -249,9 +249,9 @@
     material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
     session_materials=[] modal=false closing=false pending_action=- dirty=true can_undo=true
     can_redo=true
-  save_scene => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
-  save_scene_as => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
-  resolve_file_action(save) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
+  save_scene => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
+  save_scene_as => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
+  resolve_file_action(save) => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
 
 ## native_input_pending / native
   baseline:
@@ -277,9 +277,9 @@
     material_draft=- name_field="pCube1" channel_fields=0,0,0,0,0,0,1,1,1 channel_intents=000000000
     session_materials=[] modal=false closing=false pending_action=- dirty=true can_undo=true
     can_redo=true
-  save_scene => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
-  save_scene_as => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
-  resolve_file_action(save) => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
+  save_scene => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
+  save_scene_as => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
+  resolve_file_action(save) => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
 
 ## stale_token / remote
   baseline:
@@ -472,8 +472,8 @@
     material_draft=- name_field="object" channel_fields=16777218.125,-2,3,0,0,14.32394487827058,1,1,1
     channel_intents=000000000 session_materials=[] modal=true closing=false pending_action=New dirty=true
     can_undo=true can_redo=false
-  save_scene => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
-  save_scene_as => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
+  save_scene => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
+  save_scene_as => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
   resolve_file_action(save) => Err(NativeSave: save cancelled before installation) | no state change
 
 ## no_install_modal / remote
@@ -486,8 +486,8 @@
     material_draft=- name_field="object" channel_fields=16777218.125,-2,3,0,0,14.32394487827058,1,1,1
     channel_intents=000000000 session_materials=[] modal=true closing=false pending_action=New dirty=true
     can_undo=true can_redo=false
-  save_scene => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
-  save_scene_as => Err(BusyEditing: Process native input and finish the text edit or dialog before remote mutation) | no state change
+  save_scene => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
+  save_scene_as => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
   resolve_file_action(save) => Err(NativeSave: save cancelled before installation) | no state change
 
 cells: 105

@@ -665,9 +665,7 @@ impl fmt::Display for OperationError {
         match self {
             Self::BusyManipulation => f.write_str("Finish or cancel the active manipulation"),
             Self::Move(error) => error.fmt(f),
-            Self::BusyEditing => f.write_str(
-                "Process native input and finish the text edit or dialog before remote mutation",
-            ),
+            Self::BusyEditing => f.write_str("The editor is busy with a text edit, dialog, close or pending input; try again when it finishes"),
             #[cfg(any(test, feature = "mcp"))]
             Self::StaleScene => f.write_str("Scene token is stale; inspect the current document"),
             #[cfg(any(test, feature = "mcp"))]
