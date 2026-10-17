@@ -116,14 +116,14 @@ The Tool Box rows below reflect the icon-only Tool Box change (feat/70-wire-ui-i
 
 ## 5. Viewport panel menus and Panel Toolbar
 
-The viewport header (`src/app/panels.rs "persp"`) shows the camera name, the selection mode text, a Grid toggle and a navigation hint. There are no panel menus.
+The viewport header (`src/app/panels.rs "persp"`) shows the camera name, the selection mode text, a Grid toggle, a Shading panel menu and a navigation hint. Shading is the only panel menu; the others in the table below are absent.
 
 | Maya 2026 element | Source | AztecCraft status | Evidence | MCP | Priority | Proposed slice |
 | --- | --- | --- | --- | --- | --- | --- |
 | ViewCube | source not yet researched | Missing | absent from the viewport header `src/app/panels.rs "persp"` | none | P2 | S8 Panels and quick layouts (#48 / #69) |
 | Heads-up display | source not yet researched | Missing | absent from the viewport header `src/app/panels.rs "persp"` | none | P3 | S8 Panels and quick layouts (#48 / #69) |
 | Panel menu: View | [panelmenus] contents UNCONFIRMED | Missing | absent | none | P1 | S8 Panels and quick layouts (#48 / #69) |
-| Panel menu: Shading | [panelmenus] contents UNCONFIRMED | Partial | src/app/panels.rs Shading menu: Wireframe and Smooth Shade All work; Wireframe on Shaded and Use Default Material are disabled rows with a reason | `set_shading_mode` | P1 | S8 Panels and quick layouts (#48 / #69) |
+| Panel menu: Shading | [panelmenus] contents UNCONFIRMED | Partial | `src/app/panels.rs "ui.menu_button(\"Shading\""`: Wireframe (hotkey 4) and Smooth Shade All (hotkey 5) work; Wireframe on Shaded and Use Default Material are disabled rows with a reason; Textured (6) and Use All Lights (7) have no menu row, and their hotkeys only set a status message (`src/app/shortcuts.rs "Use All Lights (7)"`); hotkeys are PROVISIONAL (2025 page). Lighting is `DefaultLightingApprox`, a per-face headlight Lambert term on the CPU (`src/shading.rs "DefaultLightingApprox"`), not verified Maya default lighting; no parity claim. Edge lines are always drawn in Smooth Shade All (`src/viewport_renderer.rs "corners[(index + 1) % corners.len()]"`) whereas Maya's default is off, as `.project-docs/parity.md` records | `set_shading_mode`; `shading` in inspection (`src/editor_operations.rs "pub shading: ShadingMode"`) | P1 | S8 Panels and quick layouts (#48 / #69) |
 | Panel menu: Lighting | [panelmenus] contents UNCONFIRMED | Missing | absent | none | P2 | S8 Panels and quick layouts (#48 / #69) |
 | Panel menu: Show | [panelmenus] contents UNCONFIRMED | Missing | absent | none | P2 | S8 Panels and quick layouts (#48 / #69) |
 | Panel menu: Renderer | [panelmenus] contents UNCONFIRMED | Missing | absent | none | P3 | S8 Panels and quick layouts (#48 / #69) |
