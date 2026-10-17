@@ -228,6 +228,18 @@ and every edge through surfaces. When that check is over budget `vertex_markers_
 `ViewInstance` edge; the bin crate has no loose-edge fixture, so the face-less case is
 covered by the carried edge list and the picker tests, not pixels.
 
+## Selection changes are refused under a file modal
+
+**Severity:** low
+**Area:** component input and guards
+
+Selection changes (Outliner row, F8 to F11, Status Line buttons, picks, MCP) are refused with
+`BusyEditing` while a file modal is open (#141), including `set_selection_mode` to the current
+mode. The refusal text still says "before remote mutation" even for native callers; wording
+and the guard-ledger line citations are tracked in #140. The native Status Line check
+covered MCP-driven mode switches on one macOS debug build only
+(`.project-docs/native-verification.md`); Object mode and button clicks were not captured.
+
 ## Static ASCII curves have bounded read-only coverage
 
 **Severity:** high
