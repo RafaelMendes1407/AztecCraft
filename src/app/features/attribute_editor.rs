@@ -160,6 +160,7 @@ impl Editor {
         match active {
             AttributeEditorTab::Transform(_) => {
                 self.transform_section(ui, authoring);
+                self.transform_attributes_section(ui);
             }
             AttributeEditorTab::Shape(shape) => self.shape_section(ui, shape),
             AttributeEditorTab::Material(shape) => {
@@ -168,6 +169,51 @@ impl Editor {
                 self.material_section(ui, shape);
             }
         }
+    }
+
+    /// Rotate Order, Rotate Axis, Shear and the pivot translations: shown read-only because none
+    /// of them is keyable (Maya 2026 transform node page), so Maya's Channel Box omits them and
+    /// only the Attribute Editor lists them. No row has an edit control.
+    fn transform_attributes_section(&self, ui: &mut egui::Ui) {
+        let scene = self.history.scene();
+        let Some(node) = self.selected.and_then(|id| scene.node(id).ok()) else {
+            return;
+        };
+        ui.separator();
+        ui.label(RichText::new("Transform Attributes (read-only)").strong());
+        let attributes = match scene.transform_attributes(node.id()) {
+            Ok(attributes) => attributes,
+            Err(error) => {
+                ui.weak(format!("Unavailable: {error}"));
+                return;
+            }
+        };
+        let triple = |v: [f64; 3]| format!("{} {} {}", v[0], v[1], v[2]);
+        egui::Grid::new("transform_attributes")
+            .num_columns(2)
+            .spacing([8.0, 5.0])
+            .show(ui, |ui| {
+                for (label, value) in [
+                    ("Rotate Order", attributes.rotate_order.to_owned()),
+                    (
+                        "Rotate Axis (degrees)",
+                        triple(attributes.rotate_axis_degrees),
+                    ),
+                    ("Shear", triple(attributes.shear)),
+                    (
+                        "Rotate Pivot Translate",
+                        triple(attributes.rotate_pivot_translate),
+                    ),
+                    (
+                        "Scale Pivot Translate",
+                        triple(attributes.scale_pivot_translate),
+                    ),
+                ] {
+                    ui.label(label);
+                    ui.label(value);
+                    ui.end_row();
+                }
+            });
     }
 
     fn attribute_editor_tabs(&mut self, ui: &mut egui::Ui, active: AttributeEditorTab) {

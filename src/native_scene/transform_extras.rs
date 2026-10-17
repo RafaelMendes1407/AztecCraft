@@ -4,6 +4,7 @@
 //! `opm` and `it` are deliberately absent (Slice A2); sources that carry them stay refused.
 use super::{NativeError, Units, source::Storage};
 use glam::{DMat4, DVec3};
+use serde::Serialize;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TransformExtras {
@@ -160,6 +161,81 @@ impl InternalExtras {
                 * DMat4::from_scale(scale)
                 * DMat4::from_translation(-sp),
         )
+    }
+}
+
+const ROTATE_ORDER_NAMES: [&str; 6] = ["xyz", "yzx", "zxy", "xzy", "yxz", "zyx"];
+
+/// Extras of a transform as inspection and the Attribute Editor report them. Angles are degrees
+/// like `rotation_degrees`; pivot translations keep the scene's declared linear unit like
+/// `authoring_transform.translation`. `non_default` names the attributes that differ from Maya's
+/// defaults.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct TransformAttributes {
+    pub rotate_order: &'static str,
+    pub rotate_axis_degrees: [f64; 3],
+    pub shear: [f64; 3],
+    pub rotate_pivot_translate: [f64; 3],
+    pub scale_pivot_translate: [f64; 3],
+    pub non_default: Vec<&'static str>,
+}
+
+impl Default for TransformAttributes {
+    fn default() -> Self {
+        Self {
+            rotate_order: "xyz",
+            rotate_axis_degrees: [0.0; 3],
+            shear: [0.0; 3],
+            rotate_pivot_translate: [0.0; 3],
+            scale_pivot_translate: [0.0; 3],
+            non_default: Vec::new(),
+        }
+    }
+}
+
+impl super::NativeScene {
+    pub fn transform_attributes(
+        &self,
+        id: super::NodeId,
+    ) -> Result<TransformAttributes, NativeError> {
+        let declared = self.node(id)?.extras().clone();
+        let degrees = self.units().angular_degrees_factor()?;
+        let rotate_order = declared.rotate_order.unwrap_or(0);
+        let name = ROTATE_ORDER_NAMES
+            .get(usize::from(rotate_order))
+            .copied()
+            .ok_or(NativeError::InvalidTransformExtras)?;
+        let triple = |value: Option<[f64; 3]>| value.unwrap_or_default();
+        let attributes = TransformAttributes {
+            rotate_order: name,
+            // Declared values pass through; only a radian scene is converted.
+            rotate_axis_degrees: triple(declared.rotate_axis).map(|angle| angle * degrees),
+            shear: triple(declared.shear),
+            rotate_pivot_translate: triple(declared.rotate_pivot_translate),
+            scale_pivot_translate: triple(declared.scale_pivot_translate),
+            non_default: Vec::new(),
+        };
+        let nonzero = |v: [f64; 3]| v.iter().any(|c| *c != 0.0);
+        let non_default = [
+            ("rotate_order", rotate_order != 0),
+            ("rotate_axis", nonzero(attributes.rotate_axis_degrees)),
+            ("shear", nonzero(attributes.shear)),
+            (
+                "rotate_pivot_translate",
+                nonzero(attributes.rotate_pivot_translate),
+            ),
+            (
+                "scale_pivot_translate",
+                nonzero(attributes.scale_pivot_translate),
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(key, set)| set.then_some(key))
+        .collect();
+        Ok(TransformAttributes {
+            non_default,
+            ..attributes
+        })
     }
 }
 

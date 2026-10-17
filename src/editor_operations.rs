@@ -1,5 +1,5 @@
 #[cfg(any(test, feature = "mcp"))]
-use azteccraft::native_scene::NativeTransform;
+use azteccraft::native_scene::{NativeTransform, TransformAttributes};
 use azteccraft::{
     history::{ManipulationError, ManipulationFinish, ManipulationId},
     native_scene::{
@@ -519,6 +519,8 @@ pub struct NodeInspection {
     pub visible: Option<bool>,
     pub transform: TransformInput,
     pub authoring_transform: AuthoringTransformInspection,
+    /// Read-only transform attributes beyond translate, rotate and scale; defaults when unset.
+    pub transform_attributes: TransformAttributes,
     pub instance_paths: Vec<Vec<String>>,
     pub shape_ids: Vec<String>,
 }
@@ -707,6 +709,9 @@ pub struct RemoteRequest {
 #[cfg(any(test, feature = "mcp"))]
 const APPEARANCE_SUMMARY_MAX_BYTES: usize = 1024;
 #[cfg(any(test, feature = "mcp"))]
+/// Worst case of the serialized `transform_attributes` object plus its key, asserted by a test.
+const NODE_TRANSFORM_ATTRIBUTES_MAX_BYTES: usize = 640;
+#[cfg(any(test, feature = "mcp"))]
 const NODE_VISIBLE_FIELD_MAX_BYTES: usize = "\"visible\":false,".len();
 #[cfg(any(test, feature = "mcp"))]
 const MOVE_INSPECTION_MAX_BYTES: usize = 32 * 1024;
@@ -725,7 +730,8 @@ pub fn check_inspection_size(
             .saturating_add(1024)
             .saturating_add(node.name().len().saturating_mul(6))
             .saturating_add(512)
-            .saturating_add(NODE_VISIBLE_FIELD_MAX_BYTES);
+            .saturating_add(NODE_VISIBLE_FIELD_MAX_BYTES)
+            .saturating_add(NODE_TRANSFORM_ATTRIBUTES_MAX_BYTES);
         if estimated_bytes > limit {
             return Err(OperationError::TooLarge);
         }
@@ -864,6 +870,7 @@ mod tests {
                 rotation: [0.0; 3],
                 scale: [0.0; 3],
             },
+            transform_attributes: TransformAttributes::default(),
             instance_paths: Vec::new(),
             shape_ids: Vec::new(),
         };
@@ -872,6 +879,22 @@ mod tests {
             let with = serde_json::to_vec(&node(visible)).unwrap().len();
             assert!(with - base <= NODE_VISIBLE_FIELD_MAX_BYTES);
         }
+        let worst = TransformAttributes {
+            rotate_order: "zyx",
+            rotate_axis_degrees: [-1.7976931348623157e308; 3],
+            shear: [-1.7976931348623157e308; 3],
+            rotate_pivot_translate: [-1.7976931348623157e308; 3],
+            scale_pivot_translate: [-1.7976931348623157e308; 3],
+            non_default: vec![
+                "rotate_order",
+                "rotate_axis",
+                "shear",
+                "rotate_pivot_translate",
+                "scale_pivot_translate",
+            ],
+        };
+        let size = serde_json::to_vec(&worst).unwrap().len() + "\"transform_attributes\":,".len();
+        assert!(size <= NODE_TRANSFORM_ATTRIBUTES_MAX_BYTES, "{size}");
         assert!(
             String::from_utf8(serde_json::to_vec(&node(None)).unwrap())
                 .unwrap()

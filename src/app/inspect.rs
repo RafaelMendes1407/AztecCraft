@@ -107,6 +107,11 @@ impl Editor {
                     visible: node.local_visibility(),
                     transform: self.transform_input(node.transform())?,
                     authoring_transform: node.transform().into(),
+                    transform_attributes: self
+                        .history
+                        .scene()
+                        .transform_attributes(node.id())
+                        .map_err(OperationError::Scene)?,
                     shape_ids: self
                         .history
                         .scene()
