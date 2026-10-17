@@ -189,3 +189,25 @@ is a separate change rather than a prerequisite for this Grid slice.
 No Maya grid appearance, complete functionality or parity claim follows from
 these results. Grid options, global/additional panels and settings persistence
 remain unsupported; no shortcut was added.
+
+## Vertex, Edge and Face Status Line buttons: native check
+
+On 2026-10-17, a debug build of source commit `e2ec47a` (Status Line component
+buttons) was run natively on macOS with an Apple M1 Pro and driven over its MCP
+stdio server with a cube selected. Window screenshots were taken after switching to
+each component mode and reviewed by eye.
+
+| Mode | Observed in the window |
+| --- | --- |
+| Vertex | Header "Vertex selection"; purple markers on the 7 visible cube corners, the hidden corner not drawn; Vertex and Component buttons pressed |
+| Edge | Header "Edge selection"; visible edges light blue; Edge and Component buttons pressed |
+| Face | Header "Face selection \| visible centers only"; amber centres on the 3 visible faces; Face and Component buttons pressed |
+
+Scope: the mode switches came from MCP `set_selection_mode`, not from clicking the
+buttons, so the observed pressed states show the buttons reflect the mode, not that a
+click dispatches it (button dispatch is covered by `status_line` tests). Object mode
+was not captured: the driver reached Vertex before attaching. This is not a Maya
+comparison; colours, sizes, marker shape and button order are provisional
+application choices. The screenshots are not committed. Windows, Linux, release builds
+and the hidden-corner margin at other distances or adapters are not covered (see
+known-issues.md).

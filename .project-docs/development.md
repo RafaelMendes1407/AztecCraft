@@ -186,6 +186,56 @@ routing. The retained proofs cover menu+F8 and F11+F8+viewport click separately,
 nonmutation. Full coalesced-event support and platform/reference comparison
 remain follow-up work.
 
+## Vertex and Edge selection
+
+F9 and F10, Select > Components > Vertex / Edge, the Status Line Vertex, Edge and
+Face buttons and a plain primary click enter and use Vertex and Edge modes (#29);
+`set_selection_mode` (`vertex`, `edge`), `select_vertex` and `select_edge` reach the
+same typed operations over MCP. Each component type keeps its own remembered pick,
+active only in its mode. Picks are single, replace-only and clear on an empty click
+(UNCONFIRMED for Maya). Shift/Ctrl clicks are refused with `ModifiedClick`; UV, Vertex
+Face (Alt+F9), Multi-Component and masks are unsupported. F8 leaves Vertex and Edge
+for Object (provisional). Constants and limits are in
+[known-issues.md](../known-issues.md#vertex-and-edge-picking-and-drawing-constants-are-provisional);
+nothing here is compared against Maya.
+
+Where the code lives:
+
+| Concern | Location |
+| --- | --- |
+| Target resolvers | `resolve_vertex_target`, `resolve_edge_target` in `src/native_scene.rs` |
+| Display edges and vertex data | `ViewInstance::edges` (`view_edges`) in `src/view_scene.rs` |
+| Picking and occlusion | `Camera::pick_vertex`, `Camera::pick_edge`, `VERTEX_MARKER_DEPTH_TOLERANCE` in `src/viewport.rs`; pixel wrappers in `src/viewport_ui.rs` |
+| Markers and edge drawing | `vertex_markers`, `selected_edge`, `edge_quad` in `src/viewport_renderer.rs` |
+| Typed operations | `Operation::SelectVertex` / `SelectEdge` in `src/app/dispatch.rs` (modal and closing refusal in the guard above the handlers) |
+| Keys, click | F9 / F10 and the viewport click in `src/app/panels.rs`; Select > Components in `src/app/menus.rs` |
+| Status Line buttons | `COMPONENT_TYPES` in `src/app/features/status_line.rs`; icons in `src/ui_icons.rs` |
+| MCP | `select_vertex`, `select_edge`, schemas and inspection in `src/mcp/features/selection.rs`; SDK tests in `src/mcp_tests/official_client/vertex_edge.rs` |
+
+Tests. App, Editor and GPU tests live in the bin target, so use `--bin azteccraft`; a
+`--lib` filter silently matches zero. Icon goldens (`src/ui_icons/tests.rs`) are in the
+lib target. SDK tests need `--features mcp-test-client`.
+
+```
+cargo test --locked --bin azteccraft --features mcp-test-client vertex
+cargo test --locked --bin azteccraft --features mcp-test-client edge
+cargo test --locked --lib ui_icons
+cargo test --locked --bin azteccraft --features mcp-test-client vertex_edge -- --include-ignored --test-threads=1
+```
+
+The last command also runs the GPU readbacks in `src/viewport_renderer/tests/vertex_edge.rs`,
+which need an adapter and fail without one. They pin the 6e-3 outcome only; the 5e-3 and
+2e-2 bracket in known-issues came from manual readbacks. Passing adapter tests are not
+a native window journey.
+
+Regenerating committed outputs: `UPDATE_SNAPSHOTS=1` rewrites `tests/snapshots/*` (guard
+matrix, tool catalog, inspection bytes; review the diff and confirm existing cells are
+unchanged), and `UPDATE_DOCS=1 cargo test --features mcp registry::tests::tool_doc`
+rewrites `.project-docs/mcp-tools.md`.
+
+Native evidence for the Status Line buttons is recorded in
+[native-verification.md](native-verification.md#vertex-edge-and-face-status-line-buttons-native-check).
+
 ## History
 
 `History::scene()` returns the authoritative `NativeScene`. Its explicit commands

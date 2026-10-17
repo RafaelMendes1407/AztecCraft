@@ -27,9 +27,9 @@ Menu bar draws File, Edit, Create, Select, Modify, Mesh, UV, Windows, Render and
 | File menu | [menus] | Supported | src/app.rs:1102 "File" (New scene, Open, Save, Save As, Close); Export at :1128 "Export" is Visible-unsupported (source-verified); Save: current main also disables these for read-only curve scenes (after ef86b64) | `new_scene`, `open_scene`, `save_scene`, `save_scene_as`, `resolve_file_action`, `request_close` | P1 | S6 Menu content (#66) |
 | Edit menu | [menus] | Supported | src/app.rs:1135 "Edit" (Undo, Redo, Delete only) | `undo`, `redo`, `delete_node` | P1 | S6 Menu content (#66) |
 | Create menu | [menus] | Supported | src/app.rs:1170 "Create" (Polygon cube, plane and provisional sphere, cylinder and cone; other primitives at :1179 "Other primitives" are Visible-unsupported, source-verified; current main also disables these for read-only curve scenes (after ef86b64)) | `create_primitive` | P1 | S6 Menu content (#66) |
-| Select menu | [menus] | Supported | src/app.rs:1181 "Select" (Object/Component F8, Vertex F9, Edge F10, Face F11) | `set_selection_mode`, `select_node`, `select_face`, `select_vertex`, `select_edge` | P1 | S3 Component modes (#29) |
+| Select menu | [menus] | Supported | src/app/menus.rs `menu_button("Select"` (Object/Component F8, Vertex F9, Edge F10, Face F11) | `set_selection_mode`, `select_node`, `select_face`, `select_vertex`, `select_edge` | P1 | S3 Component modes (#29) |
 | Select > Components: Vertex, Edge, UV | [select] | Partial (Vertex F9, Edge F10 and Face F11 entries; UV visible-unsupported) | src/app/menus.rs "Vertex   F9", "Edge   F10", "Face   F11", "UVs" | `set_selection_mode` `vertex`/`edge`, `select_vertex` and `select_edge` | P1 | S3 Component modes (#29) |
-| Shift/Ctrl click add/toggle components | [select] | Missing (modified click refused; the refusal message is returned as an error) | src/viewport_ui.rs and src/app/panels.rs ModifiedClick refusal in Vertex, Edge and Face modes; selection unchanged | none (`select_vertex`/`select_edge` select one component) | P1 | S3 Component modes (#29) |
+| Shift/Ctrl click add/toggle components | [select] | Missing (modified click refused; the refusal message is returned as an error) | src/viewport_ui.rs ModifiedClick refusal (`panels.rs` dispatches via `unsupported_selection()`) in Vertex, Edge and Face modes; selection unchanged | none (`select_vertex`/`select_edge` select one component) | P1 | S3 Component modes (#29) |
 | Modify menu | [menus] | Visible-unsupported | src/app.rs:1197-1199 "Modify" (disabled placeholder entry; source-verified) | none | P1 | S6 Menu content (#66) |
 | Display menu | [menus] | Missing | absent from the menu label list at src/app.rs:1197 | none | P2 | S6 Menu content (#66) |
 | Display menu items (Heads-up display, UI Elements and others) | source not yet researched | Missing | absent; no Display menu is drawn | none | P2 | S6 Menu content (#66) |
@@ -176,7 +176,7 @@ The Outliner is a fixed left panel at src/app.rs:1632 drawing Editor::outliner a
 | Maya 2026 element | Source | AztecCraft status | Evidence | MCP | Priority | Proposed slice |
 | --- | --- | --- | --- | --- | --- | --- |
 | Outliner panel | [outliner] | Supported | src/app.rs:1632-1635 "outliner", :1261 "outliner" | `inspect_scene` | P1 | S10 Outliner (#68) |
-| Hierarchy list with click selection | [outliner] | Supported | src/app.rs:1263-1300 "selectable_label" | `select_node` | P1 | S10 Outliner (#68) |
+| Hierarchy list with click selection | [outliner] | Supported (a row click is refused with BusyEditing while a file modal is open) | src/app/features/selection.rs `outliner` "selectable_label", dispatched through `native_operation`; modal refusal in `src/app/dispatch.rs` (#141) | `select_node` | P1 | S10 Outliner (#68) |
 | Open from Windows > Outliner, Panels or Quick Layout | [outliner] | Missing | always docked; no open or close | none | P3 | S8 Panels and quick layouts (#48 / #69) |
 | Display menu | [outliner] | Missing | absent | none | P2 | S10 Outliner (#68) |
 | Show menu | [outliner] | Missing | absent | none | P2 | S10 Outliner (#68) |
@@ -262,11 +262,11 @@ Editor::shortcuts at src/app.rs:953 handles Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z, F, Cmd
 | R Scale | [toolbox] | Supported | src/app/shortcuts.rs | `set_active_tool` (`scale`), `begin_manipulation`, `update_manipulation`, `finish_manipulation` (the key itself has no MCP form) | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
 | T Show Manipulators | [overview] | Missing | no key handler | none | P2 | S5 Hotkeys (#32) |
 | Y Last Used tool | [toolbox] | Missing | no key handler | none | P2 | S5 Hotkeys (#32) |
-| F8 toggle Object/Component | [select] | Partial | src/app.rs:1577 "Key::F8" (Face, Vertex and Edge go to Object; Object and Hierarchy go to Face, PROVISIONAL) | `set_selection_mode` | P1 | S1 Status Line strip (#59) |
+| F8 toggle Object/Component | [select] | Partial | src/app/panels.rs "Key::F8" (Face, Vertex and Edge go to Object; Object and Hierarchy go to Face, PROVISIONAL) | `set_selection_mode` | P1 | S1 Status Line strip (#59) |
 | B soft selection | [select] | Missing | no key handler | none | P2 | S3 Component modes (#29) |
 | F9 Vertex | [select-2025] FALLBACK 2025; UNCONFIRMED for 2026 | Supported | src/app/panels.rs "Key::F9" (unmodified key only) | `set_selection_mode` `vertex` and `select_vertex` | P1 | S3 Component modes (#29) |
 | F10 Edge | [select-2025] FALLBACK 2025; UNCONFIRMED for 2026 | Supported | src/app/panels.rs "Key::F10" (unmodified key only) | `set_selection_mode` `edge` and `select_edge` | P1 | S3 Component modes (#29) |
-| F11 Face | [select-2025] FALLBACK 2025; UNCONFIRMED for 2026 | Supported | src/app.rs:1577 "Key::F11" | `set_selection_mode`, `select_face` | P1 | S3 Component modes (#29) |
+| F11 Face | [select-2025] FALLBACK 2025; UNCONFIRMED for 2026 | Supported | src/app/panels.rs "Key::F11" | `set_selection_mode`, `select_face` | P1 | S3 Component modes (#29) |
 | Alt+F9 Vertex Face | [select-2025] FALLBACK 2025; UNCONFIRMED for 2026 | Missing | no key handler | none | P2 | S3 Component modes (#29) |
 | F12 UV | [select-2025] FALLBACK 2025; UNCONFIRMED for 2026 | Missing | no key handler | none | P2 | S3 Component modes (#29) |
 | F7 multi-component | [select-2025] FALLBACK 2025; UNCONFIRMED for 2026 | Missing | no key handler | none | P3 | S3 Component modes (#29) |
