@@ -514,14 +514,11 @@ unsupported Tool Settings panel. Gimbal, Parent, Normal, Custom and Component ar
 disabled. The MCP `update_manipulation` takes an absolute Rotate angle in the scene
 angular unit and the native numeric field takes degrees; both reach the core as degrees.
 
-## Grid lines leak across faces (#111)
+## Grid lines over primitive faces are expected (#111, closed)
 
-Native macOS still shows grid lines across a cube's front faces and a cylinder's lower faces,
-also after DefaultLightingApprox. #111 is unfixed and untouched by the lighting change. The
-headless offscreen harness shows no grid pixel in a window at the cube centre
-(`headless_gpu_offscreen_does_not_reproduce_issue_111`), but a grid line may simply not cross that
-window at that view, so this is weak evidence of any difference from the app. If they do differ,
-look at the real egui render pass first (depth attachment or compositing).
+#111 closed as expected behaviour: origin-centred primitives straddle the y=0 grid plane, so grid
+lines in front of the lower faces are correctly drawn; pinned by
+`headless_gpu_grid_is_hidden_by_opaque_faces_but_shows_through_wireframe`.
 
 ## Selection tint is distinct on screen only for tested lighting (#122)
 
