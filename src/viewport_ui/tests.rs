@@ -297,7 +297,7 @@ fn captured_typed_navigation_preserves_orbit_pan_and_both_dollies_and_drains_onc
         *world_units,
         (Vec2::new(-10.0, 20.0) * camera.distance() * 0.002).to_array()
     );
-    assert_eq!(*secondary, 0.2_f32.exp());
+    assert_eq!(*secondary, (-0.2_f32).exp());
     assert_eq!(*wheel, (-scroll * 0.002).exp());
     assert!(input.take_navigation().is_empty());
     assert_eq!(camera, before);
@@ -859,4 +859,48 @@ fn degraded_face_centres_reach_the_overlay_text() {
             .any(|s| matches!(&s.shape, Shape::Text(t)
         if t.galley.job.text.contains(super::FACE_CENTERS_HIDDEN)))
     );
+}
+
+#[test]
+fn upward_right_drag_dollies_the_camera_back_and_downward_dollies_in() {
+    for (dy, farther) in [(-20.0, true), (20.0, false)] {
+        let context = egui::Context::default();
+        let mut camera = camera();
+        camera
+            .frame_points(&[Vec3::splat(-4.0), Vec3::splat(4.0)], 1.0)
+            .unwrap();
+        let clip = Rect::from_min_size(Pos2::ZERO, egui::vec2(128.0, 96.0));
+        let point = egui::pos2(40.0, 50.0);
+        let none = Modifiers::NONE;
+        let _ = capture_frame(
+            &context,
+            &camera,
+            raw(0.0, none, vec![Event::PointerMoved(point)]),
+            clip,
+        );
+        let press = Event::PointerButton {
+            pos: point,
+            button: PointerButton::Secondary,
+            pressed: true,
+            modifiers: none,
+        };
+        let _ = capture_frame(&context, &camera, raw(1.0 / 60.0, none, vec![press]), clip);
+        let (mut input, _) = capture_frame(
+            &context,
+            &camera,
+            raw(
+                2.0 / 60.0,
+                none,
+                vec![Event::PointerMoved(egui::pos2(40.0, 50.0 + dy))],
+            ),
+            clip,
+        );
+        let operations = input.take_navigation();
+        let [Operation::Dolly { factor }] = operations.as_slice() else {
+            panic!("a right-drag must produce exactly one dolly")
+        };
+        let before = camera.distance();
+        camera.dolly(*factor).unwrap();
+        assert_eq!(camera.distance() > before, farther, "dy {dy}");
+    }
 }

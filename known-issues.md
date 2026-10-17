@@ -540,3 +540,10 @@ are follow-ups. Ids are table indices reused after undo, so clients must not cac
 table holds at most 512 materials, far inside the `inspect_scene` budget (tested); creating past it returns `session_material_limit`. The default shader is unverified for Maya 2026 and linear colour
 is shown as sRGB bytes, so no parity is claimed. No MCP test creates two instances of one shape
 (no instancing operation exists yet); that case is covered by core and `ViewScene` unit tests.
+
+Right-drag dolly direction is PROVISIONAL (#154): dragging up moves the camera back and
+dragging down moves it in, following a user report. The Maya help pages for tumble, track
+and dolly (help.autodesk.com/cloudhelp/2023/ENU/Maya-Basics/files/GUID-941480C1-9BDA-4DB3-8EA8-113A0D6FAF1F.htm;
+no 2026 page was found) give no direction for the Alt + right-drag, so it is unverified against
+Maya. Horizontal drag does not dolly. Maya requires Alt for right-drag dolly (and Alt + middle
+for track); AztecCraft still dollies on a plain right-drag and pans on a plain middle-drag.

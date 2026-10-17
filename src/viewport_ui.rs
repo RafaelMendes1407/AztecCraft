@@ -102,7 +102,7 @@ pub fn capture(
     }
     if response.dragged_by(PointerButton::Secondary) {
         navigation.push(Operation::Dolly {
-            factor: (delta.y * 0.01).exp(),
+            factor: (-delta.y * 0.01).exp(),
         });
     }
     if response.hovered() && scroll != 0.0 {
