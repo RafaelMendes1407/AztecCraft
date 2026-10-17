@@ -183,6 +183,8 @@ and `pick_edge` (#29; the Status Line Vertex, Edge and Face buttons dispatch the
 Object and enters Face from Object and Hierarchy; Maya's F8 return target is
 UNCONFIRMED, so this is provisional. A click on empty space clears the active type's
 pick, also UNCONFIRMED for Maya.
+The Channel Box shows only the parent object's channels in Vertex, Edge and Face modes; there is
+no component feedback (coordinates or attributes) for the picked vertex or edge.
 The 10 px vertex click box, the 6 px edge click distance, the 5 px vertex marker, the
 3 px selected-edge strip and the depth tolerance below are original provisional values,
 not verified Maya defaults; Maya's click tolerance and preselection defaults are
@@ -358,12 +360,12 @@ The strip shows:
 - a menu-set selector where only Modeling is active; Rigging, Animation, FX and Rendering are disabled;
 - New, Open and Save buttons, which share the File menu's handlers and enable state;
 - Hierarchy (Root sub-mask only), Object and Component selection modes. The Component button enters Face
-  and stays pressed in Vertex, Edge and Face;
+  from Object and Hierarchy, keeps the current mode in Vertex, Edge and Face, and stays pressed in all three;
 - Vertex, Edge and Face component-type buttons (#29), which dispatch the F9, F10 and F11 operations. Their
   order and icons are original and the Maya 2026 icons and order are UNCONFIRMED. They are exclusive modes,
   not Maya's per-type selection mask toggles; there is no UV or Vertex Face button;
   Like F8 to F11 and the other mode buttons they cancel an active native Move, Rotate or Scale
-  manipulation rather than being disabled, and are refused while a remote manipulation is active;
+  manipulation rather than being disabled, but are disabled while a remote manipulation is active;
 - a selection mode menu (presets), shown disabled with no state (visibly unsupported; real presets need masks);
 - five sidebar toggles, of which only Channel Box / Layer Editor works. The others are disabled.
 

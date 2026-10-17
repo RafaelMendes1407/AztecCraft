@@ -1,6 +1,7 @@
 use crate::app::{Editor, SelectionModeIntent};
 use crate::editor_operations::{SelectionMode, SidebarPanel};
 use crate::tool_icons::icon_button;
+use azteccraft::history::ManipulationProvenance;
 use azteccraft::ui_icons::UiIcon;
 use eframe::egui::{self, Align, Layout};
 
@@ -42,8 +43,8 @@ const SELECTION_MODES: [ModeButton; 3] = [
     ModeButton {
         label: "Component selection",
         icon: UiIcon::SelectComponent,
-        hover: "Component selection (enters Face; pick Vertex, Edge or Face with the buttons to the right)  F11",
-        target: (SelectionModeIntent::Face, SelectionMode::Face),
+        hover: "Component selection (keeps the current component mode; from Object or Hierarchy enters Face; pick Vertex, Edge or Face with the buttons to the right)",
+        target: (SelectionModeIntent::Component, SelectionMode::Face),
     },
 ];
 
@@ -104,6 +105,13 @@ const SIDEBAR_TOGGLES: [StripButton; 5] = [
 ];
 
 impl Editor {
+    /// An MCP-owned manipulation, which a click cannot cancel.
+    fn remote_manipulation_active(&self) -> bool {
+        self.history
+            .active_manipulation()
+            .is_some_and(|active| active.provenance == ManipulationProvenance::Remote)
+    }
+
     /// Enabled hover text, or the reason a live toggle is disabled.
     fn sidebar_toggle_hover(&self, button: &StripButton) -> String {
         let reason = if self.files.is_closing() {
@@ -124,6 +132,7 @@ impl Editor {
         selection_intent: &mut Option<SelectionModeIntent>,
     ) {
         let admitted = !self.files.is_modal() && !self.files.is_closing();
+        let mode_admitted = admitted && !self.remote_manipulation_active();
         ui.horizontal(|ui| {
             menu_set_selector(ui);
             ui.separator();
@@ -154,7 +163,7 @@ impl Editor {
                     ui,
                     button.label,
                     button.icon,
-                    admitted,
+                    mode_admitted,
                     selected,
                     button.hover,
                 );
@@ -169,7 +178,7 @@ impl Editor {
                     ui,
                     button.label,
                     button.icon,
-                    admitted,
+                    mode_admitted,
                     mode == self.selection_mode,
                     button.hover,
                 );

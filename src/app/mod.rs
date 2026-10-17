@@ -49,6 +49,8 @@ impl MaterialDraft {
 #[derive(Clone, Copy)]
 enum SelectionModeIntent {
     Toggle,
+    /// Keeps a component mode; from Object or Hierarchy enters Face.
+    Component,
     Object,
     Face,
     Vertex,
