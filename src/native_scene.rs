@@ -1592,6 +1592,8 @@ impl std::error::Error for NativeError {}
 mod tests;
 
 #[cfg(test)]
+mod edit_policy_tests;
+#[cfg(test)]
 pub(crate) mod test_fixtures;
 
 #[cfg(test)]

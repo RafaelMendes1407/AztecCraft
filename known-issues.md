@@ -403,16 +403,21 @@ The legacy quad-only JSON/OBJ scene refuses spheres with a typed error.
 
 ## World-space Rotate
 
-`NativeScene` does not model a node's `inheritsTransform` attribute. World-space
-Rotate relies on the importers refusing it: the ASCII importer rejects any `.it`
-line (and `.ro`, `.ra`, `.sh`), and the binary importer rejects any undeclared
-transform record with such a key (`it`, `inheritsTransform`, `ro`, `ra`, `sh*`),
-so these scenes do not open. Maya's on-disk encoding of these attributes is not
-confirmed by any fixture in the repo; the tests only pin the refusal of the keys.
-A scene is therefore safe from `inheritsTransform` off only while that importer
-behavior holds. Follow-up: `ro` (non-xyz rotate order), `ra`, `sh*` and
-`opm` must stay refused if the importers ever accept them, because Euler
-decomposition and `matrix()` assume xyz order without them.
+`NativeScene` does not model a node's `inheritsTransform` (`it`) or `offsetParentMatrix`
+(`opm`) attributes. World-space Rotate relies on the importers refusing them: the ASCII
+importer rejects any `.it` or `.opm` line, and the binary importer rejects any undeclared
+transform record with such a key (`it`, `inheritsTransform`, `opm`), so these scenes do not
+open. Maya's on-disk binary encoding of these attributes is not confirmed by any fixture in the
+repo; the tests only pin the refusal of the keys. A scene is therefore safe from
+`inheritsTransform` off only while that importer behavior holds.
+
+The ASCII importer does read `.ro`, `.ra`, `.sh`, `.rpt` and `.spt` into the transform, and
+the view, picking and handle frames use them. Those scenes are read-only, so nothing edits
+them. When a scene carries them, Rotate (object and world) refuses a non-xyz rotate order or a
+non-zero rotate axis (`RotateUnsupported::RotateOrder` and `RotateAxis`), and World Scale
+refuses a non-zero shear (`ScaleUnsupported::Shear`), because Euler decomposition and the
+channel deltas assume xyz order without them. The binary importer does not parse these
+extras yet. The remaining gap is Maya-style rotation for these cases (plan Task 2d).
 
 World-space Rotate refuses parents that are not a rotation times a uniform
 positive scale (relative tolerance 1e-9) and nodes with non-positive scale (a
@@ -534,14 +539,3 @@ are follow-ups. Ids are table indices reused after undo, so clients must not cac
 table holds at most 512 materials, far inside the `inspect_scene` budget (tested); creating past it returns `session_material_limit`. The default shader is unverified for Maya 2026 and linear colour
 is shown as sRGB bytes, so no parity is claimed. No MCP test creates two instances of one shape
 (no instancing operation exists yet); that case is covered by core and `ViewScene` unit tests.
-
-## World Scale on a sheared node is not refused yet
-
-**Severity:** low
-**Area:** manipulation policy
-**Issue:** cristim/AztecCraft#105
-
-World Scale on a node with a nonzero shear edits one scale channel, which cannot express the
-world scale (SH^-1 * D * SH is not diagonal). The refusal is planned for the transform-extras
-policy commit. It is latent because no source with shear opens yet in Binary; commit 5 must land
-before any `.mb` extras parse, and `.ma` scenes are read-only.
