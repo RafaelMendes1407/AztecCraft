@@ -553,15 +553,57 @@ fn cancels_an_active_move(button: &str, expected: SelectionMode) {
 }
 
 #[test]
-fn component_buttons_are_refused_while_a_remote_manipulation_is_active() {
+fn native_manipulation_without_a_native_drag_keeps_mode_buttons_enabled_and_a_click_cancels_it() {
+    use crate::app::features::move_tool::tests::{press_x, setup as move_setup};
+    let (mut editor, context, rect) = move_setup(1.0);
+    context.enable_accesskit();
+    let before = editor.history.scene().clone();
+    let begin = press_x(&mut editor, &context, rect, 1.0);
+    let big = egui::vec2(1440.0, 900.0);
+    frame_with(
+        &mut editor,
+        &context,
+        big,
+        1.0,
+        vec![Event::PointerMoved(
+            begin + egui::vec2(rect.height() / 20.0, 0.0),
+        )],
+    );
+    assert_ne!(editor.history.scene(), &before);
+    // The state left when starting the native drag fails after Begin succeeded.
+    editor.native_move = None;
+    let mut focused = false;
+    for _ in 0..40 {
+        let output = frame_with(&mut editor, &context, big, 1.0, vec![key(Key::Tab)]);
+        let focus = output
+            .platform_output
+            .accesskit_update
+            .as_ref()
+            .map(|u| u.focus);
+        let found = strip(&output).into_iter().find(|c| c.label == COMPONENT);
+        if let Some(control) = found
+            && Some(control.id) == focus
+        {
+            assert!(!control.disabled);
+            focused = true;
+            break;
+        }
+    }
+    assert!(focused, "Tab never reached the Component button");
+    frame_with(&mut editor, &context, big, 1.0, vec![key(Key::Space)]);
+    assert_eq!(editor.selection_mode, SelectionMode::Face);
+    assert!(editor.history.active_manipulation().is_none());
+    assert_eq!(editor.history.scene(), &before);
+}
+
+#[test]
+fn mode_buttons_are_disabled_while_a_remote_manipulation_is_active() {
     use crate::app::tests::remote;
     use azteccraft::native_scene::WorldAxis;
-    for label in [
-        COMPONENT_TYPES[0],
-        COMPONENT_TYPES[1],
-        COMPONENT_TYPES[2],
-        COMPONENT,
-    ] {
+    for label in [HIERARCHY, OBJECT, COMPONENT]
+        .into_iter()
+        .chain(COMPONENT_TYPES)
+    {
         let (mut editor, context) = setup();
         let output = strip_output(&mut editor, &context);
         let target = editor.selected_move_target().unwrap();
@@ -575,20 +617,21 @@ fn component_buttons_are_refused_while_a_remote_manipulation_is_active() {
         .unwrap();
         let active = editor.history.active_manipulation().unwrap().id;
         let scene = editor.history.scene().clone();
-        let mode = editor.selection_mode;
+        let before = snapshot(&editor);
+        let output_after = strip_output(&mut editor, &context);
+        let control = strip(&output_after)
+            .into_iter()
+            .find(|c| c.label == label)
+            .unwrap();
+        assert!(control.disabled, "{label}");
         click(&mut editor, &context, button_center(&output, label));
-        assert_eq!(editor.selection_mode, mode, "{label}");
+        assert_eq!(snapshot(&editor), before, "{label}");
         assert_eq!(
             editor.history.active_manipulation().map(|m| m.id),
             Some(active),
             "{label}"
         );
         assert_eq!(editor.history.scene(), &scene, "{label}");
-        assert!(editor.error, "{label}");
-        assert_eq!(
-            editor.status, "Finish or cancel the active manipulation",
-            "{label}"
-        );
     }
 }
 

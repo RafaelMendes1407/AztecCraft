@@ -363,7 +363,7 @@ The strip shows:
   order and icons are original and the Maya 2026 icons and order are UNCONFIRMED. They are exclusive modes,
   not Maya's per-type selection mask toggles; there is no UV or Vertex Face button;
   Like F8 to F11 and the other mode buttons they cancel an active native Move, Rotate or Scale
-  manipulation rather than being disabled, and are refused while a remote manipulation is active;
+  manipulation rather than being disabled, but are disabled while a remote manipulation is active;
 - a selection mode menu (presets), shown disabled with no state (visibly unsupported; real presets need masks);
 - five sidebar toggles, of which only Channel Box / Layer Editor works. The others are disabled.
 

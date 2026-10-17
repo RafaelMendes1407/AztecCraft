@@ -296,7 +296,12 @@ impl Editor {
                 Vec::new()
             };
             let name = self.active_tool_name();
-            if selection_intent.is_some() && self.native_move.is_some() && self.cancel_move()? {
+            let native_manipulation = self.native_move.is_some()
+                || self
+                    .history
+                    .active_manipulation()
+                    .is_some_and(|active| active.provenance == ManipulationProvenance::Native);
+            if selection_intent.is_some() && native_manipulation && self.cancel_move()? {
                 self.status = format!("{name} cancelled: selection mode changed");
                 self.error = false;
             }
