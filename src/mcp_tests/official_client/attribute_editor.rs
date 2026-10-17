@@ -517,10 +517,9 @@ async fn sdk_inspection_reports_transform_extras_with_units_and_non_default_name
                 "scale_pivot_translate"
             ])
         );
-        let second = &inspection["nodes"][1]["transform_attributes"];
-        assert_eq!(second["rotate_order"], "xyz");
-        assert_eq!(second["rotate_axis_degrees"], json!([0.0, 0.0, 0.0]));
-        assert_eq!(second["non_default"], json!([]));
+        // A default node omits the key entirely; the extras node carries it.
+        assert!(inspection["nodes"][1].get("transform_attributes").is_none());
+        assert!(inspection["nodes"][0].get("transform_attributes").is_some());
         client.cancel().await.unwrap();
         drop(editor);
         server.await.unwrap();

@@ -519,8 +519,9 @@ pub struct NodeInspection {
     pub visible: Option<bool>,
     pub transform: TransformInput,
     pub authoring_transform: AuthoringTransformInspection,
-    /// Read-only transform attributes beyond translate, rotate and scale; defaults when unset.
-    pub transform_attributes: TransformAttributes,
+    /// Read-only transform extras; present only when at least one differs from Maya's default.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transform_attributes: Option<TransformAttributes>,
     pub instance_paths: Vec<Vec<String>>,
     pub shape_ids: Vec<String>,
 }
@@ -730,8 +731,10 @@ pub fn check_inspection_size(
             .saturating_add(1024)
             .saturating_add(node.name().len().saturating_mul(6))
             .saturating_add(512)
-            .saturating_add(NODE_VISIBLE_FIELD_MAX_BYTES)
-            .saturating_add(NODE_TRANSFORM_ATTRIBUTES_MAX_BYTES);
+            .saturating_add(NODE_VISIBLE_FIELD_MAX_BYTES);
+        if !node.extras().is_default() {
+            estimated_bytes = estimated_bytes.saturating_add(NODE_TRANSFORM_ATTRIBUTES_MAX_BYTES);
+        }
         if estimated_bytes > limit {
             return Err(OperationError::TooLarge);
         }
@@ -854,6 +857,24 @@ mod tests {
     }
 
     #[test]
+    fn default_nodes_keep_the_base_inspection_capacity() {
+        // Default nodes must not reserve bytes for transform extras: the first node count that
+        // exceeds the budget is pinned, so a per-node reservation that grows shows up here.
+        let mut scene = NativeScene::default();
+        let mut first_too_large = None;
+        for index in 0..200 {
+            scene
+                .create(Primitive::Cube, &format!("cube_{index:02}"))
+                .unwrap();
+            if check_inspection_size(&scene).is_err() {
+                first_too_large = Some(index + 1);
+                break;
+            }
+        }
+        assert_eq!(first_too_large, Some(66));
+    }
+
+    #[test]
     fn node_visible_field_is_covered_by_the_preflight_estimate() {
         let node = |visible| NodeInspection {
             id: String::new(),
@@ -870,7 +891,7 @@ mod tests {
                 rotation: [0.0; 3],
                 scale: [0.0; 3],
             },
-            transform_attributes: TransformAttributes::default(),
+            transform_attributes: None,
             instance_paths: Vec::new(),
             shape_ids: Vec::new(),
         };

@@ -500,3 +500,19 @@ fn degree_scenes_report_the_declared_extras_bit_for_bit() {
         );
     }
 }
+
+#[test]
+fn every_rotate_order_maps_to_its_maya_name() {
+    let names = ["xyz", "yzx", "zxy", "xzy", "yxz", "zyx"];
+    for (order, name) in names.into_iter().enumerate() {
+        let (mut scene, id) = cube();
+        let index = scene.nodes.iter().position(|n| n.id == id).unwrap();
+        scene.nodes[index].extras = TransformExtras {
+            rotate_order: Some(order as u8),
+            ..TransformExtras::default()
+        };
+        let got = scene.transform_attributes(id).unwrap();
+        assert_eq!(got.rotate_order, name, "order {order}");
+        assert_eq!(got.non_default.contains(&"rotate_order"), order != 0);
+    }
+}

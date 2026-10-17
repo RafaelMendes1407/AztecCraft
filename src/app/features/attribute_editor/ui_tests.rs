@@ -799,21 +799,26 @@ fn transform_attributes_render_read_only_for_a_node_with_extras() {
     context.enable_accesskit();
     let before = editor.history.scene().clone();
     let texts = attribute_editor_texts(&mut editor, &context, vec![]);
-    for expected in [
+    // Maya 2026 order: Shear, Rotate Order, Rotate Axis, then a separate Pivots heading.
+    let position = |wanted: &str| {
+        texts
+            .iter()
+            .position(|text| text == wanted)
+            .unwrap_or_else(|| panic!("{wanted}: {texts:?}"))
+    };
+    let order = [
         "Transform Attributes (read-only)",
-        "Rotate Order",
-        "yzx",
-        "Rotate Axis (degrees)",
         "Shear",
         "0.5 0 0",
+        "Rotate Order",
+        "yzx",
+        "Rotate Axis",
+        "Pivots (read-only)",
         "Rotate Pivot Translate",
         "Scale Pivot Translate",
-    ] {
-        assert!(
-            texts.iter().any(|text| text == expected),
-            "{expected}: {texts:?}"
-        );
-    }
+    ]
+    .map(position);
+    assert!(order.windows(2).all(|pair| pair[0] < pair[1]), "{order:?}");
     // Rows are labels: the draft fields and the scene stay as they were.
     assert_eq!(editor.history.scene(), &before);
     // A default node shows the same rows with default values.

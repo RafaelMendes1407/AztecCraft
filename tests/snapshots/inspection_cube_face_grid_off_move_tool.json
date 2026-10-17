@@ -104,30 +104,6 @@
             0.0
           ]
         },
-        "transform_attributes": {
-          "non_default": [],
-          "rotate_axis_degrees": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "rotate_order": "xyz",
-          "rotate_pivot_translate": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "scale_pivot_translate": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "shear": [
-            0.0,
-            0.0,
-            0.0
-          ]
-        },
         "transform_id": "1",
         "visible": true
       }
