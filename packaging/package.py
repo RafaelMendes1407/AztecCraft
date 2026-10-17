@@ -9,6 +9,7 @@ import re
 import shutil
 import stat
 import struct
+import subprocess
 import tarfile
 import tomllib
 import zipfile
@@ -85,6 +86,27 @@ def binary_architecture(binary: Path, target: Platform) -> str:
     if target != "windows" and not os.access(binary, os.X_OK):
         raise ValueError("binary is not executable")
     return architectures[machine]
+
+
+def ad_hoc_sign(bundle: Path) -> None:
+    # The linker's ad-hoc signature covers only the Mach-O, not Info.plist or Resources, so the
+    # assembled bundle must be re-signed or macOS reports it as damaged. Integrity only: no
+    # Developer ID, no notarization.
+    for arguments in (
+        ["--force", "--sign", "-"],
+        ["--verify", "--strict", "--verbose=2"],
+    ):
+        try:
+            subprocess.run(
+                ["codesign", *arguments, str(bundle)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except FileNotFoundError as error:
+            raise RuntimeError("codesign is required to package a macOS bundle") from error
+        except subprocess.CalledProcessError as error:
+            raise RuntimeError(f"codesign {arguments[0]} failed: {error.stderr.strip()}") from error
 
 
 def sha256(path: Path) -> str:
@@ -165,6 +187,8 @@ def package(binary: Path, manifest: Path, output: Path, target: Platform) -> Pat
         shutil.copyfileobj(source, destination)
     if target != "windows":
         executable.chmod(0o755)
+    if target == "macos":
+        ad_hoc_sign(bundle)
     basename = f"azteccraft-{version}-{target}-{architecture}"
     if target == "linux":
         archive = output / f"{basename}.tar.gz"

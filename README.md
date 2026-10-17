@@ -60,6 +60,10 @@ The `desktop` feature is enabled by default and uses eframe/egui with wgpu. The 
 
 For MCP, build with `cargo build --release --locked --features mcp` and configure the client to launch that binary with `--mcp-stdio`. It opens a new native editor window and requires a graphical session. Default build packages omit MCP. Run `cargo test --locked --features mcp-test-client` for the official SDK client suite. See [MCP setup, tools and shutdown behavior](.project-docs/mcp.md).
 
+### CI builds
+
+Every push builds test binaries for macOS (aarch64, x86_64), Linux (x86_64) and Windows (x86_64). Open Actions, the run for a commit, then Artifacts. They are not on the Releases page, and each download is a zip containing the archive. The builds are not notarized: on macOS unzip, try to open the app once, then choose System Settings, Privacy & Security, Open Anyway (shown for about an hour; [Apple's instructions](https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unidentified-developer-mh40616/mac)), or run `xattr -dr com.apple.quarantine AztecCraft.app` in a terminal; on Windows choose More info, Run anyway in SmartScreen; on Linux `chmod +x azteccraft` if needed. Details in [CI build downloads](.project-docs/development.md#download-ci-builds).
+
 ## Architecture and platforms
 
 [src/native_scene.rs](src/native_scene.rs) owns native authoring state and retained source data. [src/history.rs](src/history.rs) applies commands to that model, while [src/document.rs](src/document.rs) stages file candidates before replacement. [src/view_scene.rs](src/view_scene.rs) derives bounded geometry for camera math and the wgpu geometry viewport. The legacy JSON and OBJ library utilities remain separate from native document writing.
