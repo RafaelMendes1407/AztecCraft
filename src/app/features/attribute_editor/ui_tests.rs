@@ -788,3 +788,44 @@ fn a_draft_typed_in_either_panel_is_committed_by_the_dock_switch_and_focus_is_re
         );
     }
 }
+
+#[test]
+fn transform_attributes_render_read_only_for_a_node_with_extras() {
+    let body = "//Maya ASCII 2016 scene\nrequires maya \"2016\";\n\
+        currentUnit -l centimeter -a degree -t film;\n\
+        createNode transform -n \"a\"; setAttr \".ro\" 1; setAttr \".sh\" -type \"double3\" 0.5 0 0;\n";
+    let (mut editor, _directory) = open_with_attribute_editor("extras.ma", body.as_bytes());
+    let context = egui::Context::default();
+    context.enable_accesskit();
+    let before = editor.history.scene().clone();
+    let texts = attribute_editor_texts(&mut editor, &context, vec![]);
+    // Maya 2026 order: Shear, Rotate Order, Rotate Axis, then a separate Pivots heading.
+    let position = |wanted: &str| {
+        texts
+            .iter()
+            .position(|text| text == wanted)
+            .unwrap_or_else(|| panic!("{wanted}: {texts:?}"))
+    };
+    let order = [
+        "Transform Attributes (read-only)",
+        "Shear",
+        "0.5 0 0",
+        "Rotate Order",
+        "yzx",
+        "Rotate Axis",
+        "Pivots (read-only)",
+        "Rotate Pivot Translate",
+        "Scale Pivot Translate",
+    ]
+    .map(position);
+    assert!(order.windows(2).all(|pair| pair[0] < pair[1]), "{order:?}");
+    // Rows are labels: the draft fields and the scene stay as they were.
+    assert_eq!(editor.history.scene(), &before);
+    // A default node shows the same rows with default values.
+    let (mut plain, _plain_directory) = open_with_attribute_editor(
+        "plain.ma",
+        b"//Maya ASCII 2016 scene\nrequires maya \"2016\";\ncurrentUnit -l centimeter -a degree -t film;\ncreateNode transform -n \"a\";\n",
+    );
+    let texts = attribute_editor_texts(&mut plain, &context, vec![]);
+    assert!(texts.iter().any(|text| text == "xyz"), "{texts:?}");
+}

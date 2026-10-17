@@ -444,3 +444,75 @@ fn out_of_range_rotate_order_has_no_matrix() {
     };
     assert!(t.matrix().is_none());
 }
+
+#[test]
+fn transform_attributes_report_names_degrees_and_declared_linear_units() {
+    let (mut scene, id) = cube();
+    let plain = scene.transform_attributes(id).unwrap();
+    assert_eq!(plain, TransformAttributes::default());
+    assert!(plain.non_default.is_empty());
+    scene.units.angular = AngularUnit::Radian;
+    scene.units.linear = LinearUnit::Meter;
+    let index = scene.nodes.iter().position(|n| n.id == id).unwrap();
+    scene.nodes[index].extras = TransformExtras {
+        rotate_order: Some(1),
+        rotate_axis: Some([std::f64::consts::FRAC_PI_2, 0.0, 0.0]),
+        shear: Some([0.5, 0.0, 0.25]),
+        rotate_pivot_translate: Some([1.0, 2.0, 3.0]),
+        scale_pivot_translate: Some([0.0; 3]),
+    };
+    let got = scene.transform_attributes(id).unwrap();
+    assert_eq!(got.rotate_order, "yzx");
+    assert!((got.rotate_axis_degrees[0] - 90.0).abs() < 1e-12);
+    // Pivot translations stay in the declared unit (meters), like authoring_transform.
+    assert_eq!(got.rotate_pivot_translate, [1.0, 2.0, 3.0]);
+    assert_eq!(
+        got.non_default,
+        [
+            "rotate_order",
+            "rotate_axis",
+            "shear",
+            "rotate_pivot_translate"
+        ]
+    );
+    scene.nodes[index].extras.rotate_order = Some(6);
+    assert!(scene.transform_attributes(id).is_err());
+}
+
+#[test]
+fn degree_scenes_report_the_declared_extras_bit_for_bit() {
+    for axis in [[10.0, 20.0, -30.0], [12.345, -0.1, 7.0]] {
+        let (mut scene, id) = cube();
+        let index = scene.nodes.iter().position(|n| n.id == id).unwrap();
+        scene.nodes[index].extras = TransformExtras {
+            rotate_axis: Some(axis),
+            rotate_pivot_translate: Some([12.345, -0.1, 7.0]),
+            ..TransformExtras::default()
+        };
+        let got = scene.transform_attributes(id).unwrap();
+        assert_eq!(
+            got.rotate_axis_degrees.map(f64::to_bits),
+            axis.map(f64::to_bits)
+        );
+        assert_eq!(
+            got.rotate_pivot_translate.map(f64::to_bits),
+            [12.345, -0.1, 7.0].map(f64::to_bits)
+        );
+    }
+}
+
+#[test]
+fn every_rotate_order_maps_to_its_maya_name() {
+    let names = ["xyz", "yzx", "zxy", "xzy", "yxz", "zyx"];
+    for (order, name) in names.into_iter().enumerate() {
+        let (mut scene, id) = cube();
+        let index = scene.nodes.iter().position(|n| n.id == id).unwrap();
+        scene.nodes[index].extras = TransformExtras {
+            rotate_order: Some(order as u8),
+            ..TransformExtras::default()
+        };
+        let got = scene.transform_attributes(id).unwrap();
+        assert_eq!(got.rotate_order, name, "order {order}");
+        assert_eq!(got.non_default.contains(&"rotate_order"), order != 0);
+    }
+}

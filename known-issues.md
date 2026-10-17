@@ -24,8 +24,9 @@ Channel Box and the Attribute Editor (hidden to Attribute Editor); it is not May
 floating-window parity. Its Transform Attributes list comes only from the Maya 2023 page and is
 provisional. Tabs are the selected transform, its direct mesh shapes and their supported
 materials, not Maya's connected-node tabs. Only the first 16 direct shapes of a transform get shape and material tabs; selecting a later one is refused as `invalid_input`, natively and over MCP, and the panel states how many shapes are omitted. Pin Tab, Notes, Extra Attributes, Add/Show/Hide
-Attributes, Shear, Rotate Order, Rotate Axis, pivots, limits, visibility editing and material
-assignment are visibly unsupported. Maya's default modifier is Ctrl on every platform; AztecCraft
+Attributes, rotate and scale pivots, limits, visibility editing and material assignment are
+visibly unsupported, and Shear, Rotate Order, Rotate Axis and the pivot translations are shown
+read-only with no edit control. Maya's default modifier is Ctrl on every platform; AztecCraft
 uses an explicit Ctrl modifier rather than its `modifiers.command` convention, and the macOS
 Cmd-versus-Ctrl behavior is unverified. Native visual verification is pending.
 

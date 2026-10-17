@@ -469,3 +469,59 @@ async fn sdk_shape_tab_beyond_the_cap_is_refused_as_invalid_input() {
     drop(editor);
     server.await.unwrap();
 }
+
+fn extras_scene(units: &str, attributes: &str) -> azteccraft::native_scene::NativeScene {
+    let body = format!(
+        "//Maya ASCII 2016 scene\nrequires maya \"2016\";\ncurrentUnit {units} -t film;\n\
+         createNode transform -n \"a\"; {attributes}\ncreateNode transform -n \"b\";\n"
+    );
+    azteccraft::native_scene::ascii::decode(body.into_bytes().into()).unwrap()
+}
+
+#[tokio::test]
+async fn sdk_inspection_reports_transform_extras_with_units_and_non_default_names() {
+    // Maya ASCII only opens centimeter/degree scenes, so radian and meter units are covered by the
+    // core test `transform_attributes_report_names_degrees_and_declared_linear_units`.
+    let cases = [(
+        "-l centimeter -a degree",
+        "setAttr \".ro\" 1; setAttr \".ra\" -type \"double3\" 10 20 -30; \
+             setAttr \".sh\" -type \"double3\" 0.5 0 0.25; \
+             setAttr \".rpt\" -type \"double3\" 1 2 3; setAttr \".spt\" -type \"double3\" -1 0 2;",
+        "yzx",
+        [10.0, 20.0, -30.0],
+        [1.0, 2.0, 3.0],
+    )];
+    for (units, attributes, order, axis, rpt) in cases {
+        let context = egui::Context::default();
+        let (mut editor, client, server) = start(&context).await;
+        editor.history = azteccraft::history::History::new(extras_scene(units, attributes));
+        let inspection = inspect(&mut editor, &context, &client).await;
+        let first = &inspection["nodes"][0]["transform_attributes"];
+        assert_eq!(first["rotate_order"], order, "{units}");
+        // Degree scenes report the declared value unchanged.
+        assert_eq!(
+            first["rotate_axis_degrees"],
+            json!(axis),
+            "{units}: {first}"
+        );
+        assert_eq!(first["shear"], json!([0.5, 0.0, 0.25]));
+        assert_eq!(first["rotate_pivot_translate"], json!(rpt));
+        assert_eq!(first["scale_pivot_translate"], json!([-1.0, 0.0, 2.0]));
+        assert_eq!(
+            first["non_default"],
+            json!([
+                "rotate_order",
+                "rotate_axis",
+                "shear",
+                "rotate_pivot_translate",
+                "scale_pivot_translate"
+            ])
+        );
+        // A default node omits the key entirely; the extras node carries it.
+        assert!(inspection["nodes"][1].get("transform_attributes").is_none());
+        assert!(inspection["nodes"][0].get("transform_attributes").is_some());
+        client.cancel().await.unwrap();
+        drop(editor);
+        server.await.unwrap();
+    }
+}

@@ -27,7 +27,7 @@ pub use session_material::{
     Lambert, MAX_SESSION_MATERIALS, MaterialChoice, SessionMaterialId, ShadingGroup,
 };
 use source::{ScalarOrigin, SourceFormat, SourceRetention, TransformField};
-pub use transform_extras::{InternalExtras, TransformExtras};
+pub use transform_extras::{InternalExtras, TransformAttributes, TransformExtras};
 
 use crate::scene::{NodeId, Primitive, Scene, SceneError, Transform};
 use glam::{DMat3, DMat4, DVec3, Vec3};
