@@ -133,7 +133,7 @@ face is inactive in Object mode and is revalidated after edits and Undo/Redo.
 Changing object/path or replacing the document clears it; successful New/Open
 retains the current mask. This transient state does not edit the native scene,
 file binding, history or dirty status. Native actions retain the existing valid
-human-draft commitment policy; remote requests refuse differing drafts.
+human-draft commitment policy; remote requests refuse any draft, valid or not (`src/mcp_tests/official_client/attribute_editor.rs "Human draft: any draft is busy_editing, valid or not."`).
 
 Native Face selection uses 4x4 physical-pixel center markers and an 8x8 click box,
 with center-ray visibility and a bounded intersection budget. Plain primary
@@ -240,7 +240,7 @@ GPU or before the first paint). `vertex_markers_hidden` is the same for Vertex-m
 markers; at most one of the two is true in any frame, by selection mode. The setting starts
 `smooth_shade_all`, survives New/Open and belongs to this viewport's session. It
 does not edit NativeScene, create an undo entry, mark the document dirty or change
-its token. It shares the Grid guards: stale token, differing draft, text focus,
+its token. It shares the Grid guards: stale token, any draft (valid or not; `src/mcp_tests/official_client/attribute_editor.rs "Human draft: any draft is busy_editing, valid or not."`), text focus,
 modal, closing and an active Move refuse. Wireframe skips the surface fill:
 triangle picking and the face-center occlusion filter are unchanged, and Face-mode
 center markers are drawn only where that filter accepts them (no surface depth
@@ -302,7 +302,7 @@ Each new Editor and each applied New/Open replaces the scene token. A `document_
 ## Native Save candidate
 
 Save and Save As share the native Editor operations. Native actions first commit
-a valid human draft; remote actions refuse focus, differing drafts, pending input,
+a valid human draft; remote actions refuse focus, any draft (valid or not; `src/mcp_tests/official_client/attribute_editor.rs "Human draft: any draft is busy_editing, valid or not."`), pending input,
 modal state and stale tokens. Save supports source-bound Maya binary scenes on
 Unix with proved existing-record edits. New, legacy and Windows writing remain
 unsupported. Read-through-symlink documents can Save As to a fresh destination;
@@ -360,7 +360,7 @@ surfaces, object edges, picking and camera unchanged. Empty hidden-grid frames
 retain the viewport background without uploading or drawing an empty vertex
 buffer. There is no CPU fallback.
 
-Remote mutations return `busy_editing` while a native text field is focused, a differing draft exists, or a modal dialog is open. This includes valid uncommitted drafts. They do not commit unrelated human edits. `resolve_file_action` is the sole modal exception; text focus, drafts, pending native input and scene-token checks still apply. Inspection remains available and reports these states without returning draft text. Native inputs are processed before queued remote requests at the end of each UI frame, and remote changes request repaint.
+Remote mutations return `busy_editing` while any of these holds: a native text field is focused, a draft exists (this includes valid uncommitted drafts), native input is pending, a close is in progress, or a modal dialog is open. They do not commit unrelated human edits. `resolve_file_action` is the sole modal exception; text focus, drafts, pending native input, a close in progress and scene-token checks still apply. Inspection remains available and reports these states without returning draft text. Native inputs are processed before queued remote requests at the end of each UI frame, and remote changes request repaint.
 
 Approved remote closure reports `closing: true` while waiting for its matching successful JSON-RPC response to flush. Ordinary mutations refuse during closure; readonly inspection stays available. An unrelated response, error, cancellation, deadline or failed write cannot authorize exit. Failed delivery withdraws approval, preserves document state and suppresses an automatic disconnect retry; an explicit native Close remains available. The resolver response owns this delivery barrier when Discard or a successful Save approves a pending Close. A flushed response establishes transport delivery, not proof that a client processed it.
 

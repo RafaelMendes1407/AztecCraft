@@ -43,7 +43,7 @@ provenance Native and no token or draft checks. In order:
    resolve path dispatches a selection operation. Create, Delete and Undo/Redo also move the selection as a side
    effect but stay allowed under a modal (see Observed behavior).
 6. Validation before the draft commit: `selection_path` and Select-clear-with-path
-   (`src/app/dispatch.rs "Clearing selection cannot include an instance path"`), Face mode and face-target resolution for `SelectFace` (`src/app/dispatch.rs "fn require_component_selection"`, `src/app/dispatch.rs "resolve_face_target(target)"`).
+   (`src/app/dispatch.rs "Clearing selection cannot include an instance path"`), Face mode and face-target resolution for `SelectFace` (`src/app/dispatch.rs "fn require_component_selection"`, `src/app/dispatch.rs "SelectionMode::Face,"`).
 7. `commit_pending` (`src/app/dispatch.rs "fn commit_pending"`) commits a valid human draft first, except for `UpdateMove`,
    `UpdateManipulation` and `FinishMove` (`src/app/dispatch.rs "&& !self.commit_pending()"`). On failure the operation returns `InvalidInput(status)`
    and the status text and error flag change.
@@ -96,7 +96,7 @@ The matrix records these asymmetries; treat a change as a behavior change that n
   never dirty, never a scene-token change; guards are those of `SetGridVisible`. Handler is in
   `src/app/dispatch.rs`; matrix cell is `set_shading_mode(wireframe)`.
 - `SetSidebarPanelVisible` follows Grid: remote refuses a stale token, a Move (`BusyManipulation`), a
-  differing draft, text focus, modal and closing (`BusyEditing`); native refuses closing and modal
+  draft of any kind (valid or not; `src/mcp_tests/official_client/attribute_editor.rs "Human draft: any draft is busy_editing, valid or not."`), text focus, modal and closing (`BusyEditing`); native refuses closing and modal
   before any draft commit (the closing and modal checks at the top of `src/app/dispatch.rs "fn apply_operation_guarded"`), is
   `BusyManipulation` during a manipulation (`src/app/features/move_tool.rs "fn guard_move_dispatch"`), and otherwise commits a valid
   draft first and refuses an invalid one (`src/app/dispatch.rs "&& !self.commit_pending()"`). The handler is
