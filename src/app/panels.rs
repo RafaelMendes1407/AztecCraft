@@ -66,11 +66,9 @@ impl Editor {
             );
         });
         egui::Panel::left("toolbox")
-            .exact_size(crate::tool_icons::toolbox_width(ui, &["Snap"]))
+            .exact_size(crate::tool_icons::toolbox_width(ui))
             .resizable(false)
             .show(ui, |ui| {
-                ui.label("Tools");
-                ui.separator();
                 let live = !self.files.is_closing() && !self.files.is_modal();
                 for (label, icon, tool, hover) in [
                     (
@@ -125,7 +123,6 @@ impl Editor {
                         self.native_operation(Operation::SetActiveTool(tool));
                     }
                 }
-                unsupported(ui, "Snap");
             });
         egui::Panel::left("outliner")
             .default_size(200.0)

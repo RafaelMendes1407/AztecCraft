@@ -1,5 +1,5 @@
 use azteccraft::ui_icons::{self, UiIcon};
-use eframe::egui::{self, Color32, Response, Ui, WidgetInfo, WidgetType};
+use eframe::egui::{self, Response, Ui, WidgetInfo, WidgetType};
 
 const SHELF_ICON: f32 = 20.0;
 const TOOL_ICON: f32 = 24.0;
@@ -48,27 +48,14 @@ pub fn icon_button(
     .inner
 }
 
-/// Width of an icon-only column, plus the widest of the given text-only placeholders
-/// (button text in the real button style), measured from the live style.
-pub fn toolbox_width(ui: &Ui, placeholders: &[&str]) -> f32 {
+/// Width of an icon-only column (icon plus button and panel margins), measured from the live style.
+pub fn toolbox_width(ui: &Ui) -> f32 {
     let style = ui.style().button_style(
         &Default::default(),
         egui::widget_style::WidgetState::Noninteractive,
     );
-    let font = style.text_style.font_id;
-    let widest_text = ui.fonts_mut(|fonts| {
-        placeholders
-            .iter()
-            .map(|text| {
-                fonts
-                    .layout_no_wrap((*text).into(), font.clone(), Color32::WHITE)
-                    .size()
-                    .x
-            })
-            .fold(0.0, f32::max)
-    });
     let panel = egui::Frame::side_top_panel(ui.style());
-    (widest_text.max(TOOL_ICON)
+    (TOOL_ICON
         + style.frame.total_margin().sum().x
         + panel.total_margin().sum().x
         + ui.visuals().widgets.noninteractive.bg_stroke.width)
@@ -98,7 +85,7 @@ mod tests {
                 },
                 |ui| {
                     egui::Panel::left("tools")
-                        .exact_size(toolbox_width(ui, &["Snap"]))
+                        .exact_size(toolbox_width(ui))
                         .resizable(false)
                         .show(ui, |ui| {
                             let available = ui.max_rect();
@@ -106,9 +93,8 @@ mod tests {
                                 icon_button(ui, "Move", UiIcon::Move, false, false, "Move");
                             let rotation =
                                 icon_button(ui, "Rotate", UiIcon::Rotate, false, false, "Rotate");
-                            let snap = ui.add_enabled(false, egui::Button::new("Snap"));
                             assert_eq!(movement.rect.height(), rotation.rect.height());
-                            for r in [&movement, &rotation, &snap] {
+                            for r in [&movement, &rotation] {
                                 assert!(
                                     r.rect.right() <= available.right(),
                                     "{font_size}: {:?} outside {available:?}",
