@@ -231,8 +231,10 @@ fn off_center_depth_axis_uses_the_perspective_quotient_and_translated_line() {
             .segments()
             .next()
             .unwrap();
-        near(shaft.end.x, 550.0 + 72.0 * 5.0 / 26_f64.sqrt(), 0.001);
-        near(shaft.end.y, 270.0 - 72.0 / 26_f64.sqrt(), 0.001);
+        // Direction is the perspective quotient; length is 72 times sin(angle to the view ray).
+        let length = 72.0 * (26.0_f64 / 126.0).sqrt();
+        near(shaft.end.x, 550.0 + length * 5.0 / 26_f64.sqrt(), 0.001);
+        near(shaft.end.y, 270.0 - length / 26_f64.sqrt(), 0.001);
         let begin = DVec2::new(566.6666666666666, 266.6666666666667);
         assert_eq!(handles.hit_test(begin), Some(WorldAxis::Z));
         let drag = AxisDrag::begin(
@@ -477,5 +479,63 @@ fn f64_ray_normalization_enforces_the_parallel_threshold_for_both_view_signs() {
             ),
             Err(HandleError::InvalidSolve)
         );
+    }
+}
+
+fn yawed_camera(yaw: f32) -> Camera {
+    Camera::new(Vec3::ZERO, yaw, 0.0, 10.0, 90_f32.to_radians(), 0.1, 100.0).unwrap()
+}
+
+fn shaft_length(handles: &WorldHandles, index: usize) -> f64 {
+    let shaft = handles.axes()[index]
+        .arrow()
+        .unwrap()
+        .segments()
+        .next()
+        .unwrap();
+    (shaft.end - shaft.start).length()
+}
+
+#[test]
+fn axis_length_is_the_full_length_times_its_projected_fraction() {
+    // Perpendicular keeps 72 px; a 45 degree axis keeps sin(45) of it; a nearly end-on axis is short.
+    let handles = WorldHandles::new(&capture(&yawed_camera(0.0), 1.0), DVec3::ZERO).unwrap();
+    near(shaft_length(&handles, 0), 72.0, 1e-9);
+    near(shaft_length(&handles, 1), 72.0, 1e-9);
+    let handles = WorldHandles::new(
+        &capture(&yawed_camera(std::f32::consts::FRAC_PI_4), 1.0),
+        DVec3::ZERO,
+    )
+    .unwrap();
+    let expected = 72.0 * std::f64::consts::FRAC_1_SQRT_2;
+    near(shaft_length(&handles, 0), expected, 0.01);
+    near(shaft_length(&handles, 2), expected, 0.01);
+    near(shaft_length(&handles, 1), 72.0, 1e-9);
+    let handles = WorldHandles::new(&capture(&yawed_camera(0.02), 1.0), DVec3::ZERO).unwrap();
+    near(shaft_length(&handles, 2), 72.0 * 0.02_f64.sin(), 0.01);
+    assert!(shaft_length(&handles, 2) < 2.0);
+}
+
+#[test]
+fn an_end_on_axis_picks_only_where_it_is_drawn_and_never_steals_other_axes() {
+    let handles = WorldHandles::new(&capture(&yawed_camera(0.02), 1.0), DVec3::ZERO).unwrap();
+    // The full-length Z tip used to sit at 72 px; X occupies that line and must win there.
+    let z = handles.axes()[2].arrow().unwrap();
+    let z_tip = z.segments().next().unwrap().end;
+    assert!((z_tip - handles.origin).length() < 2.0);
+    for x in [30.0, 50.0, 70.0] {
+        assert_eq!(
+            handles.hit_test(handles.origin + DVec2::new(x, 0.0)),
+            Some(WorldAxis::X)
+        );
+    }
+    assert_eq!(
+        handles.hit_test(handles.origin + DVec2::new(0.0, -50.0)),
+        Some(WorldAxis::Y)
+    );
+    // Every drawn Z segment lies within its short projected extent.
+    for segment in z.segments() {
+        assert!((segment.start - handles.origin).length() < 4.0);
+        assert!((segment.end - handles.origin).length() < 4.0);
     }
 }
