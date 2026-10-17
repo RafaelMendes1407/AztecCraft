@@ -183,6 +183,8 @@ and `pick_edge` (#29; the Status Line Vertex, Edge and Face buttons dispatch the
 Object and enters Face from Object and Hierarchy; Maya's F8 return target is
 UNCONFIRMED, so this is provisional. A click on empty space clears the active type's
 pick, also UNCONFIRMED for Maya.
+The Channel Box shows only the parent object's channels in Vertex, Edge and Face modes; there is
+no component feedback (coordinates or attributes) for the picked vertex or edge.
 The 10 px vertex click box, the 6 px edge click distance, the 5 px vertex marker, the
 3 px selected-edge strip and the depth tolerance below are original provisional values,
 not verified Maya defaults; Maya's click tolerance and preselection defaults are

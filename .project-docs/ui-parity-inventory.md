@@ -153,6 +153,7 @@ The Channel Box panel docks right at src/app.rs:1636 and draws from Editor::chan
 | SHAPES section | [channelbox] | Missing | no shape channels; the nearby src/app.rs:1434-1500 is the Materials block with Diffuse | `set_material_diffuse` | P2 | S4 Attribute Editor and Channel Box (#60) |
 | INPUTS section | [channelbox] | Visible-unsupported | src/app.rs:1428-1429 "construction history" (disabled; source-verified) | none | P2 | S4 Attribute Editor and Channel Box (#60) |
 | OUTPUTS section | [channelbox] | Missing | absent | none | P3 | S4 Attribute Editor and Channel Box (#60) |
+| Channel Box feedback for selected vertices or edges (component attributes, coordinates) | [channelbox] UNCONFIRMED for Maya 2026 | Missing | in Vertex, Edge and Face modes the Channel Box (`Editor::channels`, src/app/features/node_edit.rs) shows the parent object's name, Translate/Rotate/Scale rows, material controls and Delete, with no component-specific rows; nothing about the picked component is shown | none | P2 | S3 Component modes (#29) |
 | Layer Editor: Display Layers tab | [layers] | Missing | absent | none | P2 | S9 Layer Editor (#61) |
 | Layer Editor: Animation Layers tab | [layers] | Missing | absent | none | P3 | S9 Layer Editor (#61) |
 

@@ -139,7 +139,7 @@ Native Face selection uses 4x4 physical-pixel center markers and an 8x8 click bo
 with center-ray visibility and a bounded intersection budget. Plain primary
 click replaces or clears the face; modified selection and ambiguous coalesced
 primary releases are unsupported. Alt camera navigation remains available.
-F11 and Select > Components > Face enter Face mode; F8 toggles Object/Face (from Hierarchy it goes to Face).
+F11 and Select > Components > Face enter Face mode; F8 goes from Object or Hierarchy to Face and from Vertex, Edge or Face to Object (provisional).
 Exact Maya CBS, numeric, visual and event-order parity remain unverified. Native
 Extrude remains disabled pending a real history/manipulator workflow; the
 existing explicit `extrude_face` tool keeps its checked authoring semantics.
