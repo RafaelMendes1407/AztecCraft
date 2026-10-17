@@ -96,7 +96,7 @@ One fixed shelf row exists under the menu bar. Tab order and the Poly Modeling t
 
 ## 4. Tool Box and quick layouts
 
-The Tool Box rows below reflect the icon-only Tool Box change (feat/70-wire-ui-icons): Select, Lasso, Paint Selection, Move, Rotate, Scale and Last Used in the documented order, with labels in hover text and AccessKit. Select and Move are live through `set_active_tool`; the other five are disabled. The Tool Box draws exactly these seven icon buttons: no "Tools" label and no Snap button, matching the Tool Box page (seven tools, no label, no Snap); the Snap row in section 2 tracks the Status Line group. Cites in those rows are at that branch, not ef86b64.
+The Tool Box rows below reflect the icon-only Tool Box change (feat/70-wire-ui-icons): Select, Lasso, Paint Selection, Move, Rotate, Scale and Last Used in the documented order, with labels in hover text and AccessKit. Select, Move, Rotate and Scale are live through `set_active_tool`; the other three are disabled. The Tool Box draws exactly these seven icon buttons: no "Tools" label and no Snap button, matching the Tool Box page (seven tools, no label, no Snap); the Snap row in section 2 tracks the Status Line group. Cites in those rows are at that branch, not ef86b64.
 
 | Maya 2026 element | Source | AztecCraft status | Evidence | MCP | Priority | Proposed slice |
 | --- | --- | --- | --- | --- | --- | --- |
