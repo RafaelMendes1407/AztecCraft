@@ -320,6 +320,10 @@ impl Editor {
                     SelectionModeIntent::Edge => SelectionMode::Edge,
                     SelectionModeIntent::Object => SelectionMode::Object,
                     SelectionModeIntent::Hierarchy => SelectionMode::Hierarchy,
+                    SelectionModeIntent::Component if self.selection_mode.is_component() => {
+                        self.selection_mode
+                    }
+                    SelectionModeIntent::Component => SelectionMode::Face,
                     SelectionModeIntent::Toggle => match self.selection_mode {
                         SelectionMode::Face | SelectionMode::Vertex | SelectionMode::Edge => {
                             SelectionMode::Object

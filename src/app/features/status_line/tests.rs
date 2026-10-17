@@ -412,6 +412,30 @@ fn component_and_object_clicks_set_the_mode_and_repeat_clicks_do_nothing() {
 }
 
 #[test]
+fn component_click_keeps_the_component_mode_and_enters_face_from_object_or_hierarchy() {
+    for (_, mode, _) in TYPE_MODES {
+        let (mut editor, context) = setup();
+        let output = strip_output(&mut editor, &context);
+        editor
+            .apply_operation(Operation::SetSelectionMode(mode))
+            .unwrap();
+        let before = snapshot(&editor);
+        click(&mut editor, &context, button_center(&output, COMPONENT));
+        assert_eq!(snapshot(&editor), before, "{mode:?}");
+        assert_eq!(editor.selection_mode, mode);
+    }
+    for start in [SelectionMode::Object, SelectionMode::Hierarchy] {
+        let (mut editor, context) = setup();
+        let output = strip_output(&mut editor, &context);
+        editor
+            .apply_operation(Operation::SetSelectionMode(start))
+            .unwrap();
+        click(&mut editor, &context, button_center(&output, COMPONENT));
+        assert_eq!(editor.selection_mode, SelectionMode::Face, "{start:?}");
+    }
+}
+
+#[test]
 fn same_frame_shortcuts_beat_the_strip_click_exactly_like_the_select_toggle_menu_item() {
     // Select > Components > Face (menus.rs) assigns the intent directly and so beats a
     // same-frame F8, unlike the strip and Select > Toggle, which only fill an empty slot.

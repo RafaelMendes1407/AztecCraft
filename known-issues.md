@@ -358,7 +358,7 @@ The strip shows:
 - a menu-set selector where only Modeling is active; Rigging, Animation, FX and Rendering are disabled;
 - New, Open and Save buttons, which share the File menu's handlers and enable state;
 - Hierarchy (Root sub-mask only), Object and Component selection modes. The Component button enters Face
-  and stays pressed in Vertex, Edge and Face;
+  from Object and Hierarchy, keeps the current mode in Vertex, Edge and Face, and stays pressed in all three;
 - Vertex, Edge and Face component-type buttons (#29), which dispatch the F9, F10 and F11 operations. Their
   order and icons are original and the Maya 2026 icons and order are UNCONFIRMED. They are exclusive modes,
   not Maya's per-type selection mask toggles; there is no UV or Vertex Face button;

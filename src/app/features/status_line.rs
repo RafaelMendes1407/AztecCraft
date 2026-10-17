@@ -42,8 +42,8 @@ const SELECTION_MODES: [ModeButton; 3] = [
     ModeButton {
         label: "Component selection",
         icon: UiIcon::SelectComponent,
-        hover: "Component selection (enters Face; pick Vertex, Edge or Face with the buttons to the right)  F11",
-        target: (SelectionModeIntent::Face, SelectionMode::Face),
+        hover: "Component selection (keeps the current component mode; from Object or Hierarchy enters Face; pick Vertex, Edge or Face with the buttons to the right)",
+        target: (SelectionModeIntent::Component, SelectionMode::Face),
     },
 ];
 
