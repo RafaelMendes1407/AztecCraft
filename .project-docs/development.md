@@ -135,8 +135,8 @@ add native face-editing controls or prove Maya equivalence.
 
 ## Face Center selection
 
-F11 or Select > Components > Face enters Face mode; F8 or Object/Component
-toggles Object/Face (from Hierarchy it goes to Face). The active transform contributes only directly attached
+F11 or Select > Components > Face enters Face mode; F8 goes from Object or
+Hierarchy to Face and from Vertex, Edge or Face to Object (provisional). The active transform contributes only directly attached
 triangle/quad shapes in its exact instance path, not descendant meshes under a
 selected group. A plain primary click replaces the face or clears it when no
 eligible center is hit. The shared typed operations and inspection are available
