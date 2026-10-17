@@ -11,6 +11,7 @@ const MODES: [&str; 3] = [
     "Object selection",
     "Component selection",
 ];
+const COMPONENT_TYPES: [&str; 3] = ["Vertex selection", "Edge selection", "Face selection"];
 const MENU_SET: &str = "Menu set";
 const PRESETS: &str = "Selection mode menu";
 const FILES: [&str; 3] = ["New scene", "Open...", "Save"];
@@ -69,6 +70,7 @@ fn strip(output: &egui::FullOutput) -> Vec<Control> {
             c.role == accesskit::Role::ComboBox && (c.label == MENU_SET || c.label == PRESETS)
                 || FILES.contains(&c.label.as_str())
                 || MODES.contains(&c.label.as_str())
+                || COMPONENT_TYPES.contains(&c.label.as_str())
                 || TOGGLES.contains(&c.label.as_str())
         })
         .collect();
@@ -140,7 +142,7 @@ fn strip_fits_the_minimum_window_at_every_scale_and_enlarged_text() {
         frame_with(&mut editor, &context, SIZE, ppp, vec![]);
         let output = frame_with(&mut editor, &context, SIZE, ppp, vec![]);
         let found = strip(&output);
-        assert_eq!(found.len(), 13, "ppp {ppp} font {font}");
+        assert_eq!(found.len(), 16, "ppp {ppp} font {font}");
         let margin = egui::Frame::side_top_panel(&context.global_style()).total_margin();
         for control in &found {
             assert!(
@@ -173,6 +175,7 @@ fn strip_elements_are_in_documented_order() {
         .chain(FILES)
         .chain([PRESETS])
         .chain(MODES)
+        .chain(COMPONENT_TYPES)
         .chain(TOGGLES)
         .collect();
     assert_eq!(labels, expected);
@@ -265,7 +268,7 @@ fn every_strip_control_has_its_label_and_disabled_state() {
     frame_with(&mut editor, &context, SIZE, 1.0, vec![]);
     let output = frame_with(&mut editor, &context, SIZE, 1.0, vec![]);
     let found = strip(&output);
-    for name in MODES.iter().chain(TOGGLES.iter()) {
+    for name in MODES.iter().chain(&COMPONENT_TYPES).chain(&TOGGLES) {
         let control = found
             .iter()
             .find(|c| c.label == *name)
@@ -471,6 +474,17 @@ fn valid_draft_commits_to_the_old_target_and_invalid_draft_refuses() {
 
 #[test]
 fn clicking_a_mode_cancels_an_active_move() {
+    cancels_an_active_move(COMPONENT, SelectionMode::Face);
+}
+
+#[test]
+fn clicking_a_component_type_cancels_an_active_move() {
+    for (label, mode, _) in TYPE_MODES {
+        cancels_an_active_move(label, mode);
+    }
+}
+
+fn cancels_an_active_move(button: &str, expected: SelectionMode) {
     use crate::app::features::move_tool::tests::{press_x, setup as move_setup};
     let (mut editor, context, rect) = move_setup(1.0);
     context.enable_accesskit();
@@ -499,23 +513,63 @@ fn clicking_a_mode_cancels_an_active_move() {
             .map(|u| u.focus);
         if strip(&output)
             .iter()
-            .any(|c| c.label == COMPONENT && Some(c.id) == focus)
+            .any(|c| c.label == button && Some(c.id) == focus)
         {
             focused = true;
             break;
         }
     }
-    assert!(focused, "Tab never reached the Component button");
+    assert!(focused, "Tab never reached the {button} button");
     assert!(editor.native_move.is_some());
     frame_with(&mut editor, &context, big, 1.0, vec![key(Key::Space)]);
-    assert_eq!(editor.selection_mode, SelectionMode::Face);
+    assert_eq!(editor.selection_mode, expected);
     assert!(editor.history.active_manipulation().is_none() && editor.native_move.is_none());
     assert_eq!(editor.history.scene(), &before);
     assert_eq!(editor.status, "Move cancelled: selection mode changed");
 }
 
 #[test]
-fn modal_and_closing_disable_both_mode_buttons() {
+fn component_buttons_are_refused_while_a_remote_manipulation_is_active() {
+    use crate::app::tests::remote;
+    use azteccraft::native_scene::WorldAxis;
+    for label in [
+        COMPONENT_TYPES[0],
+        COMPONENT_TYPES[1],
+        COMPONENT_TYPES[2],
+        COMPONENT,
+    ] {
+        let (mut editor, context) = setup();
+        let output = strip_output(&mut editor, &context);
+        let target = editor.selected_move_target().unwrap();
+        remote(
+            &mut editor,
+            Operation::BeginMove {
+                target,
+                axis: WorldAxis::X,
+            },
+        )
+        .unwrap();
+        let active = editor.history.active_manipulation().unwrap().id;
+        let scene = editor.history.scene().clone();
+        let mode = editor.selection_mode;
+        click(&mut editor, &context, button_center(&output, label));
+        assert_eq!(editor.selection_mode, mode, "{label}");
+        assert_eq!(
+            editor.history.active_manipulation().map(|m| m.id),
+            Some(active),
+            "{label}"
+        );
+        assert_eq!(editor.history.scene(), &scene, "{label}");
+        assert!(editor.error, "{label}");
+        assert_eq!(
+            editor.status, "Finish or cancel the active manipulation",
+            "{label}"
+        );
+    }
+}
+
+#[test]
+fn modal_and_closing_disable_every_mode_button() {
     for closing in [false, true] {
         let (mut editor, context) = setup();
         if closing {
@@ -525,7 +579,10 @@ fn modal_and_closing_disable_both_mode_buttons() {
         }
         let output = strip_output(&mut editor, &context);
         let before = snapshot(&editor);
-        for label in [HIERARCHY, OBJECT, COMPONENT] {
+        for label in [HIERARCHY, OBJECT, COMPONENT]
+            .into_iter()
+            .chain(COMPONENT_TYPES)
+        {
             let control = strip(&output)
                 .into_iter()
                 .find(|c| c.label == label)
@@ -1192,4 +1249,78 @@ fn dirty_new_from_the_strip_raises_the_unsaved_changes_modal() {
         format!("{:?}", editor.files.pending_inspection().unwrap().kind),
         "New"
     );
+}
+
+const TYPE_MODES: [(&str, SelectionMode, Key); 3] = [
+    (COMPONENT_TYPES[0], SelectionMode::Vertex, Key::F9),
+    (COMPONENT_TYPES[1], SelectionMode::Edge, Key::F10),
+    (COMPONENT_TYPES[2], SelectionMode::Face, Key::F11),
+];
+
+#[test]
+fn component_type_clicks_set_their_mode_and_repeat_clicks_do_nothing() {
+    for (label, mode, _) in TYPE_MODES {
+        let (mut editor, context) = setup();
+        let output = strip_output(&mut editor, &context);
+        click(&mut editor, &context, button_center(&output, label));
+        assert_eq!(editor.selection_mode, mode, "{label}");
+        let after = snapshot(&editor);
+        click(&mut editor, &context, button_center(&output, label));
+        assert_eq!(snapshot(&editor), after, "{label}");
+    }
+}
+
+#[test]
+fn component_type_buttons_match_their_hotkeys() {
+    for (label, mode, hotkey) in TYPE_MODES {
+        let (mut by_button, context) = setup();
+        let output = strip_output(&mut by_button, &context);
+        click(&mut by_button, &context, button_center(&output, label));
+        let (mut by_key, key_context) = setup();
+        frame_with(&mut by_key, &key_context, SIZE, 1.0, vec![key(hotkey)]);
+        assert_eq!(by_key.selection_mode, mode, "{label}");
+        assert_eq!(snapshot(&by_button).3, snapshot(&by_key).3, "{label}");
+    }
+}
+
+#[test]
+fn accesskit_pressed_state_tracks_every_mode() {
+    let (mut editor, context) = setup();
+    let pressed = |editor: &mut Editor, context: &egui::Context| {
+        let found = strip(&strip_output(editor, context));
+        [HIERARCHY, OBJECT, COMPONENT]
+            .into_iter()
+            .chain(COMPONENT_TYPES)
+            .map(|label| found.iter().find(|c| c.label == label).unwrap().selected)
+            .collect::<Vec<_>>()
+    };
+    let expected = |on: &[usize]| (0..6).map(|i| Some(on.contains(&i))).collect::<Vec<_>>();
+    assert_eq!(pressed(&mut editor, &context), expected(&[1]));
+    for (label, mode, _) in TYPE_MODES {
+        let output = strip_output(&mut editor, &context);
+        click(&mut editor, &context, button_center(&output, label));
+        assert_eq!(editor.selection_mode, mode);
+        let type_index = 3 + COMPONENT_TYPES.iter().position(|l| *l == label).unwrap();
+        assert_eq!(
+            pressed(&mut editor, &context),
+            expected(&[2, type_index]),
+            "{label}"
+        );
+    }
+    frame_with(&mut editor, &context, SIZE, 1.0, vec![key(Key::F8)]);
+    assert_eq!(pressed(&mut editor, &context), expected(&[1]));
+}
+
+#[test]
+fn component_type_hover_states_hotkey_exclusivity_and_uv() {
+    let (mut editor, context) = file_editor(FileState::Dirty);
+    let output = strip_output(&mut editor, &context);
+    for (label, _, hotkey) in TYPE_MODES {
+        let hover = hover_texts(&mut editor, &context, button_center(&output, label));
+        let name = label.split(' ').next().unwrap();
+        assert!(hover.contains(name), "{label}: {hover}");
+        assert!(hover.contains(&format!("{hotkey:?}")), "{label}: {hover}");
+        assert!(hover.contains("exclusive"), "{label}: {hover}");
+        assert!(hover.contains("UV is unsupported"), "{label}: {hover}");
+    }
 }

@@ -21,6 +21,9 @@ pub enum UiIcon {
     SelectHierarchy,
     SelectObject,
     SelectComponent,
+    SelectVertex,
+    SelectEdge,
+    SelectFace,
     SidebarModelingToolkit,
     SidebarHumanIk,
     SidebarAttributeEditor,
@@ -48,6 +51,9 @@ pub const ALL: &[UiIcon] = &[
     UiIcon::SelectHierarchy,
     UiIcon::SelectObject,
     UiIcon::SelectComponent,
+    UiIcon::SelectVertex,
+    UiIcon::SelectEdge,
+    UiIcon::SelectFace,
     UiIcon::SidebarModelingToolkit,
     UiIcon::SidebarHumanIk,
     UiIcon::SidebarAttributeEditor,
@@ -542,6 +548,90 @@ fn select_component(fit: &Fit) -> Vec<Shape> {
     shapes
 }
 
+/// The tilted quad shared by the Vertex, Edge and Face glyphs, clockwise from the top left.
+const COMPONENT_QUAD: [Pos2; 4] = [
+    pos2(3.2, 6.0),
+    pos2(18.0, 3.2),
+    pos2(20.8, 18.0),
+    pos2(6.0, 20.8),
+];
+/// The Edge and Face glyphs use the quad grown about the grid centre to span the Vertex points.
+const QUAD_GROWTH: f32 = 1.24;
+/// Half the side of a Vertex glyph point.
+const QUAD_POINT_HALF: f32 = 2.8;
+/// Half the width of an Edge glyph bar, and of its highlighted bar.
+const QUAD_EDGE_HALF: f32 = 1.0;
+const QUAD_EDGE_HIGHLIGHT_HALF: f32 = 1.6;
+/// How far an Edge glyph bar stops short of each quad corner.
+const QUAD_EDGE_CLEAR: f32 = 1.8;
+/// Gap between the Face glyph's trapezoids; wider than `REGION_GAP` so the joints survive 16 px.
+const FACE_GAP: f32 = 1.3;
+/// Scale of the Face glyph's hole relative to the grown quad.
+const FACE_HOLE: f32 = 0.5;
+/// Scale of the Face glyph's centre handle relative to the grown quad.
+const FACE_HANDLE: f32 = 0.2;
+
+/// Four corner points of the quad, the first one accent-coloured as the selected point.
+fn select_vertex(fit: &Fit) -> Vec<Shape> {
+    COMPONENT_QUAD
+        .iter()
+        .enumerate()
+        .map(|(i, &p)| {
+            let h = QUAD_POINT_HALF;
+            let color = if i == 0 { ACCENT } else { NEUTRAL_LIGHT };
+            fit.fill(&rect_path(p - vec2(h, h), p + vec2(h, h)), color)
+        })
+        .collect()
+}
+
+fn grown_quad() -> [Pos2; 4] {
+    COMPONENT_QUAD.map(|p| GRID_CENTER + (p - GRID_CENTER) * QUAD_GROWTH)
+}
+
+/// Four separate quad edges, the right one thicker and accent-coloured as the selected edge.
+fn select_edge(fit: &Fit) -> Vec<Shape> {
+    let quad = grown_quad();
+    (0..4)
+        .map(|i| {
+            let (a, b) = (quad[i], quad[(i + 1) % 4]);
+            let dir = (b - a).normalized();
+            let len = (b - a).length();
+            let (half, color) = if i == 1 {
+                (QUAD_EDGE_HIGHLIGHT_HALF, ACCENT)
+            } else {
+                (QUAD_EDGE_HALF, NEUTRAL_LIGHT)
+            };
+            let (from, to) = (QUAD_EDGE_CLEAR, len - QUAD_EDGE_CLEAR);
+            fit.fill(
+                &along(
+                    a,
+                    dir,
+                    &[(from, -half), (to, -half), (to, half), (from, half)],
+                ),
+                color,
+            )
+        })
+        .collect()
+}
+
+/// The quad as a facet: four trapezoids around a centre point, like a shaded polygon with its
+/// face handle.
+fn select_face(fit: &Fit) -> Vec<Shape> {
+    let outer = grown_quad();
+    let inner = outer.map(|p| GRID_CENTER + (p - GRID_CENTER) * FACE_HOLE);
+    let half_gap = FACE_GAP / 2.0;
+    let mut shapes: Vec<Shape> = (0..4)
+        .map(|i| {
+            let j = (i + 1) % 4;
+            let piece = [outer[i], outer[j], inner[j], inner[i]];
+            fit.fill(&inset(&piece, half_gap), AMBER_MID)
+        })
+        .collect();
+    let handle = outer.map(|p| GRID_CENTER + (p - GRID_CENTER) * FACE_HANDLE);
+    shapes.push(fit.fill(&handle, NEUTRAL_LIGHT));
+    shapes
+}
+
 /// One filled rectangle region per `([x0, y0, x1, y1], colour)` entry, in grid units.
 fn rects(fit: &Fit, list: &[([f32; 4], Color32)]) -> Vec<Shape> {
     list.iter()
@@ -1005,6 +1095,9 @@ pub fn shapes(icon: UiIcon, rect: Rect) -> Vec<Shape> {
         UiIcon::SelectHierarchy => select_hierarchy(&fit),
         UiIcon::SelectObject => select_object(&fit),
         UiIcon::SelectComponent => select_component(&fit),
+        UiIcon::SelectVertex => select_vertex(&fit),
+        UiIcon::SelectEdge => select_edge(&fit),
+        UiIcon::SelectFace => select_face(&fit),
         UiIcon::SidebarModelingToolkit => sidebar_modeling_toolkit(&fit),
         UiIcon::SidebarHumanIk => sidebar_human_ik(&fit),
         UiIcon::SidebarAttributeEditor => sidebar_attribute_editor(&fit),

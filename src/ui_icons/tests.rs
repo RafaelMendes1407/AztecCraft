@@ -16,6 +16,9 @@ fn index(icon: UiIcon) -> usize {
         UiIcon::SelectHierarchy => 7,
         UiIcon::SelectObject => 8,
         UiIcon::SelectComponent => 9,
+        UiIcon::SelectVertex => 23,
+        UiIcon::SelectEdge => 24,
+        UiIcon::SelectFace => 25,
         UiIcon::SidebarModelingToolkit => 10,
         UiIcon::SidebarHumanIk => 11,
         UiIcon::SidebarAttributeEditor => 12,
@@ -31,7 +34,7 @@ fn index(icon: UiIcon) -> usize {
         UiIcon::FrameSelected => 22,
     }
 }
-const ICON_COUNT: usize = 23;
+const ICON_COUNT: usize = 26;
 
 struct Raster {
     w: usize,
@@ -330,6 +333,9 @@ fn golden(icon: UiIcon) -> [&'static str; 12] {
         UiIcon::SelectHierarchy => GOLDEN_SELECT_HIERARCHY,
         UiIcon::SelectObject => GOLDEN_SELECT_OBJECT,
         UiIcon::SelectComponent => GOLDEN_SELECT_COMPONENT,
+        UiIcon::SelectVertex => GOLDEN_SELECT_VERTEX,
+        UiIcon::SelectEdge => GOLDEN_SELECT_EDGE,
+        UiIcon::SelectFace => GOLDEN_SELECT_FACE,
         UiIcon::SidebarModelingToolkit => GOLDEN_SIDEBAR_MODELING_TOOLKIT,
         UiIcon::SidebarHumanIk => GOLDEN_SIDEBAR_HUMAN_IK,
         UiIcon::SidebarAttributeEditor => GOLDEN_SIDEBAR_ATTRIBUTE_EDITOR,
@@ -672,6 +678,48 @@ const GOLDEN_FRAME_SELECTED: [&str; 12] = [
     ".#........#.",
     ".#........#.",
     ".####..####.",
+    "............",
+];
+const GOLDEN_SELECT_VERTEX: [&str; 12] = [
+    "........##..",
+    "........##..",
+    "###.....##..",
+    "###.........",
+    "............",
+    "............",
+    "............",
+    "............",
+    ".........###",
+    "..##.....###",
+    "..##........",
+    "..##........",
+];
+const GOLDEN_SELECT_EDGE: [&str; 12] = [
+    ".......##...",
+    "..#####...#.",
+    ".........##.",
+    "#........##.",
+    "#.........#.",
+    ".#........#.",
+    ".#........##",
+    ".#........##",
+    ".#........##",
+    ".#..........",
+    ".....#####..",
+    "...##.......",
+];
+const GOLDEN_SELECT_FACE: [&str; 12] = [
+    "............",
+    "......###...",
+    "..######.#..",
+    ".#.##...##..",
+    ".##.....##..",
+    ".##..##..#..",
+    "..#..##..##.",
+    "..##.....##.",
+    "..##...##.#.",
+    "..#.######..",
+    "...###......",
     "............",
 ];
 
