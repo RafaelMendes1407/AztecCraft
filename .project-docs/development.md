@@ -56,6 +56,12 @@ native platform results need retained run evidence rather than inference from
 the configured matrix. Code line coverage is separate from Maya workflow
 coverage and remains unsuitable for a functionality badge or parity claim.
 
+### Download CI builds
+
+CI builds are workflow artifacts, not releases, and do not appear on the Releases page (creating releases needs separate authorization). To get binaries for a commit, open Actions, then the Rust checks run for that commit, then its Artifacts section. Artifacts are named `azteccraft-<platform>-<arch>-<commit>` for macOS aarch64 and x86_64, Linux x86_64 and Windows x86_64, and expire after 7 days. GitHub wraps each artifact in a zip, so the download is a zip containing the real archive (`.zip` for macOS and Windows, `.tar.gz` for Linux) plus `manifest.json` with SHA-256 hashes. They are default-feature builds without MCP.
+
+The builds are not notarized. macOS: unzip the archive, then run `xattr -dr com.apple.quarantine AztecCraft.app` or right-click the app and choose Open. The bundle is ad-hoc signed for integrity only, which is not a Developer ID signature. Windows: SmartScreen warns about an unrecognized publisher; choose More info, then Run anyway. Linux: run `chmod +x azteccraft` if the executable bit was lost. The x86_64 macOS build is cross-compiled and not launched in CI. CI only runs the binary's usage exit, so graphical launch is unverified.
+
 Optional local hooks: install `pre-commit`, then run `pre-commit install` and
 `pre-commit run --all-files`. Rust checks use the pinned repository toolchain.
 The lightweight private-key hook is not a comprehensive secret or dependency audit.
