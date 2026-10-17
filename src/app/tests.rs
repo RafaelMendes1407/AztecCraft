@@ -3574,6 +3574,24 @@ mod toolbox_wire {
             );
             assert_eq!(control.disabled, !live, "{}", control.label);
         }
+        let all = controls(&output);
+        let column = found[0].rect.x_range();
+        let mut in_column: Vec<&Control> = all
+            .iter()
+            .filter(|c| c.rect.top() >= found[0].rect.top() && column.contains(c.rect.center().x))
+            .collect();
+        in_column.sort_by(|a, b| a.rect.top().total_cmp(&b.rect.top()));
+        let column_labels: Vec<&str> = in_column.iter().map(|c| c.label.as_str()).collect();
+        assert_eq!(
+            column_labels, TOOLBOX,
+            "every control in the Tool Box column"
+        );
+        assert!(
+            controls(&output)
+                .iter()
+                .all(|c| !matches!(c.label.as_str(), "Tools" | "Snap")),
+            "Maya 2026 Tool Box has no Tools label or Snap button"
+        );
         assert_eq!(found[0].selected, Some(true));
         assert_eq!(found[3].selected, Some(false));
         for shape in &output.shapes {
@@ -3582,7 +3600,7 @@ mod toolbox_wire {
             {
                 let t = text.galley.job.text.as_str();
                 assert!(
-                    !matches!(t, "Move" | "Rotate" | "Scale" | "Select"),
+                    !matches!(t, "Move" | "Rotate" | "Scale" | "Select" | "Tools" | "Snap"),
                     "toolbox painted text {t}"
                 );
             }

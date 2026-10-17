@@ -12,7 +12,7 @@ Precedence: [inventory-seed.md](inventory-seed.md) and [parity.md](parity.md) ow
 - Status: Supported means the element exists and does something. It does not mean parity. Partial means the control exists but does only part of the documented role. Visible-unsupported means a disabled or placeholder control is drawn. Missing means nothing is drawn.
 - Evidence: required for Supported and Visible-unsupported rows. Missing rows say what was checked.
 - Priority: P1 is frequent and blocking in a modeler's daily loop. P2 is regular use. P3 is occasional or outside the modeling loop.
-- Visible-unsupported rows confirmed in a native macOS screenshot on 2026-10-16 of a build whose application code is identical to ef86b64: Tool Box Move/Rotate/Scale/Snap, shelf Extrude/Bevel/Materials, five Time Slider buttons. The screenshot shows the menu-bar labels only, with no menu open, so menu contents were checked from source. Rows tagged source-verified are not shown in that screenshot.
+- Visible-unsupported rows confirmed in a native macOS screenshot on 2026-10-16 of a build whose application code is identical to ef86b64: Tool Box Move/Rotate/Scale (and a Snap placeholder removed since), shelf Extrude/Bevel/Materials, five Time Slider buttons. The screenshot shows the menu-bar labels only, with no menu open, so menu contents were checked from source. Rows tagged source-verified are not shown in that screenshot.
 - On this SHA, Move, Rotate and Scale in the Tool Box are disabled. PR #77 (Move) is not included. The Tool Box rows in section 4 were updated for the icon-only Tool Box change and are cited at that branch.
 - MCP is ahead of the native UI; the shelf Extrude is deliberately disabled (known-issues.md). Enabling it is a backlog item.
 - Names of tools come from `src/mcp/tools.rs`.
@@ -61,7 +61,7 @@ The AztecCraft window draws a partial Status Line strip, from `Editor::status_li
 | Selection mask buttons (per object or component type) | [statusline] | Missing | absent; the Vertex, Edge and Face buttons above are exclusive modes, not per-type mask toggles | none | P1 | S3 Component modes (#29) |
 | Lock/unlock current selection | [statusline] | Missing | absent | none | P3 | S1 Status Line strip (#59) |
 | Highlight Selection mode | [statusline] | Missing | absent | none | P3 | S1 Status Line strip (#59) |
-| Snap buttons: grids, curves, points, Projected Center, view planes | [statusline] | Missing | absent from any strip; only a single Tool Box 'Snap' placeholder exists at `src/app/panels.rs "unsupported(ui, \"Snap\")"` | none | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
+| Snap buttons: grids, curves, points, Projected Center, view planes | [statusline] | Missing in the Status Line | absent from the Status Line strip (`src/app/features/status_line.rs "const COMPONENT_TYPES"` draws only the component-type buttons); the former Tool Box 'Snap' placeholder was removed because the Tool Box page ([toolbox]) lists seven tools and snapping is a Status Line group per [statusline] | none | P1 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
 | Make Live and live-surface field | [statusline] | Missing | absent | none | P3 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
 | Symmetry setting | [statusline] | Missing | absent | none | P2 | S2 Transform tools (PR #77 (Move), #34, #35, #36) |
 | Construction history Inputs/Outputs menus and toggle | [statusline] | Missing | absent from the strip; a disabled Inputs entry exists in the Channel Box | none | P2 | S4 Attribute Editor and Channel Box (#60) |
@@ -96,7 +96,7 @@ One fixed shelf row exists under the menu bar. Tab order and the Poly Modeling t
 
 ## 4. Tool Box and quick layouts
 
-The Tool Box rows below reflect the icon-only Tool Box change (feat/70-wire-ui-icons): Select, Lasso, Paint Selection, Move, Rotate, Scale and Last Used in the documented order, with labels in hover text and AccessKit. Select and Move are live through `set_active_tool`; the other five are disabled. Cites in those rows are at that branch, not ef86b64.
+The Tool Box rows below reflect the icon-only Tool Box change (feat/70-wire-ui-icons): Select, Lasso, Paint Selection, Move, Rotate, Scale and Last Used in the documented order, with labels in hover text and AccessKit. Select, Move, Rotate and Scale are live through `set_active_tool`; the other three are disabled. The Tool Box draws exactly these seven icon buttons: no "Tools" label and no Snap button, matching the Tool Box page (seven tools, no label, no Snap); the Snap row in section 2 tracks the Status Line group. Cites in those rows are at that branch, not ef86b64.
 
 | Maya 2026 element | Source | AztecCraft status | Evidence | MCP | Priority | Proposed slice |
 | --- | --- | --- | --- | --- | --- | --- |
