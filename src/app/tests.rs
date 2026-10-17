@@ -1512,6 +1512,56 @@ fn num4_and_num5_select_shading_and_num6_num7_only_set_status() {
 }
 
 #[test]
+fn shading_menu_textured_row_is_disabled_with_the_hotkey_reason_and_inert() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let ctx = egui::Context::default();
+    ctx.enable_accesskit();
+    let output = frame(&mut editor, &ctx, vec![]);
+    let menu = face_text_position(&output, "Shading");
+    let output = face_pointer_click(&mut editor, &ctx, menu, egui::Modifiers::NONE, vec![]);
+    let label = "Hardware Texturing (6)";
+    assert!(button_disabled(&output, label));
+    let row = face_text_position(&output, label);
+    let before = (
+        editor.shading,
+        editor.is_dirty(),
+        editor.scene_token,
+        editor.history.can_undo(),
+    );
+    ctx.global_style_mut(|style| style.interaction.tooltip_delay = 0.0);
+    let mut hovered = output;
+    for step in 1..=8 {
+        let mut input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1440.0, 900.0),
+            )),
+            time: Some(10.0 + f64::from(step) * 0.25),
+            events: vec![egui::Event::PointerMoved(row)],
+            ..Default::default()
+        };
+        input.viewports.entry(egui::ViewportId::ROOT).or_default();
+        hovered = ctx.run_ui(input, |ui| editor.render(ui));
+        hovered.textures_delta.clear();
+    }
+    face_text_position(
+        &hovered,
+        "Shaded + Textured (6) is not implemented in this build",
+    );
+    face_pointer_click(&mut editor, &ctx, row, egui::Modifiers::NONE, vec![]);
+    assert_eq!(
+        before,
+        (
+            editor.shading,
+            editor.is_dirty(),
+            editor.scene_token,
+            editor.history.can_undo()
+        )
+    );
+}
+
+#[test]
 fn typing_digits_into_focused_fields_does_not_change_shading() {
     use crate::editor_operations::ShadingMode;
     for text_id in [name_edit_id(), channel_edit_id(0)] {

@@ -1,5 +1,13 @@
 use super::*;
 
+pub(super) const SHADED_TEXTURED_NAME: &str = "Shaded + Textured (6)";
+const USE_ALL_LIGHTS_NAME: &str = "Use All Lights (7)";
+
+/// One reason string for the hotkey status and the disabled menu row.
+pub(super) fn unsupported_shading_reason(name: &str) -> String {
+    format!("{name} is not implemented in this build")
+}
+
 impl Editor {
     pub(super) fn shortcuts(&mut self, ctx: &egui::Context) -> Option<ActiveTool> {
         if ctx.egui_wants_keyboard_input() || egui::Popup::is_any_open(ctx) || self.files.is_modal()
@@ -70,8 +78,8 @@ impl Editor {
             Some(Key::Num5) => {
                 self.native_operation(Operation::SetShadingMode(ShadingMode::SmoothShadeAll));
             }
-            Some(Key::Num6) => self.unsupported_shading_status("Shaded + Textured (6)"),
-            Some(Key::Num7) => self.unsupported_shading_status("Use All Lights (7)"),
+            Some(Key::Num6) => self.unsupported_shading_status(SHADED_TEXTURED_NAME),
+            Some(Key::Num7) => self.unsupported_shading_status(USE_ALL_LIGHTS_NAME),
             _ => {}
         }
         if undo {
@@ -92,7 +100,7 @@ impl Editor {
         tool_intent
     }
     fn unsupported_shading_status(&mut self, name: &str) {
-        self.status = format!("{name} is not implemented in this build");
+        self.status = unsupported_shading_reason(name);
         self.error = false;
     }
     pub(super) fn cancel_on_escape(&mut self, ctx: &egui::Context) {

@@ -219,6 +219,11 @@ impl Editor {
                                 "Not implemented: edges are always drawn and materials do not affect display",
                             );
                     }
+                    // Order follows the Panel Toolbar 2026 page (Textured after Wireframe on Shaded); provisional.
+                    ui.add_enabled(false, egui::Button::new("Hardware Texturing (6)"))
+                        .on_disabled_hover_text(super::shortcuts::unsupported_shading_reason(
+                            super::shortcuts::SHADED_TEXTURED_NAME,
+                        ));
                 });
             });
             ui.separator();
