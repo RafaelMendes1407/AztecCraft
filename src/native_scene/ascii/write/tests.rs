@@ -22,7 +22,7 @@ fn scene(names: &[&str]) -> NativeScene {
 }
 fn prefix(scene: &NativeScene) -> Result<Vec<u8>, AsciiWriteRefusal> {
     let original = scene.clone();
-    let result = emit_transform_prefix(scene);
+    let result = emit_mesh_declarations_prefix(scene);
     assert_eq!(scene, &original);
     assert_eq!(
         (scene.next_id, scene.next_native_id),
@@ -35,7 +35,81 @@ fn prefix(scene: &NativeScene) -> Result<Vec<u8>, AsciiWriteRefusal> {
 fn preflight_refusals_preserve_the_scene_and_canonical_causes() {
     use AsciiWriteRefusal as R;
     type Case = (fn(&mut NativeScene), R);
-    let cases: [Case; 14] = [
+    let cases: [Case; 34] = [
+        (
+            |s| s.nodes[0].rotate_pivot[0].value = 1.0,
+            R::NonDefaultPivot,
+        ),
+        (
+            |s| s.nodes[0].rotate_pivot[0].value = -0.0,
+            R::NonDefaultPivot,
+        ),
+        (
+            |s| s.nodes[0].scale_pivot[0].value = 1.0,
+            R::NonDefaultPivot,
+        ),
+        (
+            |s| s.nodes[0].scale_pivot[0].value = -0.0,
+            R::NonDefaultPivot,
+        ),
+        (
+            |s| s.nodes[0].extras.rotate_order = Some(0),
+            R::TransformExtras,
+        ),
+        (
+            |s| s.nodes[0].extras.rotate_axis = Some([0.0; 3]),
+            R::TransformExtras,
+        ),
+        (
+            |s| s.nodes[0].extras.shear = Some([0.0; 3]),
+            R::TransformExtras,
+        ),
+        (
+            |s| s.nodes[0].extras.rotate_pivot_translate = Some([0.0; 3]),
+            R::TransformExtras,
+        ),
+        (
+            |s| s.nodes[0].extras.scale_pivot_translate = Some([0.0; 3]),
+            R::TransformExtras,
+        ),
+        (
+            |s| s.nodes[0].restrictions.push("locked".into()),
+            R::TransformRestriction,
+        ),
+        (
+            |s| s.nodes[0].unsupported_transform.push("effect".into()),
+            R::UnsupportedTransformEffect,
+        ),
+        (
+            |s| s.nodes[0].view.local_visibility = Some(false),
+            R::TransformVisibility,
+        ),
+        (
+            |s| s.nodes[0].view.local_visibility = None,
+            R::TransformVisibility,
+        ),
+        (|s| s.nodes[0].view.geometry = None, R::TransformVisibility),
+        (
+            |s| s.shapes[0].restrictions.push("locked".into()),
+            R::ShapeRestriction,
+        ),
+        (
+            |s| s.shapes[0].view.local_visibility = Some(false),
+            R::ShapeVisibility,
+        ),
+        (
+            |s| s.shapes[0].view.local_visibility = None,
+            R::ShapeVisibility,
+        ),
+        (|s| s.shapes[0].view.geometry = None, R::ShapeVisibility),
+        (
+            |s| s.shapes[0].mesh = NativeMesh::triangle_double_fixture(),
+            R::Double3Points,
+        ),
+        (
+            |s| s.shapes[0].mesh.add_hole_fixture(&[4, 5, 6]),
+            R::FaceHoles,
+        ),
         (|s| s.nodes[0].name = "3bad".into(), R::InvalidName),
         (|s| s.shapes[0].name = "bad name".into(), R::InvalidName),
         (|s| s.nodes[0].name = "persp".into(), R::ReservedName),
@@ -77,7 +151,7 @@ fn preflight_refusals_preserve_the_scene_and_canonical_causes() {
         scene.validate().unwrap();
         prefix(&scene).unwrap();
         mutate(&mut scene);
-        if expected == R::EmptyMesh {
+        if !matches!(expected, R::InvalidScene(_)) {
             scene.validate().unwrap();
         }
         let error = prefix(&scene).unwrap_err();
@@ -125,6 +199,11 @@ fn transform_prefix_keeps_uuid_values_and_relative_statements_with_their_owner()
     let mut scene = scene(&["second", "first"]);
     scene.nodes[0].transform_uuid = Some(uuid::Uuid::from_u128(0x6c1b2d4e0a3f4b5c8d7e9f0a1b2c3d4e));
     scene.nodes[1].transform_uuid = Some(uuid::Uuid::from_u128(0x11111111222233334444555555555555));
+    scene.shapes[0].name = "storedSecond".into();
+    scene.shapes[1].name = "storedFirst".into();
+    scene.shapes[0].uuid = Some(uuid::Uuid::from_u128(0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa));
+    scene.shapes[1].uuid = Some(uuid::Uuid::from_u128(0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb));
+    scene.shapes.swap(0, 1);
     scene.nodes[0].channels[0].value = -0.0;
     scene.nodes[0].channels[3].value = 90.0;
     scene.nodes[0].channels[6].value = -2.0;
@@ -142,11 +221,6 @@ fn transform_prefix_keeps_uuid_values_and_relative_statements_with_their_owner()
     for (channel, value) in scene.nodes[1].channels.iter_mut().zip(values) {
         channel.value = value;
     }
-    scene.nodes[0].rotate_pivot[0].value = 1.0;
-    scene.nodes[0].restrictions.push("locked".into());
-    scene.nodes[0]
-        .unsupported_transform
-        .push("unemitted".into());
     let golden = b"//Maya ASCII 2026 scene\n\
 requires maya \"2026\";\n\
 currentUnit -l centimeter -a degree -t film;\n\
@@ -156,11 +230,15 @@ createNode transform -n \"second\";\n\
 \tsetAttr \".t\" -type \"double3\" -0 0 0;\n\
 \tsetAttr \".r\" -type \"double3\" 90 0 0;\n\
 \tsetAttr \".s\" -type \"double3\" -2 1 1;\n\
+createNode mesh -n \"storedSecond\" -p \"second\";\n\
+\trename -uid \"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\";\n\
 createNode transform -n \"first\";\n\
 \trename -uid \"11111111-2222-3333-4444-555555555555\";\n\
 \tsetAttr \".t\" -type \"double3\" 2.54 0.000000001 1000000000000000;\n\
 \tsetAttr \".r\" -type \"double3\" 0.1 0.3333333333333333 3.141592653589793;\n\
-\tsetAttr \".s\" -type \"double3\" 1.5 -2.25 3;\n";
+\tsetAttr \".s\" -type \"double3\" 1.5 -2.25 3;\n\
+createNode mesh -n \"storedFirst\" -p \"first\";\n\
+\trename -uid \"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb\";\n";
     let actual = prefix(&scene).unwrap();
     assert_eq!(actual, golden);
     assert_eq!(actual.len(), prefix_bytes(&scene).unwrap());
@@ -172,11 +250,13 @@ createNode transform -n \"first\";\n\
         .collect();
     assert_eq!(
         uuids,
-        scene
-            .nodes
-            .iter()
-            .map(|node| node.transform_uuid().unwrap())
-            .collect::<Vec<_>>()
+        [
+            scene.nodes[0].transform_uuid(),
+            scene.shapes[1].uuid(),
+            scene.nodes[1].transform_uuid(),
+            scene.shapes[0].uuid()
+        ]
+        .map(Option::unwrap)
     );
     assert_eq!(
         scene
@@ -187,19 +267,48 @@ createNode transform -n \"first\";\n\
         std::f64::consts::FRAC_PI_2.to_bits()
     );
     scene.nodes[1].transform_uuid = None;
+    assert_eq!(prefix(&scene).unwrap().len(), golden.len() - 53);
+    scene.shapes[0].uuid = None;
     let omitted = prefix(&scene).unwrap();
     assert_eq!(
         std::str::from_utf8(&omitted)
             .unwrap()
             .matches("rename -uid")
             .count(),
-        1
+        2
     );
     assert_eq!(rows(&omitted).len(), 6);
     assert_eq!(prefix(&NativeScene::default()).unwrap(), HEADER.as_bytes());
     let mut legacy = crate::scene::Scene::default();
     legacy.create(Primitive::Cube, "legacy").unwrap();
     prefix(&NativeScene::from_legacy(legacy).unwrap()).unwrap();
+    for primitive in [
+        Primitive::Cube,
+        Primitive::Plane,
+        Primitive::Sphere,
+        Primitive::Cylinder,
+        Primitive::Cone,
+    ] {
+        let mut scene = NativeScene::default();
+        scene.create(primitive, "primitive").unwrap();
+        scene.validate().unwrap();
+        assert_eq!(prefix(&scene).unwrap().len(), prefix_bytes(&scene).unwrap());
+    }
+}
+
+#[test]
+fn child_work_counts_are_checked_before_traversal() {
+    use crate::maya_ascii::ErrorKind;
+    assert_eq!(mesh_declaration_work(0, 0, 0).unwrap(), 0);
+    assert_eq!(mesh_declaration_work(100, 100, 200).unwrap(), 76_400);
+    for (nodes, shapes, dag) in [(usize::MAX, 0, 0), (1, usize::MAX, 1), (1, 0, usize::MAX)] {
+        assert_eq!(
+            mesh_declaration_work(nodes, shapes, dag)
+                .unwrap_err()
+                .kind(),
+            ErrorKind::ResourceLimit
+        );
+    }
 }
 
 fn rows(bytes: &[u8]) -> Vec<(&str, &str, [f64; 3])> {
@@ -284,13 +393,14 @@ fn every_slot_round_trips_defaults_signed_zero_and_finite_extremes() {
 fn uuid_and_channel_bytes_are_in_the_admitted_size() {
     let mut scene = scene(&["plain"]);
     scene.nodes[0].transform_uuid = None;
-    assert_eq!(prefix(&scene).unwrap().len(), 151);
+    scene.shapes[0].uuid = None;
+    assert_eq!(prefix(&scene).unwrap().len(), 195);
     scene.nodes[0].transform_uuid = Some(uuid::Uuid::nil());
     let bytes = prefix(&scene).unwrap();
-    assert_eq!(bytes.len(), 204);
+    assert_eq!(bytes.len(), 248);
     assert_eq!(bytes.len(), prefix_bytes(&scene).unwrap());
     assert!(rows(&bytes).is_empty());
-    for contribution in [53, 37] {
+    for contribution in [53, 37, MESH_SYNTAX_BYTES] {
         assert_eq!(
             add_prefix_bytes(MAX_BYTES - contribution, contribution),
             Ok(MAX_BYTES)
@@ -367,6 +477,24 @@ fn added_formatting_work_refuses_a_previously_admissible_small_scene() {
     assert_eq!(prior, 49_458_896);
     assert_eq!((CHANNEL_BYTES, FORMATTING_WORK * n), (1063, 645000));
     assert_eq!(prior + FORMATTING_WORK * n, 50_103_896);
+    scene.validate().unwrap();
+    assert_eq!(prefix(&scene), Err(AsciiWriteRefusal::ResourceLimit));
+    for (index, (node, shape)) in scene.nodes.iter_mut().zip(&mut scene.shapes).enumerate() {
+        node.name = format!("{}{index}", "a".repeat(1209));
+        shape.name = format!("{}Shape", node.name);
+    }
+    let shorter_names: usize = names(&scene).map(|(_, name)| name.len()).sum();
+    assert_eq!(shorter_names, 242680);
+    let parent = prior - (n + s) * (b - shorter_names) + FORMATTING_WORK * n;
+    let lookup = 2 * n * (d + s);
+    let declarations = 2 * (n * (MESH_SYNTAX_BYTES + UUID_STATEMENT_BYTES) + shorter_names);
+    assert_eq!((MESH_SYNTAX_BYTES, UUID_STATEMENT_BYTES), (29, 53));
+    assert_eq!(
+        (parent, lookup, declarations),
+        (49_463_896, 60_000, 501_760)
+    );
+    assert_eq!(parent + lookup + declarations, 50_025_656);
+    assert!(parent + lookup < 50_000_000 && parent + declarations < 50_000_000);
     scene.validate().unwrap();
     assert_eq!(prefix(&scene), Err(AsciiWriteRefusal::ResourceLimit));
 }

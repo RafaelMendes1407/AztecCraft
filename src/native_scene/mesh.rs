@@ -160,6 +160,12 @@ impl fmt::Debug for NativeMesh {
     }
 }
 impl NativeMesh {
+    pub(super) fn has_point_offsets(&self) -> bool {
+        !self.point_offsets.is_empty()
+    }
+    pub(super) fn has_unsupported_channels(&self) -> bool {
+        !self.unsupported_channels.is_empty()
+    }
     #[cfg(test)]
     pub(super) fn offset_triangle_fixture() -> Self {
         Self::from_binary_parts(
