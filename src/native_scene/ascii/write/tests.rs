@@ -4,6 +4,18 @@ use crate::{
     scene::Primitive,
 };
 use std::sync::Arc;
+const PLANE_ARRAY: &[u8] = b"\tsetAttr -s 4 \".vt[0:3]\"\n\
+\t-0.5 0 -0.5\n\
+\t-0.5 0 0.5\n\
+\t0.5 0 0.5\n\
+\t0.5 0 -0.5\n\
+;\n\
+\tsetAttr -s 4 \".ed[0:3]\"\n\
+\t0 1 0\n\
+\t1 2 0\n\
+\t2 3 0\n\
+\t3 0 0\n\
+;\n";
 #[path = "../../../../tests/support/maya_ascii.rs"]
 mod ascii_fixture;
 mod binary_fixture {
@@ -22,7 +34,7 @@ fn scene(names: &[&str]) -> NativeScene {
 }
 fn prefix(scene: &NativeScene) -> Result<Vec<u8>, AsciiWriteRefusal> {
     let original = scene.clone();
-    let result = emit_mesh_declarations_prefix(scene);
+    let result = emit_mesh_arrays_prefix(scene);
     assert_eq!(scene, &original);
     assert_eq!(
         (scene.next_id, scene.next_native_id),
@@ -197,6 +209,9 @@ fn sourced_formats_and_source_free_curves_refuse_without_touching_retention() {
 #[test]
 fn transform_prefix_keeps_uuid_values_and_relative_statements_with_their_owner() {
     let mut scene = scene(&["second", "first"]);
+    for shape in &mut scene.shapes {
+        shape.mesh = NativeMesh::primitive(Primitive::Plane).unwrap();
+    }
     scene.nodes[0].transform_uuid = Some(uuid::Uuid::from_u128(0x6c1b2d4e0a3f4b5c8d7e9f0a1b2c3d4e));
     scene.nodes[1].transform_uuid = Some(uuid::Uuid::from_u128(0x11111111222233334444555555555555));
     scene.shapes[0].name = "storedSecond".into();
@@ -221,7 +236,8 @@ fn transform_prefix_keeps_uuid_values_and_relative_statements_with_their_owner()
     for (channel, value) in scene.nodes[1].channels.iter_mut().zip(values) {
         channel.value = value;
     }
-    let golden = b"//Maya ASCII 2026 scene\n\
+    let golden = [
+        b"//Maya ASCII 2026 scene\n\
 requires maya \"2026\";\n\
 currentUnit -l centimeter -a degree -t film;\n\
 fileInfo \"AztecCraft\" \"1\";\n\
@@ -231,14 +247,19 @@ createNode transform -n \"second\";\n\
 \tsetAttr \".r\" -type \"double3\" 90 0 0;\n\
 \tsetAttr \".s\" -type \"double3\" -2 1 1;\n\
 createNode mesh -n \"storedSecond\" -p \"second\";\n\
-\trename -uid \"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\";\n\
-createNode transform -n \"first\";\n\
+\trename -uid \"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\";\n"
+            .as_slice(),
+        PLANE_ARRAY,
+        b"createNode transform -n \"first\";\n\
 \trename -uid \"11111111-2222-3333-4444-555555555555\";\n\
 \tsetAttr \".t\" -type \"double3\" 2.54 0.000000001 1000000000000000;\n\
 \tsetAttr \".r\" -type \"double3\" 0.1 0.3333333333333333 3.141592653589793;\n\
 \tsetAttr \".s\" -type \"double3\" 1.5 -2.25 3;\n\
 createNode mesh -n \"storedFirst\" -p \"first\";\n\
-\trename -uid \"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb\";\n";
+\trename -uid \"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb\";\n",
+        PLANE_ARRAY,
+    ]
+    .concat();
     let actual = prefix(&scene).unwrap();
     assert_eq!(actual, golden);
     assert_eq!(actual.len(), prefix_bytes(&scene).unwrap());
@@ -281,7 +302,7 @@ createNode mesh -n \"storedFirst\" -p \"first\";\n\
     assert_eq!(prefix(&NativeScene::default()).unwrap(), HEADER.as_bytes());
     let mut legacy = crate::scene::Scene::default();
     legacy.create(Primitive::Cube, "legacy").unwrap();
-    prefix(&NativeScene::from_legacy(legacy).unwrap()).unwrap();
+    let mut scenes = vec![NativeScene::from_legacy(legacy).unwrap()];
     for primitive in [
         Primitive::Cube,
         Primitive::Plane,
@@ -291,8 +312,31 @@ createNode mesh -n \"storedFirst\" -p \"first\";\n\
     ] {
         let mut scene = NativeScene::default();
         scene.create(primitive, "primitive").unwrap();
+        scenes.push(scene);
+    }
+    for scene in scenes {
         scene.validate().unwrap();
-        assert_eq!(prefix(&scene).unwrap().len(), prefix_bytes(&scene).unwrap());
+        let bytes = prefix(&scene).unwrap();
+        assert_eq!(bytes.len(), prefix_bytes(&scene).unwrap());
+        let blocks = arrays(&bytes);
+        let mesh = scene.shapes[0].mesh();
+        let Points::Float3(points) = mesh.points() else {
+            panic!()
+        };
+        assert_eq!(
+            (blocks[0].2.len(), blocks[1].2.len()),
+            (points.len(), mesh.edges().len())
+        );
+        for (row, point) in blocks[0].2.iter().zip(points) {
+            assert_eq!(
+                row.map(|v| v.parse::<f32>().unwrap().to_bits()),
+                point.map(f32::to_bits)
+            );
+        }
+        for (row, edge) in blocks[1].2.iter().zip(mesh.edges()) {
+            let [a, b] = edge.endpoints();
+            assert_eq!(row.map(|v| v.parse::<usize>().unwrap()), [a, b, 0]);
+        }
     }
 }
 
@@ -331,6 +375,185 @@ fn rows(bytes: &[u8]) -> Vec<(&str, &str, [f64; 3])> {
         }
     }
     rows
+}
+
+fn arrays(bytes: &[u8]) -> Vec<(&str, &str, Vec<[&str; 3]>)> {
+    let mut lines = std::str::from_utf8(bytes).unwrap().lines();
+    let mut owner = None;
+    let mut blocks = Vec::new();
+    while let Some(line) = lines.next() {
+        if line.starts_with("createNode transform ") {
+            owner = None;
+        }
+        if let Some(declaration) = line.strip_prefix("createNode mesh -n \"") {
+            let (name, parent) = declaration.split_once("\" -p \"").unwrap();
+            assert!(parent.strip_suffix("\";").is_some());
+            owner = Some(name);
+        }
+        let Some(header) = line.strip_prefix("\tsetAttr -s ") else {
+            continue;
+        };
+        let (count, range) = header.split_once(" \"").unwrap();
+        let count = count.parse::<usize>().unwrap();
+        let (attribute, last) = range.split_once("[0:").unwrap();
+        assert!([".vt", ".ed"].contains(&attribute));
+        let last = last.strip_suffix("]\"").unwrap().parse::<usize>().unwrap();
+        assert!(count > 0);
+        assert_eq!(last.checked_add(1), Some(count));
+        let mut rows = Vec::new();
+        for _ in 0..count {
+            let row = lines.next().unwrap().strip_prefix('\t').unwrap();
+            let values: [&str; 3] = row.split(' ').collect::<Vec<_>>().try_into().unwrap();
+            for value in values {
+                if attribute == ".vt" {
+                    assert!(value.parse::<f32>().unwrap().is_finite());
+                } else {
+                    assert!(value.parse::<i32>().unwrap() >= 0);
+                }
+            }
+            rows.push(values);
+        }
+        assert_eq!(lines.next(), Some(";"));
+        blocks.push((owner.unwrap(), attribute, rows));
+    }
+    blocks
+}
+
+#[test]
+fn raw_float_arrays_keep_owner_bits_unused_points_and_duplicate_edges() {
+    use glam::Vec3;
+    let values = [
+        0.0,
+        0.1,
+        f32::MAX,
+        f32::from_bits(f32::MAX.to_bits() - 1),
+        f32::MIN_POSITIVE,
+        f32::from_bits(f32::MIN_POSITIVE.to_bits() - 1),
+        f32::from_bits(f32::MIN_POSITIVE.to_bits() + 1),
+        f32::from_bits(1),
+        f32::from_bits(2),
+    ];
+    for value in values.into_iter().flat_map(|value| [value, -value]) {
+        for slot in 0..3 {
+            let mut points = vec![
+                Vec3::new(0.1, 0.0, 0.0),
+                Vec3::X,
+                Vec3::new(1.0, 0.0, 1.0),
+                Vec3::Z,
+                Vec3::ZERO,
+            ];
+            points[4][slot] = value;
+            let mesh = crate::mesh::Mesh::from_view(points.clone(), vec![[0, 1, 2, 3]]).unwrap();
+            let mut scene = scene(&["quad", "neighbor"]);
+            scene.shapes[0].mesh = NativeMesh::from_legacy(&mesh);
+            fixtures::add_loose_edge_unvalidated(&mut scene, [0, 1]);
+            scene.shapes.swap(0, 1);
+            scene.validate().unwrap();
+            let bytes = prefix(&scene).unwrap();
+            assert_eq!(bytes.len(), prefix_bytes(&scene).unwrap());
+            let blocks = arrays(&bytes);
+            assert_eq!(
+                (blocks[0].0, blocks[0].1, blocks[0].2[0]),
+                ("quadShape", ".vt", ["0.1", "0", "0"])
+            );
+            assert_eq!(
+                (blocks[2].0, blocks[2].2.len(), blocks[3].2.len()),
+                ("neighborShape", 8, 12)
+            );
+            assert_eq!(
+                blocks[0]
+                    .2
+                    .iter()
+                    .map(|row| row.map(|v| v.parse::<f32>().unwrap().to_bits()))
+                    .collect::<Vec<_>>(),
+                points
+                    .iter()
+                    .map(|point| point.to_array().map(f32::to_bits))
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(
+                blocks[1].2,
+                vec![
+                    ["0", "1", "0"],
+                    ["1", "2", "0"],
+                    ["2", "3", "0"],
+                    ["3", "0", "0"],
+                    ["0", "1", "0"]
+                ]
+            );
+        }
+    }
+}
+
+#[test]
+fn actual_mesh_producer_propagates_both_consumers_at_each_chunk_boundary() {
+    use AsciiWriteRefusal as R;
+    let mut scene = scene(&["plane"]);
+    scene.shapes[0].mesh = NativeMesh::primitive(Primitive::Plane).unwrap();
+    scene.validate().unwrap();
+    prefix(&scene).unwrap();
+    let mesh = scene.shapes[0].mesh();
+    assert_eq!(PLANE_ARRAY.len(), 130);
+    for (available, accepted, visits) in [
+        (130, 130, 12),
+        (24, 0, 1),
+        (37, 25, 2),
+        (74, 73, 6),
+        (99, 75, 7),
+        (106, 100, 8),
+        (129, 128, 12),
+    ] {
+        let expected = if available == 130 {
+            Ok(())
+        } else {
+            Err(R::TooLarge)
+        };
+        let mut length = MAX_BYTES - available;
+        let mut calls = 0;
+        let result = mesh_arrays(mesh, |bytes| {
+            calls += 1;
+            length = add_prefix_bytes(length, bytes.len())?;
+            Ok(())
+        });
+        assert_eq!(result, expected);
+        assert_eq!(
+            (length - (MAX_BYTES - available), calls),
+            (accepted, visits)
+        );
+        let mut out = Vec::with_capacity(131);
+        let capacity = out.capacity();
+        calls = 0;
+        let result = mesh_arrays(mesh, |bytes| {
+            calls += 1;
+            append(&mut out, available, bytes)
+        });
+        assert_eq!(result, expected);
+        assert_eq!(out, PLANE_ARRAY[..accepted]);
+        assert_eq!((calls, out.capacity()), (visits, capacity));
+    }
+}
+
+#[test]
+fn array_headers_and_edge_rows_enforce_the_signed_wire_domain() {
+    use AsciiWriteRefusal as R;
+    let mut line = ChannelLine {
+        bytes: [0; CHANNEL_BYTES],
+        used: 0,
+    };
+    line.array_header(".vt", i32::MAX as usize).unwrap();
+    assert_eq!(
+        &line.bytes[..line.used],
+        b"\tsetAttr -s 2147483647 \".vt[0:2147483646]\"\n"
+    );
+    assert_eq!(line.array_header(".ed", 0), Err(R::EmptyMesh));
+    line.edge_row([0, i32::MAX as usize]).unwrap();
+    assert_eq!(&line.bytes[..line.used], b"\t0 2147483647 0\n");
+    for value in [i32::MAX as usize + 1, usize::MAX] {
+        assert_eq!(line.array_header(".ed", value), Err(R::IndexOutOfRange));
+        assert_eq!(line.edge_row([value, 0]), Err(R::IndexOutOfRange));
+        assert_eq!(line.edge_row([0, value]), Err(R::IndexOutOfRange));
+    }
+    assert!(mesh_array_work(usize::MAX, usize::MAX).is_err());
 }
 
 #[test]
@@ -392,12 +615,13 @@ fn every_slot_round_trips_defaults_signed_zero_and_finite_extremes() {
 #[test]
 fn uuid_and_channel_bytes_are_in_the_admitted_size() {
     let mut scene = scene(&["plain"]);
+    scene.shapes[0].mesh = NativeMesh::primitive(Primitive::Plane).unwrap();
     scene.nodes[0].transform_uuid = None;
     scene.shapes[0].uuid = None;
-    assert_eq!(prefix(&scene).unwrap().len(), 195);
+    assert_eq!(prefix(&scene).unwrap().len(), 325);
     scene.nodes[0].transform_uuid = Some(uuid::Uuid::nil());
     let bytes = prefix(&scene).unwrap();
-    assert_eq!(bytes.len(), 248);
+    assert_eq!(bytes.len(), 378);
     assert_eq!(bytes.len(), prefix_bytes(&scene).unwrap());
     assert!(rows(&bytes).is_empty());
     for contribution in [53, 37, MESH_SYNTAX_BYTES] {
@@ -495,6 +719,22 @@ fn added_formatting_work_refuses_a_previously_admissible_small_scene() {
     );
     assert_eq!(parent + lookup + declarations, 50_025_656);
     assert!(parent + lookup < 50_000_000 && parent + declarations < 50_000_000);
+    scene.validate().unwrap();
+    assert_eq!(prefix(&scene), Err(AsciiWriteRefusal::ResourceLimit));
+    for (index, (node, shape)) in scene.nodes.iter_mut().zip(&mut scene.shapes).enumerate() {
+        node.name = format!("{}{index}", "a".repeat(1200));
+        shape.name = format!("{}Shape", node.name);
+    }
+    let array_names: usize = names(&scene).map(|(_, name)| name.len()).sum();
+    assert_eq!(array_names, 240880);
+    let prior_arrays = parent + lookup + declarations - (n + s + 2) * (shorter_names - array_names);
+    let added = n * mesh_array_work(8, 12).unwrap();
+    assert_eq!(
+        (POINT_ROW_BYTES, EDGE_ROW_BYTES, ARRAY_HEADER_BYTES),
+        (172, 25, 43)
+    );
+    assert_eq!((prior_arrays, added), (49_662_056, 565_800));
+    assert_eq!(prior_arrays + added, 50_227_856);
     scene.validate().unwrap();
     assert_eq!(prefix(&scene), Err(AsciiWriteRefusal::ResourceLimit));
 }
