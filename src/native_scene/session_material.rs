@@ -125,7 +125,11 @@ impl SessionMaterials {
         if sourced && !self.assignments.is_empty() {
             return Err(NativeError::InvalidSessionMaterials);
         }
-        let known: HashSet<NativeId> = shapes.iter().map(|shape| shape.id).collect();
+        let mut known = HashSet::new();
+        known
+            .try_reserve(shapes.len())
+            .map_err(|_| NativeError::ResourceLimit)?;
+        known.extend(shapes.iter().map(|shape| shape.id));
         for (shape, group) in &self.assignments {
             if *group >= self.groups.len() || !known.contains(shape) {
                 return Err(NativeError::InvalidSessionMaterials);

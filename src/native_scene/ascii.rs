@@ -1151,3 +1151,4 @@ pub fn decode(source: Arc<[u8]>) -> Result<NativeScene, AsciiError> {
 
 #[cfg(test)]
 mod tests;
+mod write;
