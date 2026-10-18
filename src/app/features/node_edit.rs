@@ -8,10 +8,11 @@ impl Editor {
         path: &[NativeId],
         resolves: impl FnOnce() -> bool,
     ) -> bool {
-        Some(transform) != self.selected
+        let (selected, selected_path) = self.selection_presentation();
+        Some(transform) != selected
             || path
                 .split_last()
-                .is_none_or(|(_, owner)| owner != self.selected_path)
+                .is_none_or(|(_, owner)| owner != selected_path)
             || !resolves()
     }
     pub(in crate::app) fn sync_fields(&mut self) {
@@ -20,7 +21,8 @@ impl Editor {
         self.name_intent = false;
         self.normalize_attribute_editor_tab();
         let Some(node) = self
-            .selected
+            .selection_presentation()
+            .0
             .and_then(|id| self.history.scene().node(id).ok())
         else {
             self.selected = None;
@@ -99,7 +101,7 @@ impl Editor {
         (&'static str, azteccraft::native_scene::AppearanceSummary),
         azteccraft::native_scene::NativeError,
     > {
-        if let Some(id) = self.selected
+        if let Some(id) = self.selection_presentation().0
             && let Some(summary) = self.history.scene().transform_appearance_readiness(id)?
         {
             return Ok(("Direct shapes", summary));
@@ -165,7 +167,8 @@ impl Editor {
         let mut apply = response.lost_focus();
         ui.separator();
         let visibility = self
-            .selected
+            .selection_presentation()
+            .0
             .and_then(|id| self.history.scene().node(id).ok())
             .and_then(|node| node.local_visibility());
         egui::Grid::new("transform_channels")
@@ -230,7 +233,7 @@ impl Editor {
         }
         self.appearance_summary(ui);
         ui.separator();
-        if self.selected.is_none() {
+        if self.single_target().is_err() {
             ui.weak("Select an object to edit its channels.");
             return;
         }

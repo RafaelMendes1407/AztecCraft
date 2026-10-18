@@ -146,7 +146,8 @@ impl Editor {
         if let Some(refusal) = mode_refusal(tool, self.selection_mode) {
             return Err(OperationError::InvalidInput(refusal));
         }
-        if self.selected != Some(target.node) || self.selected_path != target.path {
+        let (selected, path) = self.selection_presentation();
+        if selected != Some(target.node) || path != target.path {
             return Err(OperationError::InvalidInput(format!(
                 "{tool} target must be the exact selected transform instance"
             )));
