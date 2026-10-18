@@ -2,9 +2,7 @@ use super::*;
 
 #[test]
 fn defensive_private_mesh_states_refuse_the_actual_authored_prefix() {
-    use crate::native_scene::ascii::{
-        AsciiWriteRefusal as R, emit_mesh_declarations_prefix as emit,
-    };
+    use crate::native_scene::ascii::{AsciiWriteRefusal as R, emit_mesh_arrays_prefix as emit};
     type Case = (fn(&mut NativeMesh), R);
     let cases: [Case; 4] = [
         (
@@ -33,6 +31,22 @@ fn defensive_private_mesh_states_refuse_the_actual_authored_prefix() {
         scene.validate().unwrap();
         let before = scene.clone();
         assert_eq!(emit(&scene), Err(expected));
+        assert_eq!(scene, before);
+        assert_eq!(
+            (scene.next_id, scene.next_native_id),
+            (before.next_id, before.next_native_id)
+        );
+    }
+    for value in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        let (mut scene, _) = crate::native_scene::test_fixtures::cube();
+        scene.validate().unwrap();
+        emit(&scene).unwrap();
+        let Points::Float3(points) = &mut scene.shapes[0].mesh.points else {
+            panic!()
+        };
+        points[0][0] = value;
+        let before = scene.clone();
+        assert_eq!(emit(&scene), Err(R::InvalidScene(NativeError::NonFinite)));
         assert_eq!(scene, before);
         assert_eq!(
             (scene.next_id, scene.next_native_id),

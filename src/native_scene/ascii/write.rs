@@ -1,8 +1,8 @@
 use super::{BUILTINS, add, mul, resource};
 use crate::maya_ascii::{AsciiError, MAX_BYTES, Work};
 use crate::native_scene::{
-    GeometryViewFacts, NativeError, NativeMeshShape, NativeScene, NativeTransformNode, Points,
-    TransformExtras, Units,
+    GeometryViewFacts, NativeError, NativeMesh, NativeMeshShape, NativeScene, NativeTransformNode,
+    Points, TransformExtras, Units,
     admission::{self, Budget},
 };
 use std::{error::Error, fmt};
@@ -19,6 +19,10 @@ const MESH_SYNTAX_BYTES: usize = MESH_OPENER.len() + PARENT.len() + CLOSER.len()
 const SCALAR_BYTES: usize = 1 + 2 + 323 + 17;
 const CHANNEL_BYTES: usize = 3 * SCALAR_BYTES + "\tsetAttr \".t\" -type \"double3\"   ;\n".len();
 const FORMATTING_WORK: usize = 2 * (3 * CHANNEL_BYTES + UUID_BYTES);
+const POINT_ROW_BYTES: usize = 3 * (1 + 2 + 44 + 9) + "\t  \n".len();
+const EDGE_ROW_BYTES: usize = 2 * "2147483647".len() + "\t  0\n".len();
+const ARRAY_HEADER_BYTES: usize = 2 * "2147483647".len() + "\tsetAttr -s  \".vt[0:]\"\n".len();
+const ARRAY_END: &[u8] = b";\n";
 const RESERVED: [&str; 11] = [
     "persp",
     "perspShape",
@@ -56,6 +60,7 @@ pub(crate) enum AsciiWriteRefusal {
     EdgeSmoothing,
     FaceHoles,
     UnsupportedMeshChannels,
+    IndexOutOfRange,
     ResourceLimit,
     TooLarge,
 }
@@ -83,6 +88,7 @@ impl fmt::Display for AsciiWriteRefusal {
             Self::EdgeSmoothing => "mesh edges require known hard smoothing",
             Self::FaceHoles => "mesh face holes are unsupported",
             Self::UnsupportedMeshChannels => "additional mesh channels are unsupported",
+            Self::IndexOutOfRange => "mesh array count or endpoint exceeds signed 32-bit range",
             Self::ResourceLimit => "authored prefix resource policy exceeded",
             Self::TooLarge => "authored prefix exceeds the 16 MiB byte limit",
         })
@@ -117,6 +123,18 @@ fn mesh_declaration_work(nodes: usize, shapes: usize, dag: usize) -> Result<usiz
         mul(mul(2, nodes)?, MESH_SYNTAX_BYTES + UUID_STATEMENT_BYTES)?,
     )
 }
+fn mesh_array_work(points: usize, edges: usize) -> Result<usize, AsciiError> {
+    mul(
+        2,
+        add(
+            add(CHANNEL_BYTES, mul(points, POINT_ROW_BYTES)?)?,
+            add(
+                mul(edges, EDGE_ROW_BYTES)?,
+                2 * ARRAY_HEADER_BYTES + 2 * ARRAY_END.len(),
+            )?,
+        )?,
+    )
+}
 fn resource_admission(scene: &NativeScene) -> Result<(), AsciiError> {
     let n = scene.nodes.len();
     let s = scene.shapes.len();
@@ -146,6 +164,7 @@ fn resource_admission(scene: &NativeScene) -> Result<(), AsciiError> {
     }
     for shape in &scene.shapes {
         let mesh = shape.mesh();
+        work.charge(mesh_array_work(mesh.point_count(), mesh.edges().len())?)?;
         for count in [mesh.point_count(), mesh.edges().len(), mesh.faces().len()] {
             work.charge(mul(32, count)?)?;
         }
@@ -298,6 +317,23 @@ impl ChannelLine {
     fn format(&mut self, arguments: fmt::Arguments<'_>) -> Result<(), AsciiWriteRefusal> {
         fmt::write(self, arguments).map_err(|_| AsciiWriteRefusal::ResourceLimit)
     }
+    fn array_header(&mut self, attribute: &str, count: usize) -> Result<(), AsciiWriteRefusal> {
+        let count = i32::try_from(count).map_err(|_| AsciiWriteRefusal::IndexOutOfRange)?;
+        let last = count
+            .checked_sub(1)
+            .filter(|last| *last >= 0)
+            .ok_or(AsciiWriteRefusal::EmptyMesh)?;
+        self.used = 0;
+        self.format(format_args!(
+            "\tsetAttr -s {count} \"{attribute}[0:{last}]\"\n"
+        ))
+    }
+    fn edge_row(&mut self, endpoints: [usize; 2]) -> Result<(), AsciiWriteRefusal> {
+        let a = i32::try_from(endpoints[0]).map_err(|_| AsciiWriteRefusal::IndexOutOfRange)?;
+        let b = i32::try_from(endpoints[1]).map_err(|_| AsciiWriteRefusal::IndexOutOfRange)?;
+        self.used = 0;
+        self.format(format_args!("\t{a} {b} 0\n"))
+    }
 }
 impl fmt::Write for ChannelLine {
     fn write_str(&mut self, text: &str) -> fmt::Result {
@@ -342,6 +378,33 @@ fn add_prefix_bytes(base: usize, added: usize) -> Result<usize, AsciiWriteRefusa
         .filter(|length| *length <= MAX_BYTES)
         .ok_or(AsciiWriteRefusal::TooLarge)
 }
+fn mesh_arrays(
+    mesh: &NativeMesh,
+    mut consume: impl FnMut(&[u8]) -> Result<(), AsciiWriteRefusal>,
+) -> Result<(), AsciiWriteRefusal> {
+    let Points::Float3(points) = mesh.points() else {
+        return Err(AsciiWriteRefusal::Double3Points);
+    };
+    let mut line = ChannelLine {
+        bytes: [0; CHANNEL_BYTES],
+        used: 0,
+    };
+    line.array_header(".vt", points.len())?;
+    consume(&line.bytes[..line.used])?;
+    for point in points {
+        line.used = 0;
+        line.format(format_args!("\t{} {} {}\n", point[0], point[1], point[2]))?;
+        consume(&line.bytes[..line.used])?;
+    }
+    consume(ARRAY_END)?;
+    line.array_header(".ed", mesh.edges().len())?;
+    consume(&line.bytes[..line.used])?;
+    for edge in mesh.edges() {
+        line.edge_row(edge.endpoints())?;
+        consume(&line.bytes[..line.used])?;
+    }
+    consume(ARRAY_END)
+}
 fn prefix_bytes(scene: &NativeScene) -> Result<usize, AsciiWriteRefusal> {
     let name_bytes = scene
         .nodes
@@ -369,6 +432,10 @@ fn prefix_bytes(scene: &NativeScene) -> Result<usize, AsciiWriteRefusal> {
         ] {
             length = add_prefix_bytes(length, bytes)?;
         }
+        mesh_arrays(shape.mesh(), |bytes| {
+            length = add_prefix_bytes(length, bytes.len())?;
+            Ok(())
+        })?;
     }
     Ok(length)
 }
@@ -382,9 +449,7 @@ fn append(out: &mut Vec<u8>, admitted: usize, bytes: &[u8]) -> Result<(), AsciiW
 }
 
 #[cfg_attr(not(test), expect(dead_code, reason = "no Editor caller yet"))]
-pub(crate) fn emit_mesh_declarations_prefix(
-    scene: &NativeScene,
-) -> Result<Vec<u8>, AsciiWriteRefusal> {
+pub(crate) fn emit_mesh_arrays_prefix(scene: &NativeScene) -> Result<Vec<u8>, AsciiWriteRefusal> {
     check(scene)?;
     let length = prefix_bytes(scene)?;
     let mut out = Budget::new(0)
@@ -405,6 +470,7 @@ pub(crate) fn emit_mesh_declarations_prefix(
             append(&mut out, length, bytes.as_bytes())?;
         }
         append_uuid(&mut out, length, shape.uuid())?;
+        mesh_arrays(shape.mesh(), |bytes| append(&mut out, length, bytes))?;
     }
     Ok(out)
 }
