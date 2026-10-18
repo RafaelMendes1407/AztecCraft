@@ -1,7 +1,8 @@
 use super::{BUILTINS, add, mul, resource};
 use crate::maya_ascii::{AsciiError, MAX_BYTES, Work};
 use crate::native_scene::{
-    NativeError, NativeScene, NativeTransformNode, Units,
+    GeometryViewFacts, NativeError, NativeMeshShape, NativeScene, NativeTransformNode, Points,
+    TransformExtras, Units,
     admission::{self, Budget},
 };
 use std::{error::Error, fmt};
@@ -11,6 +12,10 @@ const OPENER: &str = "createNode transform -n \"";
 const CLOSER: &str = "\";\n";
 const UUID_OPENER: &str = "\trename -uid \"";
 const UUID_BYTES: usize = uuid::fmt::Hyphenated::LENGTH;
+const UUID_STATEMENT_BYTES: usize = UUID_OPENER.len() + UUID_BYTES + CLOSER.len();
+const MESH_OPENER: &str = "createNode mesh -n \"";
+const PARENT: &str = "\" -p \"";
+const MESH_SYNTAX_BYTES: usize = MESH_OPENER.len() + PARENT.len() + CLOSER.len();
 const SCALAR_BYTES: usize = 1 + 2 + 323 + 17;
 const CHANNEL_BYTES: usize = 3 * SCALAR_BYTES + "\tsetAttr \".t\" -type \"double3\"   ;\n".len();
 const FORMATTING_WORK: usize = 2 * (3 * CHANNEL_BYTES + UUID_BYTES);
@@ -39,6 +44,18 @@ pub(crate) enum AsciiWriteRefusal {
     ReservedName,
     NameCollision,
     EmptyMesh,
+    NonDefaultPivot,
+    TransformExtras,
+    TransformRestriction,
+    UnsupportedTransformEffect,
+    TransformVisibility,
+    ShapeRestriction,
+    ShapeVisibility,
+    Double3Points,
+    PointOffsets,
+    EdgeSmoothing,
+    FaceHoles,
+    UnsupportedMeshChannels,
     ResourceLimit,
     TooLarge,
 }
@@ -54,6 +71,18 @@ impl fmt::Display for AsciiWriteRefusal {
             Self::ReservedName => "node name collides with a default Maya node",
             Self::NameCollision => "two declared nodes share a name",
             Self::EmptyMesh => "a mesh requires points and faces",
+            Self::NonDefaultPivot => "nondefault pivots are unsupported",
+            Self::TransformExtras => "explicit transform extras are unsupported",
+            Self::TransformRestriction => "transform restrictions are unsupported",
+            Self::UnsupportedTransformEffect => "transform effects are unsupported",
+            Self::TransformVisibility => "transform requires proved static visible geometry",
+            Self::ShapeRestriction => "shape restrictions are unsupported",
+            Self::ShapeVisibility => "shape requires proved static visible geometry",
+            Self::Double3Points => "double-precision mesh points are unsupported",
+            Self::PointOffsets => "mesh point offsets are unsupported",
+            Self::EdgeSmoothing => "mesh edges require known hard smoothing",
+            Self::FaceHoles => "mesh face holes are unsupported",
+            Self::UnsupportedMeshChannels => "additional mesh channels are unsupported",
             Self::ResourceLimit => "authored prefix resource policy exceeded",
             Self::TooLarge => "authored prefix exceeds the 16 MiB byte limit",
         })
@@ -82,6 +111,12 @@ fn charge_face_counts(
 ) -> Result<(), AsciiError> {
     work.charge(mul(32, add(outer_references, hole_containers)?)?)
 }
+fn mesh_declaration_work(nodes: usize, shapes: usize, dag: usize) -> Result<usize, AsciiError> {
+    add(
+        mul(mul(2, nodes)?, add(dag, shapes)?)?,
+        mul(mul(2, nodes)?, MESH_SYNTAX_BYTES + UUID_STATEMENT_BYTES)?,
+    )
+}
 fn resource_admission(scene: &NativeScene) -> Result<(), AsciiError> {
     let n = scene.nodes.len();
     let s = scene.shapes.len();
@@ -91,6 +126,7 @@ fn resource_admission(scene: &NativeScene) -> Result<(), AsciiError> {
         .map_err(|_| resource())?;
     let mut work = Work::new();
     work.charge(mul(n, FORMATTING_WORK)?)?;
+    work.charge(mesh_declaration_work(n, s, d)?)?;
     work.charge(mul(mul(2, t)?, d)?)?;
     work.charge(mul(n, add(d, s)?)?)?;
     for count in [
@@ -106,6 +142,7 @@ fn resource_admission(scene: &NativeScene) -> Result<(), AsciiError> {
     }
     for (_, name) in names(scene) {
         work.charge(mul(t, name.len())?)?;
+        work.charge(mul(2, name.len())?)?;
     }
     for shape in &scene.shapes {
         let mesh = shape.mesh();
@@ -151,9 +188,18 @@ fn check(scene: &NativeScene) -> Result<(), AsciiWriteRefusal> {
                 child = Some(edge.child);
             }
         }
-        if roots != 1 || children != 1 || !scene.shapes.iter().any(|s| Some(s.id) == child) {
+        if roots != 1 || children != 1 {
             return Err(R::NonAuthoredHierarchy);
         }
+        let shape = scene
+            .shapes
+            .iter()
+            .find(|s| Some(s.id) == child)
+            .ok_or(R::NonAuthoredHierarchy)?;
+        if shape.mesh().point_count() == 0 || shape.mesh().faces().is_empty() {
+            return Err(R::EmptyMesh);
+        }
+        eligibility(node, shape)?;
     }
     for (index, (id, name)) in names(scene).enumerate() {
         scene.validate_new_name(id, name).map_err(|e| match e {
@@ -168,14 +214,71 @@ fn check(scene: &NativeScene) -> Result<(), AsciiWriteRefusal> {
             return Err(R::NameCollision);
         }
     }
-    if scene
-        .shapes
+    Ok(())
+}
+
+fn eligibility(
+    node: &NativeTransformNode,
+    shape: &NativeMeshShape,
+) -> Result<(), AsciiWriteRefusal> {
+    use AsciiWriteRefusal as R;
+    if node
+        .rotate_pivot
         .iter()
-        .any(|s| s.mesh().point_count() == 0 || s.mesh().faces().is_empty())
+        .chain(&node.scale_pivot)
+        .any(|v| v.value.to_bits() != 0)
     {
-        return Err(R::EmptyMesh);
+        return Err(R::NonDefaultPivot);
+    }
+    if node.extras != TransformExtras::default() {
+        return Err(R::TransformExtras);
+    }
+    if !node.restrictions.is_empty() {
+        return Err(R::TransformRestriction);
+    }
+    if !node.unsupported_transform.is_empty() {
+        return Err(R::UnsupportedTransformEffect);
+    }
+    if node.view != GeometryViewFacts::authored() {
+        return Err(R::TransformVisibility);
+    }
+    if !shape.restrictions.is_empty() {
+        return Err(R::ShapeRestriction);
+    }
+    if shape.view != GeometryViewFacts::authored() {
+        return Err(R::ShapeVisibility);
+    }
+    let mesh = shape.mesh();
+    if matches!(mesh.points(), Points::Double3(_)) {
+        return Err(R::Double3Points);
+    }
+    if mesh.has_point_offsets() {
+        return Err(R::PointOffsets);
+    }
+    if mesh.edges().iter().any(|edge| edge.smooth() != Some(false)) {
+        return Err(R::EdgeSmoothing);
+    }
+    if mesh.faces().iter().any(|face| !face.holes().is_empty()) {
+        return Err(R::FaceHoles);
+    }
+    if mesh.has_unsupported_channels() {
+        return Err(R::UnsupportedMeshChannels);
     }
     Ok(())
+}
+
+fn child<'a>(
+    scene: &'a NativeScene,
+    node: &NativeTransformNode,
+) -> Result<&'a NativeMeshShape, AsciiWriteRefusal> {
+    let edge = scene
+        .dag
+        .iter()
+        .find(|edge| edge.parent == Some(node.transform_id))
+        .ok_or(AsciiWriteRefusal::NonAuthoredHierarchy)?;
+    scene
+        .shape(edge.child)
+        .map_err(|_| AsciiWriteRefusal::NonAuthoredHierarchy)
 }
 
 fn declaration_bytes(nodes: usize, name_bytes: usize) -> Result<usize, AsciiWriteRefusal> {
@@ -248,10 +351,23 @@ fn prefix_bytes(scene: &NativeScene) -> Result<usize, AsciiWriteRefusal> {
     let mut length = declaration_bytes(scene.nodes.len(), name_bytes)?;
     for node in &scene.nodes {
         if node.transform_uuid().is_some() {
-            length = add_prefix_bytes(length, UUID_OPENER.len() + UUID_BYTES + CLOSER.len())?;
+            length = add_prefix_bytes(length, UUID_STATEMENT_BYTES)?;
         }
         for line in channel_lines(node) {
             length = add_prefix_bytes(length, line?.used)?;
+        }
+        let shape = child(scene, node)?;
+        for bytes in [
+            MESH_SYNTAX_BYTES,
+            shape.name().len(),
+            node.name().len(),
+            if shape.uuid().is_some() {
+                UUID_STATEMENT_BYTES
+            } else {
+                0
+            },
+        ] {
+            length = add_prefix_bytes(length, bytes)?;
         }
     }
     Ok(length)
@@ -266,7 +382,9 @@ fn append(out: &mut Vec<u8>, admitted: usize, bytes: &[u8]) -> Result<(), AsciiW
 }
 
 #[cfg_attr(not(test), expect(dead_code, reason = "no Editor caller yet"))]
-pub(crate) fn emit_transform_prefix(scene: &NativeScene) -> Result<Vec<u8>, AsciiWriteRefusal> {
+pub(crate) fn emit_mesh_declarations_prefix(
+    scene: &NativeScene,
+) -> Result<Vec<u8>, AsciiWriteRefusal> {
     check(scene)?;
     let length = prefix_bytes(scene)?;
     let mut out = Budget::new(0)
@@ -277,22 +395,36 @@ pub(crate) fn emit_transform_prefix(scene: &NativeScene) -> Result<Vec<u8>, Asci
         append(&mut out, length, OPENER.as_bytes())?;
         append(&mut out, length, node.name().as_bytes())?;
         append(&mut out, length, CLOSER.as_bytes())?;
-        if let Some(uuid) = node.transform_uuid() {
-            let mut buffer = [0; UUID_BYTES];
-            append(&mut out, length, UUID_OPENER.as_bytes())?;
-            append(
-                &mut out,
-                length,
-                uuid.hyphenated().encode_lower(&mut buffer).as_bytes(),
-            )?;
-            append(&mut out, length, CLOSER.as_bytes())?;
-        }
+        append_uuid(&mut out, length, node.transform_uuid())?;
         for line in channel_lines(node) {
             let line = line?;
             append(&mut out, length, &line.bytes[..line.used])?;
         }
+        let shape = child(scene, node)?;
+        for bytes in [MESH_OPENER, shape.name(), PARENT, node.name(), CLOSER] {
+            append(&mut out, length, bytes.as_bytes())?;
+        }
+        append_uuid(&mut out, length, shape.uuid())?;
     }
     Ok(out)
+}
+
+fn append_uuid(
+    out: &mut Vec<u8>,
+    length: usize,
+    uuid: Option<uuid::Uuid>,
+) -> Result<(), AsciiWriteRefusal> {
+    if let Some(uuid) = uuid {
+        let mut buffer = [0; UUID_BYTES];
+        append(out, length, UUID_OPENER.as_bytes())?;
+        append(
+            out,
+            length,
+            uuid.hyphenated().encode_lower(&mut buffer).as_bytes(),
+        )?;
+        append(out, length, CLOSER.as_bytes())?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

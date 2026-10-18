@@ -1,6 +1,47 @@
 use super::*;
 
 #[test]
+fn defensive_private_mesh_states_refuse_the_actual_authored_prefix() {
+    use crate::native_scene::ascii::{
+        AsciiWriteRefusal as R, emit_mesh_declarations_prefix as emit,
+    };
+    type Case = (fn(&mut NativeMesh), R);
+    let cases: [Case; 4] = [
+        (
+            |m| {
+                m.point_offsets.push(PointOffset {
+                    vertex: 0,
+                    delta_cm: [0.0; 3],
+                })
+            },
+            R::PointOffsets,
+        ),
+        (|m| m.edges[0].smooth = Some(true), R::EdgeSmoothing),
+        (|m| m.edges[0].smooth = None, R::EdgeSmoothing),
+        (
+            |m| m.unsupported_channels.push("unknown".into()),
+            R::UnsupportedMeshChannels,
+        ),
+    ];
+    for (mutate, expected) in cases {
+        let (mut scene, _) = crate::native_scene::test_fixtures::cube();
+        scene.validate().unwrap();
+        let baseline = scene.clone();
+        emit(&scene).unwrap();
+        assert_eq!(scene, baseline);
+        mutate(&mut scene.shapes[0].mesh);
+        scene.validate().unwrap();
+        let before = scene.clone();
+        assert_eq!(emit(&scene), Err(expected));
+        assert_eq!(scene, before);
+        assert_eq!(
+            (scene.next_id, scene.next_native_id),
+            (before.next_id, before.next_native_id)
+        );
+    }
+}
+
+#[test]
 fn binary_sparse_offsets_preserve_storage_and_add_before_world_narrowing() {
     let mut mesh = NativeMesh::offset_triangle_fixture();
     let original = mesh.clone();
