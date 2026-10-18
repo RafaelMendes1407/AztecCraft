@@ -1,7 +1,7 @@
 use super::{BUILTINS, add, mul, resource};
 use crate::maya_ascii::{AsciiError, MAX_BYTES, Work};
 use crate::native_scene::{
-    NativeError, NativeScene, Units,
+    NativeError, NativeScene, NativeTransformNode, Units,
     admission::{self, Budget},
 };
 use std::{error::Error, fmt};
@@ -9,6 +9,11 @@ use std::{error::Error, fmt};
 const HEADER: &str = "//Maya ASCII 2026 scene\nrequires maya \"2026\";\ncurrentUnit -l centimeter -a degree -t film;\nfileInfo \"AztecCraft\" \"1\";\n";
 const OPENER: &str = "createNode transform -n \"";
 const CLOSER: &str = "\";\n";
+const UUID_OPENER: &str = "\trename -uid \"";
+const UUID_BYTES: usize = uuid::fmt::Hyphenated::LENGTH;
+const SCALAR_BYTES: usize = 1 + 2 + 323 + 17;
+const CHANNEL_BYTES: usize = 3 * SCALAR_BYTES + "\tsetAttr \".t\" -type \"double3\"   ;\n".len();
+const FORMATTING_WORK: usize = 2 * (3 * CHANNEL_BYTES + UUID_BYTES);
 const RESERVED: [&str; 11] = [
     "persp",
     "perspShape",
@@ -85,6 +90,7 @@ fn resource_admission(scene: &NativeScene) -> Result<(), AsciiError> {
     Budget::new(admission::validation_bytes(n, t, d).map_err(|_| resource())?)
         .map_err(|_| resource())?;
     let mut work = Work::new();
+    work.charge(mul(n, FORMATTING_WORK)?)?;
     work.charge(mul(mul(2, t)?, d)?)?;
     work.charge(mul(n, add(d, s)?)?)?;
     for count in [
@@ -181,26 +187,110 @@ fn declaration_bytes(nodes: usize, name_bytes: usize) -> Result<usize, AsciiWrit
         .ok_or(AsciiWriteRefusal::TooLarge)
 }
 
-// C2b extends this same loop with UUIDs and values before any complete writer is exposed.
-#[cfg_attr(not(test), expect(dead_code, reason = "no Editor caller yet"))]
-pub(crate) fn emit_transform_declarations_prefix(
-    scene: &NativeScene,
-) -> Result<Vec<u8>, AsciiWriteRefusal> {
-    check(scene)?;
+struct ChannelLine {
+    bytes: [u8; CHANNEL_BYTES],
+    used: usize,
+}
+impl ChannelLine {
+    fn format(&mut self, arguments: fmt::Arguments<'_>) -> Result<(), AsciiWriteRefusal> {
+        fmt::write(self, arguments).map_err(|_| AsciiWriteRefusal::ResourceLimit)
+    }
+}
+impl fmt::Write for ChannelLine {
+    fn write_str(&mut self, text: &str) -> fmt::Result {
+        let end = self
+            .used
+            .checked_add(text.len())
+            .filter(|end| *end <= self.bytes.len())
+            .ok_or(fmt::Error)?;
+        self.bytes
+            .get_mut(self.used..end)
+            .ok_or(fmt::Error)?
+            .copy_from_slice(text.as_bytes());
+        self.used = end;
+        Ok(())
+    }
+}
+fn channel_lines(
+    node: &NativeTransformNode,
+) -> impl Iterator<Item = Result<ChannelLine, AsciiWriteRefusal>> {
+    let transform = node.transform();
+    [
+        (".t", transform.translation, [0.0; 3]),
+        (".r", transform.rotation, [0.0; 3]),
+        (".s", transform.scale, [1.0; 3]),
+    ]
+    .into_iter()
+    .filter(|(_, values, default)| values.map(f64::to_bits) != default.map(f64::to_bits))
+    .map(|(attribute, values, _)| {
+        let mut line = ChannelLine {
+            bytes: [0; CHANNEL_BYTES],
+            used: 0,
+        };
+        line.format(format_args!(
+            "\tsetAttr \"{attribute}\" -type \"double3\" {} {} {};\n",
+            values[0], values[1], values[2]
+        ))?;
+        Ok(line)
+    })
+}
+fn add_prefix_bytes(base: usize, added: usize) -> Result<usize, AsciiWriteRefusal> {
+    base.checked_add(added)
+        .filter(|length| *length <= MAX_BYTES)
+        .ok_or(AsciiWriteRefusal::TooLarge)
+}
+fn prefix_bytes(scene: &NativeScene) -> Result<usize, AsciiWriteRefusal> {
     let name_bytes = scene
         .nodes
         .iter()
         .try_fold(0, |sum, n| add(sum, n.name().len()))
         .map_err(|_| AsciiWriteRefusal::TooLarge)?;
-    let length = declaration_bytes(scene.nodes.len(), name_bytes)?;
+    let mut length = declaration_bytes(scene.nodes.len(), name_bytes)?;
+    for node in &scene.nodes {
+        if node.transform_uuid().is_some() {
+            length = add_prefix_bytes(length, UUID_OPENER.len() + UUID_BYTES + CLOSER.len())?;
+        }
+        for line in channel_lines(node) {
+            length = add_prefix_bytes(length, line?.used)?;
+        }
+    }
+    Ok(length)
+}
+fn append(out: &mut Vec<u8>, admitted: usize, bytes: &[u8]) -> Result<(), AsciiWriteRefusal> {
+    out.len()
+        .checked_add(bytes.len())
+        .filter(|end| *end <= admitted)
+        .ok_or(AsciiWriteRefusal::TooLarge)?;
+    out.extend_from_slice(bytes);
+    Ok(())
+}
+
+#[cfg_attr(not(test), expect(dead_code, reason = "no Editor caller yet"))]
+pub(crate) fn emit_transform_prefix(scene: &NativeScene) -> Result<Vec<u8>, AsciiWriteRefusal> {
+    check(scene)?;
+    let length = prefix_bytes(scene)?;
     let mut out = Budget::new(0)
         .and_then(|mut b| b.vector::<u8>(length))
         .map_err(|_| AsciiWriteRefusal::ResourceLimit)?;
-    out.extend_from_slice(HEADER.as_bytes());
+    append(&mut out, length, HEADER.as_bytes())?;
     for node in &scene.nodes {
-        out.extend_from_slice(OPENER.as_bytes());
-        out.extend_from_slice(node.name().as_bytes());
-        out.extend_from_slice(CLOSER.as_bytes());
+        append(&mut out, length, OPENER.as_bytes())?;
+        append(&mut out, length, node.name().as_bytes())?;
+        append(&mut out, length, CLOSER.as_bytes())?;
+        if let Some(uuid) = node.transform_uuid() {
+            let mut buffer = [0; UUID_BYTES];
+            append(&mut out, length, UUID_OPENER.as_bytes())?;
+            append(
+                &mut out,
+                length,
+                uuid.hyphenated().encode_lower(&mut buffer).as_bytes(),
+            )?;
+            append(&mut out, length, CLOSER.as_bytes())?;
+        }
+        for line in channel_lines(node) {
+            let line = line?;
+            append(&mut out, length, &line.bytes[..line.used])?;
+        }
     }
     Ok(out)
 }
