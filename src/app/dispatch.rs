@@ -570,7 +570,8 @@ impl Editor {
             }
             Operation::Select { node, .. } => {
                 let path = selected_path.unwrap_or_default();
-                let changed = self.selected != node || self.selected_path != path;
+                let (selected, current_path) = self.selection_presentation();
+                let changed = selected != node || current_path != path;
                 if changed {
                     self.clear_remembered_components();
                 }
@@ -590,11 +591,11 @@ impl Editor {
                     self.history.undo()
                 };
                 self.sync_fields();
-                if let Some(id) = self.selected
+                if let Some((id, path)) = self.single_target().ok()
                     && self
                         .history
                         .scene()
-                        .resolve_transform_path(id, &self.selected_path)
+                        .resolve_transform_path(id, path)
                         .is_err()
                 {
                     self.selected = None;
@@ -634,11 +635,8 @@ impl Editor {
                 let path = if component {
                     None
                 } else {
-                    let id = self.selected.ok_or(OperationError::NoSelection)?;
-                    Some(self.selection_path(
-                        id,
-                        (!self.selected_path.is_empty()).then(|| self.selected_path.clone()),
-                    )?)
+                    let (id, path) = self.single_target()?;
+                    Some(self.selection_path(id, (!path.is_empty()).then(|| path.to_vec()))?)
                 };
                 let view = ViewScene::from_native(self.history.scene(), 256 * 1024 * 1024)
                     .map_err(|error| OperationError::View(error.to_string()))?;
@@ -750,7 +748,8 @@ impl Editor {
             || self.has_channel_draft()
     }
     pub(super) fn has_channel_draft(&self) -> bool {
-        self.selected
+        self.selection_presentation()
+            .0
             .and_then(|id| self.history.scene().node(id).ok())
             .is_some_and(|node| {
                 let values = node.transform().values();
@@ -821,7 +820,7 @@ impl Editor {
                 }
             };
         }
-        let Some(id) = self.selected else {
+        let Some((id, _)) = self.single_target().ok() else {
             return true;
         };
         if !self.has_draft() {

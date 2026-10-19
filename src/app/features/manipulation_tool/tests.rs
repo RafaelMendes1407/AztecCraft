@@ -826,6 +826,106 @@ fn update_operation(kind: ActiveTool, id: ManipulationId) -> Operation {
 }
 
 #[test]
+fn rotate_and_scale_target_reads_keep_exact_ownership_errors_and_mode_precedence() {
+    let state = |editor: &Editor| {
+        (
+            (
+                editor.history.scene().clone(),
+                editor.selection_mode,
+                editor.selected,
+                editor.selected_path.clone(),
+                editor.remembered_face.clone(),
+                editor.remembered_vertex.clone(),
+                editor.remembered_edge.clone(),
+                editor.camera.clone(),
+                editor.scene_token,
+                editor.active_tool,
+            ),
+            (
+                editor.name.clone(),
+                editor.channels.clone(),
+                editor.name_intent,
+                editor.channel_intents,
+                editor.history.can_undo(),
+                editor.history.can_redo(),
+                editor.history.undo_label(),
+                editor.history.redo_label(),
+                editor.history.active_manipulation().is_none(),
+            ),
+        )
+    };
+    for (kind, key, tool) in [
+        (ActiveTool::Rotate, Key::E, "Rotate"),
+        (ActiveTool::Scale, Key::R, "Scale"),
+    ] {
+        let (mut editor, _, _) = setup(key, 1.0);
+        let before = state(&editor);
+        let begin = begin_operation(&editor, kind, ManipulationSpace::Object);
+        editor.apply_operation(begin).unwrap();
+        let id = editor.history.active_manipulation().unwrap().id;
+        editor
+            .apply_operation(Operation::FinishMove {
+                id,
+                finish: ManipulationFinish::Cancel,
+            })
+            .unwrap();
+        assert_eq!(state(&editor), before);
+        for (mode, noun) in [
+            (SelectionMode::Object, None),
+            (SelectionMode::Face, Some("Face")),
+            (SelectionMode::Vertex, Some("Vertex")),
+            (SelectionMode::Edge, Some("Edge")),
+        ] {
+            for condition in 0..3 {
+                let (mut editor, _, _) = setup(key, 1.0);
+                let original = editor.selected_move_target().unwrap();
+                editor.create(Primitive::Cube);
+                let foreign = editor.selected_move_target().unwrap();
+                editor
+                    .apply_operation(Operation::Select {
+                        node: Some(original.node),
+                        instance_path: Some(original.path),
+                    })
+                    .unwrap();
+                let mut begin = begin_operation(&editor, kind, ManipulationSpace::Object);
+                let (Operation::BeginRotate { target, .. } | Operation::BeginScale { target, .. }) =
+                    &mut begin
+                else {
+                    panic!("expected rotate or scale begin")
+                };
+                match condition {
+                    0 => *target = foreign,
+                    1 => target.path.clear(),
+                    _ => {
+                        editor
+                            .apply_operation(Operation::Select {
+                                node: None,
+                                instance_path: None,
+                            })
+                            .unwrap();
+                    }
+                }
+                editor
+                    .apply_operation(Operation::SetSelectionMode(mode))
+                    .unwrap();
+                let expected = if let Some(noun) = noun {
+                    format!("{tool} is unavailable in {noun} selection; switch to Object selection")
+                } else {
+                    format!("{tool} target must be the exact selected transform instance")
+                };
+                let before = state(&editor);
+                let error = editor.apply_operation(begin).unwrap_err();
+                assert!(
+                    matches!(error, OperationError::InvalidInput(ref message) if message == &expected),
+                    "{tool} {mode:?} {condition}: {error:?}"
+                );
+                assert_eq!(state(&editor), before);
+            }
+        }
+    }
+}
+
+#[test]
 fn editor_rotate_and_scale_guards_preserve_drafts_modal_close_tokens_and_failed_open_baseline() {
     use crate::editor_operations::{FileDecision, RemoteRequest};
     for kind in [ActiveTool::Rotate, ActiveTool::Scale] {

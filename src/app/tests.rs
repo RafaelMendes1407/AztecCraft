@@ -4298,6 +4298,139 @@ fn selection_presentation_preserves_defensive_none_node_nonempty_path() {
     );
 }
 
+#[test]
+fn selected_move_target_keeps_full_owned_paths_across_selection_changes() {
+    let mut editor = deep_group_editor();
+    let paths = editor.history.scene().transform_paths().unwrap();
+    assert_eq!(paths.last().unwrap().path.len(), 3);
+    let state = |editor: &Editor| {
+        (
+            click_baseline(editor),
+            (
+                editor.history.can_undo(),
+                editor.history.can_redo(),
+                editor.history.undo_label(),
+                editor.history.redo_label(),
+            ),
+            (
+                editor.name.clone(),
+                editor.channels.clone(),
+                editor.name_intent,
+                editor.channel_intents,
+            ),
+        )
+    };
+    for target in [paths[0].clone(), paths.last().unwrap().clone()] {
+        remote(
+            &mut editor,
+            Operation::Select {
+                node: Some(target.node),
+                instance_path: Some(target.path.clone()),
+            },
+        )
+        .unwrap();
+        let before = state(&editor);
+        let owned = editor.selected_move_target().unwrap();
+        assert_eq!(owned, target);
+        assert_eq!(state(&editor), before);
+        remote(
+            &mut editor,
+            Operation::Select {
+                node: None,
+                instance_path: None,
+            },
+        )
+        .unwrap();
+        let cleared = state(&editor);
+        assert!(matches!(
+            editor.selected_move_target(),
+            Err(OperationError::NoSelection)
+        ));
+        assert_eq!(state(&editor), cleared);
+        assert_eq!(owned, target);
+        remote(
+            &mut editor,
+            Operation::Select {
+                node: Some(paths[1].node),
+                instance_path: Some(paths[1].path.clone()),
+            },
+        )
+        .unwrap();
+        assert_eq!(owned, target);
+    }
+}
+
+#[test]
+fn frame_selected_infers_empty_stored_path_and_preserves_authoring_state() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let target = editor.selected_move_target().unwrap();
+    editor.camera.pan(glam::vec2(4.0, 3.0)).unwrap();
+    let unframed = editor.camera.clone();
+    let view = ViewScene::from_native(editor.history.scene(), 256 * 1024 * 1024).unwrap();
+    let mut expected = unframed.clone();
+    expected
+        .frame_view(&view, Some(&target.path), editor.aspect)
+        .unwrap();
+    assert_ne!(expected, unframed);
+    let state = |editor: &Editor| {
+        (
+            (
+                editor.history.scene().clone(),
+                editor.selection_mode,
+                editor.selected,
+                editor.selected_path.clone(),
+                editor.remembered_face.clone(),
+                editor.remembered_vertex.clone(),
+                editor.remembered_edge.clone(),
+                editor.scene_token,
+            ),
+            (
+                editor.history.can_undo(),
+                editor.history.can_redo(),
+                editor.history.undo_label(),
+                editor.history.redo_label(),
+            ),
+            (
+                editor.name.clone(),
+                editor.channels.clone(),
+                editor.name_intent,
+                editor.channel_intents,
+            ),
+        )
+    };
+    for defensive_empty_path in [false, true] {
+        editor.camera = unframed.clone();
+        editor.selected_path = if defensive_empty_path {
+            Vec::new()
+        } else {
+            target.path.clone()
+        };
+        let before = state(&editor);
+        assert_eq!(
+            editor.selected_move_target().unwrap().path,
+            editor.selected_path
+        );
+        remote(&mut editor, Operation::FrameSelected).unwrap();
+        assert_eq!(editor.camera, expected);
+        assert_eq!(state(&editor), before);
+    }
+    remote(
+        &mut editor,
+        Operation::Select {
+            node: None,
+            instance_path: None,
+        },
+    )
+    .unwrap();
+    let before = (click_baseline(&editor), state(&editor));
+    assert!(matches!(
+        remote(&mut editor, Operation::FrameSelected),
+        Err(OperationError::NoSelection)
+    ));
+    assert_eq!((click_baseline(&editor), state(&editor)), before);
+}
+
 /// A group (translate x = 2) holding a child transform that owns one triangle mesh.
 /// Mirrored by `grouped_scene_bytes()` in src/mcp_tests/official_client/selection.rs; this module builds without the mcp feature, so the builder cannot be shared.
 fn group_editor() -> Editor {

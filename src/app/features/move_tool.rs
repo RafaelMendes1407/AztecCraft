@@ -96,10 +96,10 @@ fn edit_reply(outcome: EditOutcome) -> OperationReply {
 
 impl Editor {
     pub(in crate::app) fn selected_move_target(&self) -> Result<TransformTarget, OperationError> {
-        let node = self.selected.ok_or(OperationError::NoSelection)?;
+        let (node, path) = self.single_target()?;
         Ok(TransformTarget {
             node,
-            path: self.selected_path.clone(),
+            path: path.to_vec(),
         })
     }
 
