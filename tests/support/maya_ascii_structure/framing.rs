@@ -60,27 +60,39 @@ pub fn frame(bytes: &[u8]) -> Result<(Vec<Kind>, usize), String> {
             if tail || line.contains(';') {
                 return Err("array outside geometry or fused header".into());
             }
-            let count = line
+            let (count, attribute) = line
                 .strip_prefix("\tsetAttr -s ")
                 .and_then(|rest| rest.split_once(' '))
-                .and_then(|(count, _)| count.parse::<usize>().ok())
                 .ok_or("array count")?;
+            let count = count.parse::<usize>().map_err(|_| "array count")?;
             if count == 0 || count > i32::MAX as usize || count > bytes.len() {
                 return Err("array count limit".into());
             }
-            let face = line.contains("\".fc[0:");
-            if !(line.contains("\".vt[0:") || line.contains("\".ed[0:") || face)
-                || (face && !line.ends_with("]\" -type \"polyFaces\""))
-                || (!face && !line.ends_with("]\""))
-            {
+            let (range, face) = if let Some(range) = attribute.strip_prefix("\".vt[0:") {
+                (range, false)
+            } else if let Some(range) = attribute.strip_prefix("\".ed[0:") {
+                (range, false)
+            } else if let Some(range) = attribute.strip_prefix("\".fc[0:") {
+                (range, true)
+            } else {
+                return Err("array header".into());
+            };
+            let last = range
+                .strip_suffix(if face {
+                    "]\" -type \"polyFaces\""
+                } else {
+                    "]\""
+                })
+                .ok_or("array header")?;
+            if last.is_empty() || !last.bytes().all(|byte| byte.is_ascii_digit()) {
                 return Err("array header".into());
             }
             for _ in 0..count {
                 let (_, row) = next_line(&mut lines, &mut offset).ok_or("short array")?;
-                if !row.starts_with(if face { "\tf " } else { "\t" })
-                    || row.contains(';')
-                    || row.contains("//")
-                {
+                let payload = row
+                    .strip_prefix(if face { "\tf " } else { "\t" })
+                    .ok_or("array row framing")?;
+                if payload.trim().is_empty() || row.contains(';') || row.contains("//") {
                     return Err("array row framing".into());
                 }
             }

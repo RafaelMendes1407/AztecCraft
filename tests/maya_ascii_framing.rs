@@ -124,3 +124,49 @@ fn malformed_headers_arrays_and_geometry_after_tail_fail() {
         golden()
     ));
 }
+
+#[test]
+fn array_headers_require_one_attribute_and_decimal_last_index() {
+    for (attribute, last, suffix) in [
+        (".vt", "3", ""),
+        (".ed", "3", ""),
+        (".fc", "0", " -type \"polyFaces\""),
+    ] {
+        let header = format!("\"{attribute}[0:{last}]\"{suffix}\n");
+        let extra = format!("\"{attribute}[0:{last}]\" \".vt[0:3]\"{suffix}\n");
+        assert_eq!(
+            frame(golden().replace(&header, &extra).as_bytes())
+                .err()
+                .as_deref(),
+            Some("array header")
+        );
+        for invalid in ["", "-1", "+3", "3x", " 3"] {
+            let malformed = format!("\"{attribute}[0:{invalid}]\"{suffix}\n");
+            assert_eq!(
+                frame(golden().replace(&header, &malformed).as_bytes())
+                    .err()
+                    .as_deref(),
+                Some("array header")
+            );
+        }
+    }
+}
+
+#[test]
+fn array_rows_require_nonempty_payload_after_each_exact_prefix() {
+    for (row, prefix) in [
+        ("\t-0.5 0 -0.5\n", "\t"),
+        ("\t0 1 0\n", "\t"),
+        ("\tf 4 0 1 2 3\n", "\tf "),
+    ] {
+        for whitespace in ["", " \t "] {
+            let empty = format!("{prefix}{whitespace}\n");
+            assert_eq!(
+                frame(golden().replace(row, &empty).as_bytes())
+                    .err()
+                    .as_deref(),
+                Some("array row framing")
+            );
+        }
+    }
+}
