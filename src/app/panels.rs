@@ -226,7 +226,7 @@ impl Editor {
                 });
             });
             ui.separator();
-            ui.weak("Alt + left: orbit | Middle: pan | Right / wheel: dolly");
+            ui.weak("Alt + left: orbit | Alt + middle: pan | Alt + right drag or wheel: dolly");
         });
         self.manipulation_options(ui);
         let captured = crate::viewport_ui::capture(ui, &self.camera);
