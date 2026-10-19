@@ -40,7 +40,9 @@ impl Editor {
         let mut delete_intent = keyboard_admitted && delete;
         self.move_consumed_frame = false;
         self.handle_close(ui.ctx());
-        if !self.files.is_modal() {
+        // Same gate as shortcuts(): Escape that closes a menu must not also cancel an edit. The
+        // popup is still open here; egui closes it later in this pass, when the menus are shown.
+        if !self.files.is_modal() && !egui::Popup::is_any_open(ui.ctx()) {
             self.cancel_on_escape(ui.ctx());
         }
         let tool_intent = self.shortcuts(ui.ctx());

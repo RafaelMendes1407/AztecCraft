@@ -1743,3 +1743,67 @@ fn a_scene_refusal_mid_move_drag_keeps_the_last_valid_preview_and_other_errors_p
     }
     assert_eq!(editor.history.scene(), &valid);
 }
+
+fn focused_label(output: &egui::FullOutput) -> Option<String> {
+    let update = output.platform_output.accesskit_update.as_ref()?;
+    update
+        .nodes
+        .iter()
+        .find(|(id, _)| *id == update.focus)
+        .and_then(|(_, node)| node.label().map(str::to_owned))
+}
+
+#[test]
+fn escape_closing_an_open_menu_leaves_the_move_in_flight_and_a_second_escape_cancels_it() {
+    // A native pointer Move is already cancelled by an open popup, so the surviving case is a
+    // remote-owned Move that a human Escape would otherwise cancel from behind the menu.
+    let (mut editor, context, _) = setup(1.0);
+    context.enable_accesskit();
+    let before = editor.history.scene().clone();
+    let target = editor.selected_move_target().unwrap();
+    editor
+        .apply_operation_guarded(
+            ManipulationProvenance::Remote,
+            Operation::BeginMove {
+                target,
+                axis: WorldAxis::X,
+            },
+            &|| true,
+        )
+        .unwrap();
+    let size = egui::vec2(1440.0, 900.0);
+    let step = |editor: &mut Editor, key_press: Key| {
+        frame(
+            editor,
+            &context,
+            raw(size, Pos2::ZERO, 1.0, vec![key(key_press)]),
+        )
+    };
+    let mut reached = false;
+    for _ in 0..60 {
+        let output = step(&mut editor, Key::Tab);
+        if focused_label(&output).as_deref() == Some("File") {
+            reached = true;
+            break;
+        }
+    }
+    assert!(reached, "Tab reaches the File menu button");
+    step(&mut editor, Key::Space);
+    assert!(egui::Popup::is_any_open(&context), "File menu opens");
+    assert!(editor.history.active_manipulation().is_some());
+    let status = editor.status.clone();
+    step(&mut editor, Key::Escape);
+    assert!(
+        !egui::Popup::is_any_open(&context),
+        "Escape closes the menu"
+    );
+    assert!(
+        editor.history.active_manipulation().is_some(),
+        "Move survives menu Escape"
+    );
+    assert_eq!(editor.status, status);
+    step(&mut editor, Key::Escape);
+    assert!(editor.history.active_manipulation().is_none());
+    assert_eq!(editor.history.scene(), &before);
+    assert_eq!(editor.status, "Edit cancelled");
+}

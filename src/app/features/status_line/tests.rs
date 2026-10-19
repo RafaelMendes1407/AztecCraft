@@ -352,9 +352,8 @@ fn keyboard_activates_the_enabled_combo_and_skips_disabled_buttons() {
         frame_with(&mut editor, &context, SIZE, 1.0, vec![key(Key::Escape)]);
         assert!(!egui::Popup::is_any_open(&context));
     }
-    // Existing behaviour, tracked in #95: cancel_on_escape (panels.rs) is not gated on
-    // Popup::is_any_open. A fix should flip this assertion deliberately.
-    assert_eq!(editor.status, "Edit cancelled");
+    // #95: Escape that closes the combo popup must not run cancel_on_escape.
+    assert_ne!(editor.status, "Edit cancelled");
     let after = snapshot(&editor);
     assert_eq!(
         (after.0, after.2, after.3, after.4),
