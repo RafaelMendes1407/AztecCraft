@@ -2,9 +2,9 @@
 
 ## Cold verification of material Diffuse editing (2026-10-19)
 
-Verified source: `origin/main` commit `7ca0ebf`, macOS (Darwin 25.1, Apple Silicon),
+Verified source: `origin/main` commit [`7ca0ebf`](https://github.com/cristim/AztecCraft/commit/7ca0ebfd6709e3afd624d8fae057f93165fd517b), macOS (Darwin 25.1, Apple Silicon),
 Rust 1.99.0, one independent session that did not write the feature. CI for that
-commit (Rust checks run 39319352346) passed on all six jobs: macOS, Ubuntu and
+commit ([Rust checks run 39319352346](https://github.com/cristim/AztecCraft/actions/runs/39319352346)) passed on all six jobs: macOS, Ubuntu and
 Windows checks, software Vulkan viewport, dependency security and the macOS x86_64
 cross-build. Fixtures are the synthetic in-test appearance specimens (one and two
 shading-group users); no private scene was used.
