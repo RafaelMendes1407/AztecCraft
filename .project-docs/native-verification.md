@@ -1,5 +1,45 @@
 # Native verification record
 
+## Cold verification of material Diffuse editing (2026-10-19)
+
+Verified source: `origin/main` commit `7ca0ebf`, macOS (Darwin 25.1, Apple Silicon),
+Rust 1.99.0, one independent session that did not write the feature. CI for that
+commit (Rust checks run 39319352346) passed on all six jobs: macOS, Ubuntu and
+Windows checks, software Vulkan viewport, dependency security and the macOS x86_64
+cross-build. Fixtures are the synthetic in-test appearance specimens (one and two
+shading-group users); no private scene was used.
+
+| Command (filter `material diffuse`) | Result |
+| --- | --- |
+| `cargo test --locked` | lib 23, bin 15, `maya_ascii_framing` 1: all passed |
+| `cargo test --locked --no-default-features` | 23 and 1 passed |
+| `cargo test --locked --features mcp-test-client` | lib 23, bin 25 (includes `material_sdk_edit_inspect_history_and_repeated_save_share_the_native_word`), 1 passed |
+
+Read and exercised: finite and nonnegative validation (`NativeScene::set_material_diffuse`
+in `src/native_scene/appearance.rs`; `-1`, NaN and infinities refused with baseline
+unchanged, tested over source values including `-0.0`, a negative word and
+`1.0000000000000004`); eight-byte span patching in `src/native_scene/binary/encode.rs`
+(only replaced words are written, byte-identical output when unchanged); draft
+targeting, precise Enter/Escape, shared History and failed or cancelled Open in
+`src/app/tests.rs`; repeated Save and SDK Open of saved output in
+`src/mcp_tests/official_client/material.rs`; strict MCP arguments in
+`src/mcp/tools.rs`.
+
+Mutation (scratch worktree, removed): changing the negative check to
+`value < -1.0e300` failed 2 tests (`diffuse_edits_preserve_raw_zero_words_unusual_source_and_failure_baselines`,
+`material_history_noop_revert_and_save_snapshot_use_the_same_scene`); shifting the
+patch span start by one byte failed 4 tests in `native_scene::binary::appearance`.
+Both mutations were discarded and the baseline passes above were taken unmutated.
+
+Not verified: Save/NCRV/Face/Grid composition. No test combines a material edit
+with curves, Face mode and grid state in one saved scene, and none can today:
+`binary::encode` returns unsupported when the scene has curves, binary NCRV Open is
+refused, and ASCII Save is refused. Guard-matrix cells cover a material draft and Face
+mode separately. The ordinary pre-commit hooks (format, Clippy, tests, build, secrets) passed on
+this tree when this entry was committed. Also not run: a native visual or
+interactive re-check of this build, Windows/Linux interaction, and any rendered
+Phong fidelity or Maya parity. Issue #50 stays open.
+
 ## M1 material candidate, bounded macOS verification
 
 The current source adds a real Common Material Attributes/Diffuse draft and
@@ -20,7 +60,8 @@ working file and inspect the retained value. An independent private byte check
 found changes only inside the authorized eight-byte diffuse envelope; all five
 original fixture hashes were unchanged. This proves that bounded native data
 journey, not rendered Phong fidelity or other platforms. Committed cold, ordinary
-hooks, CI and published combined-parent checks remain pending. Originals must
+published combined-parent checks remain pending (cold verification and
+CI: see the 2026-10-19 entry below). Originals must
 never be Save destinations. Material rendering, assignment, textures and color
 processing stay unavailable. The historical record below is unchanged.
 
