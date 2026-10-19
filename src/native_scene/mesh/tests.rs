@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn defensive_private_mesh_states_refuse_the_actual_authored_prefix() {
-    use crate::native_scene::ascii::{AsciiWriteRefusal as R, emit_mesh_arrays_prefix as emit};
+    use crate::native_scene::ascii::{AsciiWriteRefusal as R, emit_geometry_prefix as emit};
     type Case = (fn(&mut NativeMesh), R);
     let cases: [Case; 4] = [
         (
@@ -53,6 +53,45 @@ fn defensive_private_mesh_states_refuse_the_actual_authored_prefix() {
             (before.next_id, before.next_native_id)
         );
     }
+}
+
+#[test]
+fn authored_faces_keep_admitted_repeated_loop_and_unused_edges() {
+    use crate::native_scene::ascii::emit_geometry_prefix;
+    let (mut scene, _) = crate::native_scene::test_fixtures::cube();
+    let mut mesh = NativeMesh::primitive(crate::scene::Primitive::Plane).unwrap();
+    let repeated = mesh.faces[0].outer.clone();
+    mesh.faces[0].outer.extend(repeated);
+    mesh.add_loose_edge_fixture(mesh.edges[0].endpoints());
+    mesh.add_loose_edge_fixture([0, 0]);
+    scene.shapes[0].mesh = mesh;
+    scene.validate().unwrap();
+    let before = scene.clone();
+    let bytes = emit_geometry_prefix(&scene).unwrap();
+    assert_eq!(scene, before);
+    let text = std::str::from_utf8(&bytes).unwrap();
+    assert!(text.contains("\tsetAttr -s 6 \".ed[0:5]\"\n"));
+    assert!(text.contains("\t0 1 0\n\t0 0 0\n;\n"));
+    assert!(
+        bytes.ends_with(
+            b"\tsetAttr -s 1 \".fc[0:0]\" -type \"polyFaces\"\n\tf 8 0 1 2 3 0 1 2 3\n;\n"
+        )
+    );
+}
+
+#[test]
+fn malformed_stored_face_refuses_before_any_output() {
+    use crate::native_scene::ascii::{AsciiWriteRefusal, emit_geometry_prefix};
+    let (mut scene, _) = crate::native_scene::test_fixtures::cube();
+    scene.shapes[0].mesh.faces[0].outer[0].edge = usize::MAX;
+    let before = scene.clone();
+    assert_eq!(
+        emit_geometry_prefix(&scene),
+        Err(AsciiWriteRefusal::InvalidScene(
+            NativeError::InvalidTopology
+        ))
+    );
+    assert_eq!(scene, before);
 }
 
 #[test]

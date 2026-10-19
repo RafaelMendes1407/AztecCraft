@@ -1,8 +1,8 @@
 use super::{BUILTINS, add, mul, resource};
 use crate::maya_ascii::{AsciiError, MAX_BYTES, Work};
 use crate::native_scene::{
-    GeometryViewFacts, NativeError, NativeMesh, NativeMeshShape, NativeScene, NativeTransformNode,
-    Points, TransformExtras, Units,
+    DirectedEdge, GeometryViewFacts, NativeError, NativeMesh, NativeMeshShape, NativeScene,
+    NativeTransformNode, Points, TransformExtras, Units,
     admission::{self, Budget},
 };
 use std::{error::Error, fmt};
@@ -22,6 +22,9 @@ const FORMATTING_WORK: usize = 2 * (3 * CHANNEL_BYTES + UUID_BYTES);
 const POINT_ROW_BYTES: usize = 3 * (1 + 2 + 44 + 9) + "\t  \n".len();
 const EDGE_ROW_BYTES: usize = 2 * "2147483647".len() + "\t  0\n".len();
 const ARRAY_HEADER_BYTES: usize = 2 * "2147483647".len() + "\tsetAttr -s  \".vt[0:]\"\n".len();
+const FACE_HEADER_BYTES: usize = ARRAY_HEADER_BYTES + " -type \"polyFaces\"".len();
+const FACE_ROW_BYTES: usize = "\tf \n".len() + "2147483647".len() + 1;
+const FACE_TOKEN_BYTES: usize = " -2147483648".len();
 const ARRAY_END: &[u8] = b";\n";
 const RESERVED: [&str; 11] = [
     "persp",
@@ -135,6 +138,15 @@ fn mesh_array_work(points: usize, edges: usize) -> Result<usize, AsciiError> {
         )?,
     )
 }
+fn mesh_face_work(faces: usize, corners: usize) -> Result<usize, AsciiError> {
+    mul(
+        2,
+        add(
+            add(FACE_HEADER_BYTES, mul(faces, FACE_ROW_BYTES)?)?,
+            add(mul(corners, FACE_TOKEN_BYTES)?, ARRAY_END.len())?,
+        )?,
+    )
+}
 fn resource_admission(scene: &NativeScene) -> Result<(), AsciiError> {
     let n = scene.nodes.len();
     let s = scene.shapes.len();
@@ -165,15 +177,18 @@ fn resource_admission(scene: &NativeScene) -> Result<(), AsciiError> {
     for shape in &scene.shapes {
         let mesh = shape.mesh();
         work.charge(mesh_array_work(mesh.point_count(), mesh.edges().len())?)?;
+        let mut corners = 0;
         for count in [mesh.point_count(), mesh.edges().len(), mesh.faces().len()] {
             work.charge(mul(32, count)?)?;
         }
         for face in mesh.faces() {
+            corners = add(corners, face.outer().len())?;
             charge_face_counts(&mut work, face.outer().len(), face.holes().len())?;
             for hole in face.holes() {
                 work.charge(mul(32, hole.len())?)?;
             }
         }
+        work.charge(mesh_face_work(mesh.faces().len(), corners)?)?;
     }
     Ok(())
 }
@@ -334,6 +349,22 @@ impl ChannelLine {
         self.used = 0;
         self.format(format_args!("\t{a} {b} 0\n"))
     }
+    fn face_header(&mut self, count: usize) -> Result<(), AsciiWriteRefusal> {
+        let count = i32::try_from(count).map_err(|_| AsciiWriteRefusal::IndexOutOfRange)?;
+        let last = count
+            .checked_sub(1)
+            .filter(|last| *last >= 0)
+            .ok_or(AsciiWriteRefusal::EmptyMesh)?;
+        self.used = 0;
+        self.format(format_args!(
+            "\tsetAttr -s {count} \".fc[0:{last}]\" -type \"polyFaces\"\n"
+        ))
+    }
+}
+fn signed_face_edge(edge: DirectedEdge) -> Result<i32, AsciiWriteRefusal> {
+    let id = i64::try_from(edge.edge).map_err(|_| AsciiWriteRefusal::IndexOutOfRange)?;
+    let token = if edge.reversed { -id - 1 } else { id };
+    i32::try_from(token).map_err(|_| AsciiWriteRefusal::IndexOutOfRange)
 }
 impl fmt::Write for ChannelLine {
     fn write_str(&mut self, text: &str) -> fmt::Result {
@@ -403,6 +434,23 @@ fn mesh_arrays(
         line.edge_row(edge.endpoints())?;
         consume(&line.bytes[..line.used])?;
     }
+    consume(ARRAY_END)?;
+    line.face_header(mesh.faces().len())?;
+    consume(&line.bytes[..line.used])?;
+    for face in mesh.faces() {
+        let corners =
+            i32::try_from(face.outer().len()).map_err(|_| AsciiWriteRefusal::IndexOutOfRange)?;
+        line.used = 0;
+        line.format(format_args!("\tf {corners}"))?;
+        consume(&line.bytes[..line.used])?;
+        for edge in face.outer() {
+            let token = signed_face_edge(*edge)?;
+            line.used = 0;
+            line.format(format_args!(" {token}"))?;
+            consume(&line.bytes[..line.used])?;
+        }
+        consume(b"\n")?;
+    }
     consume(ARRAY_END)
 }
 fn prefix_bytes(scene: &NativeScene) -> Result<usize, AsciiWriteRefusal> {
@@ -449,7 +497,7 @@ fn append(out: &mut Vec<u8>, admitted: usize, bytes: &[u8]) -> Result<(), AsciiW
 }
 
 #[cfg_attr(not(test), expect(dead_code, reason = "no Editor caller yet"))]
-pub(crate) fn emit_mesh_arrays_prefix(scene: &NativeScene) -> Result<Vec<u8>, AsciiWriteRefusal> {
+pub(crate) fn emit_geometry_prefix(scene: &NativeScene) -> Result<Vec<u8>, AsciiWriteRefusal> {
     check(scene)?;
     let length = prefix_bytes(scene)?;
     let mut out = Budget::new(0)
