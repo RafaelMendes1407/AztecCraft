@@ -86,6 +86,25 @@ fn input_bound_is_checked_before_line_collection() {
 }
 
 #[test]
+fn exact_byte_limit_is_inclusive_before_utf8_validation() {
+    let maximum = 16 * 1024 * 1024;
+    let mut document = format!("{HEADER}createNode transform -n \"\";\n");
+    let name_offset = document.len() - 3;
+    document.insert_str(name_offset, &"x".repeat(maximum - document.len()));
+    assert_eq!(document.len(), maximum);
+    assert_eq!(
+        frame(document.as_bytes()).unwrap(),
+        (
+            vec![Kind::Header, Kind::Header, Kind::Header, Kind::Transform],
+            maximum
+        )
+    );
+    let mut oversized = document.into_bytes();
+    oversized.push(0xff);
+    assert_eq!(frame(&oversized).err().as_deref(), Some("input byte limit"));
+}
+
+#[test]
 fn malformed_headers_arrays_and_geometry_after_tail_fail() {
     rejects("");
     rejects("//Maya ASCII 2026 scene\n");
@@ -99,6 +118,7 @@ fn malformed_headers_arrays_and_geometry_after_tail_fail() {
     rejects(&golden().replace("\tf 4 0 1 2 3", "\t4 0 1 2 3"));
     rejects(&golden().replace("\t-0.5 0 -0.5", "\t-0.5 0 -0.5 // row"));
     rejects(&format!("{}{}", golden(), GEOMETRY));
+    rejects(&format!("{}createNode transform -n \"late\";\n", golden()));
     rejects(&format!(
         "{}\tsetAttr -s 1 \".vt[0:0]\"\n\t0 0 0\n;\n",
         golden()
