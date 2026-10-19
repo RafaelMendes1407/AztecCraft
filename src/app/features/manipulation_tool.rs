@@ -23,9 +23,11 @@ use glam::{DVec3, Vec2};
 
 const VIEW_BUDGET: usize = 256 * 1024 * 1024;
 
-/// Tool settings shared by the Rotate and Scale tools.
+/// Rotate and Scale tool settings. Maya keeps the axis orientation per tool and defaults it to
+/// Object for Rotate and World for Scale (2026 tool settings pages).
 pub(in crate::app) struct ManipulationOptions {
-    pub(in crate::app) space: ManipulationSpace,
+    rotate_space: ManipulationSpace,
+    scale_space: ManipulationSpace,
     rotate_axis: RotateAxis,
     scale_handle: ScaleHandle,
     numeric: String,
@@ -45,7 +47,8 @@ pub(in crate::app) struct ManipulationOptions {
 impl Default for ManipulationOptions {
     fn default() -> Self {
         Self {
-            space: ManipulationSpace::Object,
+            rotate_space: ManipulationSpace::Object,
+            scale_space: ManipulationSpace::World,
             rotate_axis: RotateAxis::X,
             scale_handle: ScaleHandle::Uniform,
             numeric: String::new(),
@@ -54,6 +57,41 @@ impl Default for ManipulationOptions {
             refusal: None,
             declared: None,
         }
+    }
+}
+
+impl ManipulationOptions {
+    pub(in crate::app) fn space(&self, tool: ActiveTool) -> ManipulationSpace {
+        match tool {
+            ActiveTool::Scale => self.scale_space,
+            _ => self.rotate_space,
+        }
+    }
+}
+
+impl Editor {
+    pub(in crate::app) fn set_tool_space(
+        &mut self,
+        tool: ActiveTool,
+        space: ManipulationSpace,
+    ) -> Result<OperationReply, OperationError> {
+        let slot = match tool {
+            ActiveTool::Rotate => &mut self.manipulation.rotate_space,
+            ActiveTool::Scale => &mut self.manipulation.scale_space,
+            ActiveTool::Select | ActiveTool::Move => {
+                return Err(OperationError::InvalidInput(format!(
+                    "{} has no Axis Orientation; use rotate or scale",
+                    tool_name(tool)
+                )));
+            }
+        };
+        let changed = *slot != space;
+        *slot = space;
+        Ok(if changed {
+            OperationReply::Changed
+        } else {
+            OperationReply::Unchanged
+        })
     }
 }
 
@@ -299,7 +337,7 @@ impl Editor {
     }
 
     pub(in crate::app) fn tool_help(&self) -> String {
-        let space = space_name(self.manipulation.space);
+        let space = space_name(self.manipulation.space(self.active_tool));
         match self.active_tool {
             ActiveTool::Rotate => format!(
                 "Rotate tool ({space}): drag a ring to turn about that axis | Esc cancels | \
@@ -329,7 +367,7 @@ impl Editor {
             .scene()
             .manipulator_frame(&target)
             .map_err(OperationError::Scene)?;
-        let axes = match self.manipulation.space {
+        let axes = match self.manipulation.space(tool) {
             ManipulationSpace::Object => frame.object_axes,
             ManipulationSpace::World => [DVec3::X, DVec3::Y, DVec3::Z],
         };
@@ -360,7 +398,7 @@ impl Editor {
             // pointer is over the viewport.
             Err(error) => return Some((format!("{} unavailable: {error}", tool_name(tool)), true)),
         };
-        let space = self.manipulation.space;
+        let space = self.manipulation.space(tool);
         let scene = self.history.scene();
         match tool {
             ActiveTool::Rotate => {
@@ -461,7 +499,7 @@ impl Editor {
         let pixel = capture
             .pointer_pixel(position)
             .map_err(|error| handle_error(tool, error))?;
-        let space = self.manipulation.space;
+        let space = self.manipulation.space(tool);
         let (drag, operation, label) = match tool {
             ActiveTool::Rotate => {
                 let Ok(handles) = RotateHandles::new(&capture, &frame) else {
@@ -502,7 +540,10 @@ impl Editor {
                         handle,
                         space,
                     },
-                    format!("{} {} Scale", space_name(space), scale_handle_name(handle)),
+                    match handle {
+                        ScaleHandle::Uniform => "Uniform Scale".to_string(),
+                        _ => format!("{} {} Scale", space_name(space), scale_handle_name(handle)),
+                    },
                 )
             }
             ActiveTool::Select | ActiveTool::Move => return Ok(false),
@@ -628,18 +669,21 @@ impl Editor {
             && !self.files.is_closing()
             && self.history.active_manipulation().is_none();
         let mut apply = false;
+        let mut chosen = None;
         ui.horizontal(|ui| {
             ui.label(format!("{} tool", tool_name(tool)));
             ui.add_enabled_ui(enabled, |ui| {
                 egui::ComboBox::from_id_salt("manipulation_space")
-                    .selected_text(space_name(self.manipulation.space))
+                    .selected_text(space_name(self.manipulation.space(tool)))
                     .show_ui(ui, |ui| {
                         for space in [ManipulationSpace::Object, ManipulationSpace::World] {
-                            ui.selectable_value(
-                                &mut self.manipulation.space,
-                                space,
-                                space_name(space),
-                            );
+                            let current = self.manipulation.space(tool);
+                            if ui
+                                .selectable_label(current == space, space_name(space))
+                                .clicked()
+                            {
+                                chosen = Some(space);
+                            }
                         }
                         for name in UNSUPPORTED_SPACES {
                             ui.add_enabled(false, egui::Button::selectable(false, name))
@@ -693,6 +737,9 @@ impl Editor {
                 apply = ui.button("Apply").clicked() || entered;
             });
         });
+        if let Some(space) = chosen {
+            self.native_operation(Operation::SetToolSpace { tool, space });
+        }
         if apply {
             self.apply_numeric_manipulation();
         }
@@ -725,7 +772,7 @@ impl Editor {
             .parse()
             .map_err(|_| OperationError::InvalidInput("Enter a number".into()))?;
         let target = self.selected_move_target()?;
-        let space = self.manipulation.space;
+        let space = self.manipulation.space(tool);
         let (begin, value) = match tool {
             ActiveTool::Rotate => (
                 Operation::BeginRotate {
