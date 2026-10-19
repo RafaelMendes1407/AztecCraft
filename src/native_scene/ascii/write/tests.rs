@@ -636,6 +636,8 @@ fn strict_prefix_rejects_malformed_statements_and_arrays() {
         ("\tf 4 0 1 2 3\n", "\tf 5 0 1 2 3\n"),
         ("\tf 4 0 1 2 3\n", "\tf 4 0 1 2 4\n"),
         ("\tf 4 0 1 2 3\n", "\tf 4 0 1 2 -5\n"),
+        ("\tf 4 0 1 2 3\n", "\tf 2 0 1\n"),
+        ("\tf 4 0 1 2 3\n", "\tf 0\n"),
         (";\n\tsetAttr -s 4 \".ed", "!\n\tsetAttr -s 4 \".ed"),
         (";\n\tsetAttr -s 1 \".fc", "\tsetAttr -s 1 \".fc"),
     ] {
