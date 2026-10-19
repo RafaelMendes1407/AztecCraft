@@ -453,7 +453,7 @@ Status values: `supported` means a registered tool or an `inspect_scene` field e
 | Nodes | Rename (Channel Box name) | supported | `rename_node` | `nodes` | |
 | Nodes | Translate, rotate and scale channels | supported | `set_transform`, `edit_node` | `nodes`, `units` | |
 | Nodes | Delete (root leaf nodes) | supported | `delete_node` | `nodes` | nodes with children or a parent are refused with `unsupported_delete` (#187) |
-| Edit menu | Delete by Type, Delete All by Type | unsupported | | | visible disabled rows; #187 |
+| Edit menu | Delete by Type, Delete All by Type (visible disabled rows, see #187) | unsupported | | | |
 | Nodes | Visibility edit | unsupported | | `nodes` | |
 | Nodes | Rotate order, axis, shear and pivots (read only) | supported | | `transform_attributes` | |
 | Selection | Select object, clear selection, Outliner click, viewport pick | supported | `select_node` | `selected_node`, `selected_instance_path` | |
