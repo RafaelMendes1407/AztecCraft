@@ -325,7 +325,7 @@ createNode mesh -n \"storedFirst\" -p \"first\";\n\
             .count(),
         2
     );
-    assert_eq!(rows(&omitted).len(), 6);
+    assert_eq!(parsed_prefix(&omitted).channels.len(), 6);
     assert_eq!(prefix(&NativeScene::default()).unwrap(), HEADER.as_bytes());
     let mut legacy = crate::scene::Scene::default();
     legacy.create(Primitive::Cube, "legacy").unwrap();
@@ -353,7 +353,7 @@ createNode mesh -n \"storedFirst\" -p \"first\";\n\
         scene.validate().unwrap();
         let bytes = prefix(&scene).unwrap();
         assert_eq!(bytes.len(), prefix_bytes(&scene).unwrap());
-        let blocks = arrays(&bytes);
+        let blocks = parsed_prefix(&bytes).blocks;
         assert_eq!(blocks.len(), 6);
         for (index, node) in scene.nodes.iter().enumerate() {
             let shape = child(&scene, node).unwrap();
@@ -416,59 +416,99 @@ fn child_work_counts_are_checked_before_traversal() {
     }
 }
 
-fn rows(bytes: &[u8]) -> Vec<(&str, &str, [f64; 3])> {
+struct ParsedPrefix<'a> {
+    channels: Vec<(&'a str, &'a str, [f64; 3])>,
+    blocks: Vec<(&'a str, &'a str, Vec<Vec<&'a str>>)>,
+}
+
+fn parsed_prefix(bytes: &[u8]) -> ParsedPrefix<'_> {
+    assert!(bytes.ends_with(b"\n"));
+    let body = bytes.strip_prefix(HEADER.as_bytes()).unwrap();
+    let mut lines = std::str::from_utf8(body).unwrap().lines();
+    let empty_scene = NativeScene::default();
+    let mut transform = None;
     let mut owner = None;
-    let mut rows = Vec::new();
-    for line in std::str::from_utf8(bytes).unwrap().lines() {
+    let mut transform_uuid = false;
+    let mut shape_uuid = false;
+    let mut next_channel = 0;
+    let mut next_array = 0;
+    let mut point_count = None;
+    let mut edge_count = None;
+    let mut parsed = ParsedPrefix {
+        channels: Vec::new(),
+        blocks: Vec::new(),
+    };
+    while let Some(line) = lines.next() {
         if let Some(name) = line.strip_prefix("createNode transform -n \"") {
-            owner = Some(name.strip_suffix("\";").unwrap());
+            assert!(transform.is_none() || next_array == 3);
+            let name = name.strip_suffix("\";").unwrap();
+            assert!(empty_scene.validate_new_name(None, name).is_ok());
+            transform = Some(name);
+            owner = None;
+            transform_uuid = false;
+            next_channel = 0;
+            next_array = 0;
+            continue;
+        }
+        if let Some(declaration) = line.strip_prefix("createNode mesh -n \"") {
+            assert!(transform.is_some() && owner.is_none());
+            let (name, parent) = declaration.split_once("\" -p \"").unwrap();
+            assert!(empty_scene.validate_new_name(None, name).is_ok());
+            assert_eq!(parent.strip_suffix("\";").unwrap(), transform.unwrap());
+            owner = Some(name);
+            shape_uuid = false;
+            point_count = None;
+            edge_count = None;
+            continue;
+        }
+        if let Some(value) = line.strip_prefix("\trename -uid \"") {
+            let value = value.strip_suffix("\";").unwrap();
+            let uuid = uuid::Uuid::parse_str(value).unwrap();
+            assert_eq!(uuid.hyphenated().to_string(), value);
+            if owner.is_some() {
+                assert!(next_array == 0 && !shape_uuid);
+                shape_uuid = true;
+            } else {
+                assert!(transform.is_some() && next_channel == 0 && !transform_uuid);
+                transform_uuid = true;
+            }
+            continue;
         }
         if let Some(row) = line.strip_prefix("\tsetAttr \"") {
+            assert!(transform.is_some() && owner.is_none());
             let (attribute, values) = row.split_once("\" -type \"double3\" ").unwrap();
-            assert!([".t", ".r", ".s"].contains(&attribute));
+            let index = [".t", ".r", ".s"]
+                .iter()
+                .position(|known| *known == attribute)
+                .unwrap();
+            assert!(index >= next_channel);
+            next_channel = index + 1;
             let values = values
                 .strip_suffix(';')
                 .unwrap()
                 .split(' ')
-                .map(|value| value.parse::<f64>().unwrap())
+                .map(|word| word.parse::<f64>().unwrap())
                 .collect::<Vec<_>>();
-            rows.push((owner.unwrap(), attribute, values.try_into().unwrap()));
-        }
-    }
-    rows
-}
-
-fn arrays(bytes: &[u8]) -> Vec<(&str, &str, Vec<Vec<&str>>)> {
-    let mut lines = std::str::from_utf8(bytes).unwrap().lines();
-    let mut transform = None;
-    let mut owner = None;
-    let mut edge_count = None;
-    let mut blocks = Vec::new();
-    while let Some(line) = lines.next() {
-        if let Some(name) = line.strip_prefix("createNode transform -n \"") {
-            transform = Some(name.strip_suffix("\";").unwrap());
-            owner = None;
-        }
-        if let Some(declaration) = line.strip_prefix("createNode mesh -n \"") {
-            let (name, parent) = declaration.split_once("\" -p \"").unwrap();
-            assert_eq!(parent.strip_suffix("\";").unwrap(), transform.unwrap());
-            owner = Some(name);
-            edge_count = None;
-        }
-        let Some(header) = line.strip_prefix("\tsetAttr -s ") else {
+            let values: [f64; 3] = values.try_into().unwrap();
+            assert!(values.iter().all(|value| value.is_finite()));
+            parsed
+                .channels
+                .push((transform.unwrap(), attribute, values));
             continue;
-        };
+        }
+        let header = line.strip_prefix("\tsetAttr -s ").unwrap();
+        assert!(owner.is_some() && next_array < 3);
         let (count, range) = header.split_once(" \"").unwrap();
         let count = count.parse::<usize>().unwrap();
         let (attribute, last) = range.split_once("[0:").unwrap();
-        assert!([".vt", ".ed", ".fc"].contains(&attribute));
+        assert_eq!(attribute, [".vt", ".ed", ".fc"][next_array]);
         let suffix = if attribute == ".fc" {
             "]\" -type \"polyFaces\""
         } else {
             "]\""
         };
         let last = last.strip_suffix(suffix).unwrap().parse::<usize>().unwrap();
-        assert!(count > 0);
+        assert!(count > 0 && count <= i32::MAX as usize);
         assert_eq!(last.checked_add(1), Some(count));
         let mut rows = Vec::new();
         for _ in 0..count {
@@ -476,7 +516,9 @@ fn arrays(bytes: &[u8]) -> Vec<(&str, &str, Vec<Vec<&str>>)> {
             let values = row.split(' ').collect::<Vec<_>>();
             if attribute == ".fc" {
                 assert_eq!(values.first(), Some(&"f"));
-                let corners = values[1].parse::<usize>().unwrap();
+                let corners = values[1].parse::<i32>().unwrap();
+                assert!(corners >= 3);
+                let corners = usize::try_from(corners).unwrap();
                 assert_eq!(values.len(), corners + 2);
                 for token in &values[2..] {
                     let token = token.parse::<i64>().unwrap();
@@ -493,6 +535,8 @@ fn arrays(bytes: &[u8]) -> Vec<(&str, &str, Vec<Vec<&str>>)> {
                         assert!(value >= 0);
                         if index == 2 {
                             assert_eq!(value, 0);
+                        } else {
+                            assert!((value as usize) < point_count.unwrap());
                         }
                     }
                 }
@@ -500,12 +544,207 @@ fn arrays(bytes: &[u8]) -> Vec<(&str, &str, Vec<Vec<&str>>)> {
             rows.push(values);
         }
         assert_eq!(lines.next(), Some(";"));
+        if attribute == ".vt" {
+            point_count = Some(count);
+        }
         if attribute == ".ed" {
             edge_count = Some(count);
         }
-        blocks.push((owner.unwrap(), attribute, rows));
+        parsed.blocks.push((owner.unwrap(), attribute, rows));
+        next_array += 1;
     }
-    blocks
+    assert!(transform.is_none() || next_array == 3);
+    parsed
+}
+
+#[test]
+fn prefix_extractor_rejects_unknown_trailing_statement() {
+    let mut bytes = prefix(&scene(&["cube"])).unwrap();
+    bytes.extend_from_slice(b"unknownStatement;\n");
+    assert!(std::panic::catch_unwind(|| parsed_prefix(&bytes)).is_err());
+}
+
+fn rejects_replacement(bytes: &[u8], old: &str, new: &str) {
+    let source = std::str::from_utf8(bytes).unwrap();
+    assert!(source.contains(old), "missing mutation anchor {old}");
+    let changed = source.replacen(old, new, 1);
+    assert!(
+        std::panic::catch_unwind(|| parsed_prefix(changed.as_bytes())).is_err(),
+        "accepted mutation of {old} to {new}"
+    );
+}
+
+#[test]
+fn strict_prefix_rejects_malformed_statements_and_arrays() {
+    let mut scene = scene(&["first"]);
+    scene.shapes[0].mesh = NativeMesh::primitive(Primitive::Plane).unwrap();
+    scene.nodes[0].transform_uuid = Some(uuid::Uuid::nil());
+    scene.shapes[0].uuid = Some(uuid::Uuid::from_u128(1));
+    scene.nodes[0].channels[0].value = 0.1;
+    scene.nodes[0].channels[3].value = 0.2;
+    scene.nodes[0].channels[6].value = 2.0;
+    let bytes = prefix(&scene).unwrap();
+    parsed_prefix(&bytes);
+    let transform_uuid = "\trename -uid \"00000000-0000-0000-0000-000000000000\";\n";
+    let shape_uuid = "\trename -uid \"00000000-0000-0000-0000-000000000001\";\n";
+    let translate = "\tsetAttr \".t\" -type \"double3\" 0.1 0 0;\n";
+    let rotate = "\tsetAttr \".r\" -type \"double3\" 0.2 0 0;\n";
+    let scale = "\tsetAttr \".s\" -type \"double3\" 2 1 1;\n";
+    for (old, new) in [
+        ("//Maya ASCII 2026 scene", "//Maya ASCII 2025 scene"),
+        ("requires maya \"2026\";", "requires maya \"2025\";"),
+        (
+            "createNode transform -n \"first\";",
+            "createNode transform -n \"first\"",
+        ),
+        (
+            "createNode mesh -n \"firstShape\" -p \"first\";",
+            "createNode mesh -n \"firstShape\" -p \"other\";",
+        ),
+        (
+            "createNode mesh -n \"firstShape\" -p \"first\";",
+            "createNode mesh -n \"firstShape\" -p \"first\";\ncreateNode mesh -n \"extra\" -p \"first\";",
+        ),
+        (shape_uuid, "\trename -uid \"not-a-uuid\";\n"),
+        ("\tsetAttr -s 4 \".vt[0:3]\"", "\tsetAttr -s 3 \".vt[0:3]\""),
+        ("\tsetAttr -s 4 \".vt[0:3]\"", "\tsetAttr -s 4 \".vt[0:2]\""),
+        ("\tsetAttr -s 4 \".vt[0:3]\"", "\tsetAttr -s 4 \".vt[1:4]\""),
+        (
+            "\tsetAttr -s 1 \".fc[0:0]\" -type \"polyFaces\"",
+            "\tsetAttr -s 1 \".fc[0:0]\" -type \"wrong\"",
+        ),
+        ("\t-0.5 0 -0.5\n", "\t-0.5 0\n"),
+        ("\t-0.5 0 -0.5\n", "\tNaN 0 -0.5\n"),
+        ("\t0 1 0\n", "\t0 1 1\n"),
+        ("\t0 1 0\n", "\t0 4 0\n"),
+        ("\t0 1 0\n", "\t-1 1 0\n"),
+        ("\tf 4 0 1 2 3\n", "\tf 5 0 1 2 3\n"),
+        ("\tf 4 0 1 2 3\n", "\tf 4 0 1 2 4\n"),
+        ("\tf 4 0 1 2 3\n", "\tf 4 0 1 2 -5\n"),
+        (";\n\tsetAttr -s 4 \".ed", "!\n\tsetAttr -s 4 \".ed"),
+        (";\n\tsetAttr -s 1 \".fc", "\tsetAttr -s 1 \".fc"),
+    ] {
+        rejects_replacement(&bytes, old, new);
+    }
+    rejects_replacement(&bytes, transform_uuid, &transform_uuid.repeat(2));
+    rejects_replacement(&bytes, shape_uuid, &shape_uuid.repeat(2));
+    rejects_replacement(&bytes, translate, &translate.repeat(2));
+    rejects_replacement(
+        &bytes,
+        &format!("{translate}{rotate}"),
+        &format!("{rotate}{translate}"),
+    );
+    rejects_replacement(
+        &bytes,
+        &format!("{rotate}{scale}"),
+        &format!("{scale}{rotate}"),
+    );
+    rejects_replacement(
+        &bytes,
+        &format!("{transform_uuid}{translate}"),
+        &format!("{translate}{transform_uuid}"),
+    );
+    let moved_shape_uuid = format!(
+        "{}{shape_uuid}",
+        std::str::from_utf8(&bytes)
+            .unwrap()
+            .replacen(shape_uuid, "", 1)
+    );
+    assert!(std::panic::catch_unwind(|| parsed_prefix(moved_shape_uuid.as_bytes())).is_err());
+    rejects_replacement(
+        &bytes,
+        translate,
+        "\tsetAttr \".t\" -type \"double3\" NaN 0 0;\n",
+    );
+    rejects_replacement(&bytes, "\tsetAttr -s 4 \".vt[0:3]\"\n", "");
+    rejects_replacement(&bytes, "\tsetAttr -s 4 \".ed[0:3]\"\n", "");
+    rejects_replacement(
+        &bytes,
+        "\tsetAttr -s 1 \".fc[0:0]\" -type \"polyFaces\"\n",
+        "",
+    );
+    let source = std::str::from_utf8(&bytes).unwrap();
+    let vt = source.find("\tsetAttr -s 4 \".vt").unwrap();
+    let ed = source.find("\tsetAttr -s 4 \".ed").unwrap();
+    let fc = source.find("\tsetAttr -s 1 \".fc").unwrap();
+    for changed in [
+        format!("{}{}", &source[..vt], &source[ed..]),
+        format!("{}{}{}", &source[..ed], &source[vt..ed], &source[ed..]),
+        format!("{}{}", &source[..vt], source[vt..ed].repeat(3)),
+        format!("{}{}", &source[..ed], &source[fc..]),
+        source[..fc].to_owned(),
+        source[..source.len() - 1].to_owned(),
+        format!("{source}\n"),
+    ] {
+        assert!(std::panic::catch_unwind(|| parsed_prefix(changed.as_bytes())).is_err());
+    }
+}
+
+#[test]
+fn strict_prefix_requires_each_transform_to_close_before_transition_or_eof() {
+    let mut scene = scene(&["first", "second"]);
+    for shape in &mut scene.shapes {
+        shape.mesh = NativeMesh::primitive(Primitive::Plane).unwrap();
+    }
+    let bytes = prefix(&scene).unwrap();
+    let source = std::str::from_utf8(&bytes).unwrap();
+    let mesh = source.find("createNode mesh -n \"firstShape\"").unwrap();
+    let second = source.find("createNode transform -n \"second\"").unwrap();
+    for changed in [
+        source[..mesh].to_owned(),
+        format!("{}{}", &source[..mesh], &source[second..]),
+    ] {
+        assert!(std::panic::catch_unwind(|| parsed_prefix(changed.as_bytes())).is_err());
+    }
+    assert!(parsed_prefix(HEADER.as_bytes()).blocks.is_empty());
+}
+
+#[test]
+fn strict_prefix_rejects_invalid_declaration_names() {
+    let bytes = prefix(&scene(&["cube"])).unwrap();
+    let source = std::str::from_utf8(&bytes).unwrap();
+    for name in ["bad name", "3bad", "bad:namespace", "bad\"quote"] {
+        let transform = source
+            .replacen(
+                "createNode transform -n \"cube\";",
+                &format!("createNode transform -n \"{name}\";"),
+                1,
+            )
+            .replacen("-p \"cube\";", &format!("-p \"{name}\";"), 1);
+        let shape = source.replacen(
+            "createNode mesh -n \"cubeShape\"",
+            &format!("createNode mesh -n \"{name}\""),
+            1,
+        );
+        for changed in [transform, shape] {
+            assert!(std::panic::catch_unwind(|| parsed_prefix(changed.as_bytes())).is_err());
+        }
+    }
+}
+
+#[test]
+fn strict_prefix_accepts_admitted_unused_duplicate_and_self_loop_edges() {
+    let mut scene = scene(&["odd"]);
+    scene.shapes[0].mesh = NativeMesh::primitive(Primitive::Plane).unwrap();
+    fixtures::add_loose_edge_unvalidated(&mut scene, [0, 1]);
+    fixtures::add_loose_edge_unvalidated(&mut scene, [0, 0]);
+    scene.validate().unwrap();
+    let bytes = prefix(&scene).unwrap();
+    let blocks = parsed_prefix(&bytes).blocks;
+    assert_eq!(blocks.len(), 3);
+    assert_eq!(blocks[1].2.len(), 6);
+    assert_eq!(blocks[1].2[4], ["0", "1", "0"]);
+    assert_eq!(blocks[1].2[5], ["0", "0", "0"]);
+    assert_eq!(blocks[2].2[0], ["f", "4", "0", "1", "2", "3"]);
+    let doubled = std::str::from_utf8(&bytes).unwrap().replacen(
+        "\tf 4 0 1 2 3\n",
+        "\tf 8 0 1 2 3 0 1 2 3\n",
+        1,
+    );
+    assert_eq!(
+        parsed_prefix(doubled.as_bytes()).blocks[2].2[0],
+        ["f", "8", "0", "1", "2", "3", "0", "1", "2", "3"]
+    );
 }
 
 #[test]
@@ -540,7 +779,7 @@ fn raw_float_arrays_keep_owner_bits_unused_points_and_duplicate_edges() {
             scene.validate().unwrap();
             let bytes = prefix(&scene).unwrap();
             assert_eq!(bytes.len(), prefix_bytes(&scene).unwrap());
-            let blocks = arrays(&bytes);
+            let blocks = parsed_prefix(&bytes).blocks;
             assert_eq!(
                 (blocks[0].0, blocks[0].1, blocks[0].2[0].as_slice()),
                 ("quadShape", ".vt", ["0.1", "0", "0"].as_slice())
@@ -733,7 +972,7 @@ fn every_slot_round_trips_defaults_signed_zero_and_finite_extremes() {
             let changed = value.to_bits() != expected[slot % 3].to_bits();
             expected[slot % 3] = value;
             let bytes = prefix(&scene).unwrap();
-            let actual = rows(&bytes);
+            let actual = parsed_prefix(&bytes).channels;
             assert_eq!(actual.len(), usize::from(changed));
             if changed {
                 assert_eq!(
@@ -766,7 +1005,7 @@ fn uuid_and_channel_bytes_are_in_the_admitted_size() {
     let bytes = prefix(&scene).unwrap();
     assert_eq!(bytes.len(), 436);
     assert_eq!(bytes.len(), prefix_bytes(&scene).unwrap());
-    assert!(rows(&bytes).is_empty());
+    assert!(parsed_prefix(&bytes).channels.is_empty());
     for contribution in [53, 37, MESH_SYNTAX_BYTES] {
         assert_eq!(
             add_prefix_bytes(MAX_BYTES - contribution, contribution),
