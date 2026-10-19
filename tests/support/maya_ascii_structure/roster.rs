@@ -43,6 +43,7 @@ pub fn inspect(bytes: &[u8]) -> Result<Roster, String> {
     let mut transform: Option<String> = None;
     let mut shape: Option<String> = None;
     let mut next_array = 0;
+    let mut uuid_seen = false;
     let mut tail = false;
     for (kind, tokens) in kinds.into_iter().zip(statements).skip(3) {
         if tail {
@@ -67,6 +68,7 @@ pub fn inspect(bytes: &[u8]) -> Result<Roster, String> {
                 {
                     return Err("transform name".into());
                 }
+                uuid_seen = false;
                 transform = Some(node.text.clone());
                 shape = None;
                 next_array = 0;
@@ -90,13 +92,19 @@ pub fn inspect(bytes: &[u8]) -> Result<Roster, String> {
                 {
                     return Err("mesh owner".into());
                 }
+                uuid_seen = false;
                 shape = Some(node.text.clone());
                 report.shapes.push(node.text.clone());
             }
             Kind::Uuid => {
-                if transform.is_none() || next_array != 0 {
+                if transform.is_none()
+                    || next_array != 0
+                    || uuid_seen
+                    || !matches!(tokens.as_slice(), [_, _, id] if id.quoted && !id.text.is_empty())
+                {
                     return Err("UUID owner".into());
                 }
+                uuid_seen = true;
             }
             Kind::Channel => {
                 if transform.is_none() || shape.is_some() {

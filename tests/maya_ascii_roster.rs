@@ -123,6 +123,32 @@ fn optional_uuid_and_transform_channel_positions_have_checked_owners() {
     let report = inspect(document.as_bytes()).unwrap();
     assert_eq!(report.boundary, document.len());
     assert_eq!(report.shapes, ["plainShape"]);
+    let second = geometry.replace("plain", "other");
+    let document = format!("{HEADER}{geometry}{second}");
+    let report = inspect(document.as_bytes()).unwrap();
+    assert_eq!(report.boundary, document.len());
+    assert_eq!(report.shapes, ["plainShape", "otherShape"]);
+    for (owner, anchor) in [
+        ("transform", "createNode mesh"),
+        ("mesh", "\tsetAttr -s 4 \".vt"),
+    ] {
+        for (case, statement) in [
+            ("duplicate", format!("{uuid}{uuid}")),
+            ("spaced missing", "\trename -uid ;\n".into()),
+            ("bare", "\trename -uid bare;\n".into()),
+            ("empty quoted", "\trename -uid \"\";\n".into()),
+            ("extra token", "\trename -uid \"id\" extra;\n".into()),
+        ] {
+            let malformed = GEOMETRY.replace(anchor, &format!("{statement}{anchor}"));
+            assert_eq!(
+                inspect(format!("{HEADER}{malformed}").as_bytes())
+                    .err()
+                    .as_deref(),
+                Some("UUID owner"),
+                "{owner}: {case}"
+            );
+        }
+    }
     refuses(&format!("{HEADER}{uuid}{GEOMETRY}"), "UUID owner");
     refuses(&format!("{HEADER}{GEOMETRY}{uuid}"), "UUID owner");
     refuses(&format!("{HEADER}{channel}{GEOMETRY}"), "transform channel");
