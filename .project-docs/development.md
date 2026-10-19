@@ -580,3 +580,18 @@ zero or negative Scale factor reached by a drag is refused by the core, shown in
 status and keeps the last valid preview. Undo and Redo report the entry they act on
 ("Undo Rotate"). The generic `begin_manipulation`, `update_manipulation` and
 `finish_manipulation` MCP tools drive the same operations; see `mcp.md`.
+
+## Independent Maya ASCII geometry roster
+
+The test-only roster oracle validates geometry declaration names, ownership and
+completion after framing the entire input with the inherited 16 MiB byte limit.
+It returns observed shape order, declared geometry names, the actual byte seam
+and moved raw tail kinds/tokens. Tail material and connection semantics remain
+unvalidated. Token transport comparisons use the separate handwritten tail fixture.
+The additional owned vectors do not establish a process heap limit.
+
+Run `cargo test --locked --no-default-features --test maya_ascii_roster` for its
+standalone caller. Exact array values/order, topology and material graph validity
+require later oracles; this scope does not enable Save, native/MCP operations or
+establish Maya acceptance. Later writer proofs must also check deep geometry on
+the exact pre-tail byte segment with the unchanged strict prefix decoder.
