@@ -1001,7 +1001,9 @@ fn fifo_substitution_at_actual_writable_hook_is_bounded() {
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(2);
+    // Liveness guard only: a regression blocks forever in the child's FIFO open, so any
+    // finite bound fails it; the bound must exceed process start-up time under load.
+    let deadline = Instant::now() + Duration::from_secs(120);
     loop {
         if let Some(status) = child.try_wait().unwrap() {
             assert!(
