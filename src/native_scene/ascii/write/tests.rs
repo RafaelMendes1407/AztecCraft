@@ -424,7 +424,7 @@ struct ParsedPrefix<'a> {
 fn parsed_prefix(bytes: &[u8]) -> ParsedPrefix<'_> {
     assert!(bytes.ends_with(b"\n"));
     let body = bytes.strip_prefix(HEADER.as_bytes()).unwrap();
-    let mut lines = std::str::from_utf8(body).unwrap().lines();
+    let mut lines = std::str::from_utf8(body).unwrap().split_terminator('\n');
     let empty_scene = NativeScene::default();
     let mut transform = None;
     let mut owner = None;
@@ -555,6 +555,21 @@ fn parsed_prefix(bytes: &[u8]) -> ParsedPrefix<'_> {
     }
     assert!(transform.is_none() || next_array == 3);
     parsed
+}
+
+#[test]
+fn strict_prefix_rejects_crlf_in_emitted_body() {
+    let mut scene = scene(&["plane"]);
+    scene.shapes[0].mesh = NativeMesh::primitive(Primitive::Plane).unwrap();
+    let bytes = prefix(&scene).unwrap();
+    parsed_prefix(&bytes);
+    for line in [
+        "createNode transform -n \"plane\";\n",
+        "\t-0.5 0 -0.5\n",
+        ";\n\tsetAttr -s 4 \".ed",
+    ] {
+        rejects_replacement(&bytes, line, &line.replacen('\n', "\r\n", 1));
+    }
 }
 
 #[test]
