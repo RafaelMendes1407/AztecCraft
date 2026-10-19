@@ -6553,3 +6553,139 @@ fn invalid_input_echo_after_failed_open_never_carries_the_path() {
     };
     assert!(!message.contains("zzprivatedir") && !message.contains("zzsecret"));
 }
+
+fn camera_after_frame_all(editor: &Editor) -> Camera {
+    let mut expected = editor.camera.clone();
+    let view = ViewScene::from_native(editor.history.scene(), 256 * 1024 * 1024).unwrap();
+    expected.frame_view(&view, None, editor.aspect).unwrap();
+    expected
+}
+
+#[test]
+fn frame_all_frames_every_object_regardless_of_selection() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    editor.create(Primitive::Cube);
+    let id = editor.selected.unwrap();
+    let transform = NativeTransform {
+        translation: [20.0, 0.0, 0.0],
+        ..Default::default()
+    };
+    let input = editor.transform_input(transform).unwrap();
+    remote(
+        &mut editor,
+        Operation::SetTransform {
+            id,
+            transform: input,
+        },
+    )
+    .unwrap();
+    editor.native_operation(Operation::SetGridVisible { visible: true });
+    let view = ViewScene::from_native(editor.history.scene(), 256 * 1024 * 1024).unwrap();
+    assert_eq!(view.instances().len(), 2);
+    let expected = camera_after_frame_all(&editor);
+    for instance in view.instances() {
+        let mut single = editor.camera.clone();
+        single
+            .frame_view(&view, Some(instance.path()), editor.aspect)
+            .unwrap();
+        assert_ne!(expected, single);
+    }
+    remote(&mut editor, Operation::FrameAll).unwrap();
+    assert_eq!(editor.camera, expected);
+    assert_eq!(editor.selected, Some(id));
+    assert!(matches!(
+        remote(&mut editor, Operation::FrameAll),
+        Ok(OperationReply::Unchanged)
+    ));
+}
+
+#[test]
+fn frame_all_frames_a_curve_only_scene() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("curve.ma");
+    std::fs::write(&path, ascii_fixture::specimen()).unwrap();
+    let mut editor = Editor::default();
+    editor
+        .apply_operation(Operation::OpenScene { path })
+        .unwrap();
+    let view = ViewScene::from_native(editor.history.scene(), 256 * 1024 * 1024).unwrap();
+    assert!(view.instances().is_empty());
+    assert_eq!(view.curve_instances().len(), 1);
+    let expected = camera_after_frame_all(&editor);
+    editor.camera.dolly(3.0).unwrap();
+    assert_ne!(expected, editor.camera);
+    assert!(matches!(
+        remote(&mut editor, Operation::FrameAll),
+        Ok(OperationReply::Changed)
+    ));
+    assert_eq!(editor.camera, expected);
+}
+
+#[test]
+fn frame_all_on_an_empty_scene_is_a_typed_refusal_that_keeps_the_camera() {
+    let mut editor = Editor::default();
+    let camera = editor.camera.clone();
+    assert!(matches!(
+        remote(&mut editor, Operation::FrameAll),
+        Err(OperationError::NothingToFrame)
+    ));
+    assert_eq!(editor.camera, camera);
+}
+
+#[test]
+fn a_key_frames_all_and_shift_a_is_ignored() {
+    let mut editor = Editor::default();
+    let ctx = egui::Context::default();
+    frame(&mut editor, &ctx, vec![]);
+    editor.create(Primitive::Cube);
+    let start = editor.camera.clone();
+    let expected = camera_after_frame_all(&editor);
+    let shifted = egui::Event::Key {
+        key: Key::A,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::SHIFT,
+    };
+    frame(&mut editor, &ctx, vec![shifted]);
+    assert_eq!(editor.camera, start);
+    let release = egui::Event::Key {
+        key: Key::A,
+        physical_key: None,
+        pressed: false,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    };
+    frame(&mut editor, &ctx, vec![release]);
+    frame(&mut editor, &ctx, vec![key(Key::A)]);
+    assert_eq!(editor.camera, expected);
+}
+
+#[test]
+fn a_key_is_ignored_while_a_text_field_has_focus() {
+    let mut editor = Editor::default();
+    let ctx = egui::Context::default();
+    frame(&mut editor, &ctx, vec![]);
+    editor.create(Primitive::Cube);
+    let start = editor.camera.clone();
+    ctx.memory_mut(|memory| memory.request_focus(name_edit_id()));
+    frame(&mut editor, &ctx, vec![]);
+    frame(&mut editor, &ctx, vec![key(Key::A)]);
+    assert_eq!(editor.camera, start);
+}
+
+#[test]
+fn view_menu_frame_all_row_dispatches_the_frame_all_operation() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let ctx = egui::Context::default();
+    ctx.enable_accesskit();
+    let output = frame(&mut editor, &ctx, vec![]);
+    let expected = camera_after_frame_all(&editor);
+    let menu = face_text_position(&output, "View");
+    let output = face_pointer_click(&mut editor, &ctx, menu, egui::Modifiers::NONE, vec![]);
+    let row = face_text_position(&output, "Frame All (A)");
+    face_pointer_click(&mut editor, &ctx, row, egui::Modifiers::NONE, vec![]);
+    assert_eq!(editor.camera, expected);
+}

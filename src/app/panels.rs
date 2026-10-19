@@ -182,6 +182,7 @@ impl Editor {
     ) {
         let mut grid_requested = false;
         let mut shading_requested = None;
+        let mut frame_all_requested = false;
         ui.horizontal(|ui| {
             ui.label("persp");
             ui.label(match self.selection_mode {
@@ -201,6 +202,14 @@ impl Editor {
             ui.separator();
             let shading_enabled = !self.files.is_modal() && !self.files.is_closing();
             ui.add_enabled_ui(shading_enabled, |ui| {
+                // Frame All hotkey A is from the Maya 2026 docs; the panel View > Frame All
+                // menu path is from the Maya 2014 page (PROVISIONAL for 2026).
+                ui.menu_button("View", |ui| {
+                    if ui.button("Frame All (A)").clicked() {
+                        frame_all_requested = true;
+                        ui.close();
+                    }
+                });
                 ui.menu_button("Shading", |ui| {
                     for (mode, label) in [
                         (ShadingMode::Wireframe, "Wireframe (4)"),
@@ -247,6 +256,9 @@ impl Editor {
             self.native_operation(Operation::SetGridVisible {
                 visible: !self.grid_visible,
             });
+        }
+        if frame_all_requested && self.scene_token == frame_token {
+            self.frame_all();
         }
         if let Some(mode) = shading_requested
             && self.scene_token == frame_token
