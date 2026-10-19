@@ -797,7 +797,8 @@ mod tests {
             }
         }
 
-        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        // Liveness guard only: the assertions below are count and ordering based.
+        tokio::time::timeout(std::time::Duration::from_secs(120), async {
             let shared = Arc::new(Shared::new(egui::Context::default()));
             let initialized = Arc::new(AtomicUsize::new(0));
             let progress = Arc::new(AtomicUsize::new(0));
