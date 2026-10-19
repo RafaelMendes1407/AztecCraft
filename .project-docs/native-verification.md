@@ -59,9 +59,9 @@ toolbar Undo to a dirty baseline and Redo to saved/clean, then File Open the sav
 working file and inspect the retained value. An independent private byte check
 found changes only inside the authorized eight-byte diffuse envelope; all five
 original fixture hashes were unchanged. This proves that bounded native data
-journey, not rendered Phong fidelity or other platforms. Committed cold, ordinary
-published combined-parent checks remain pending (cold verification and
-CI: see the 2026-10-19 entry below). Originals must
+journey, not rendered Phong fidelity or other platforms. Published combined-parent
+checks remain pending (cold verification and CI: see the 2026-10-19 entry
+above). Originals must
 never be Save destinations. Material rendering, assignment, textures and color
 processing stay unavailable. The historical record below is unchanged.
 
