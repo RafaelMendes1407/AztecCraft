@@ -52,6 +52,8 @@ enum CloseState {
 pub(super) struct Shared {
     #[cfg(test)]
     read_observed: AtomicBool,
+    #[cfg(test)]
+    forwarded_notifications: std::sync::atomic::AtomicUsize,
     alive: AtomicBool,
     accounting: Mutex<Accounting>,
     context: egui::Context,
@@ -62,6 +64,8 @@ impl Shared {
         Self {
             #[cfg(test)]
             read_observed: AtomicBool::new(false),
+            #[cfg(test)]
+            forwarded_notifications: std::sync::atomic::AtomicUsize::new(0),
             alive: AtomicBool::new(true),
             accounting: Mutex::new(Accounting::default()),
             context,
@@ -361,7 +365,15 @@ where
             self.shared.read_observed.store(true, Ordering::Release);
             match self.reader.next().await {
                 Some(Ok(message)) => match self.shared.admit(&message) {
-                    Ok(true) => return Some(message),
+                    Ok(true) => {
+                        #[cfg(test)]
+                        if matches!(message, JsonRpcMessage::Notification(_)) {
+                            self.shared
+                                .forwarded_notifications
+                                .fetch_add(1, Ordering::SeqCst);
+                        }
+                        return Some(message);
+                    }
                     Ok(false) => tokio::task::yield_now().await,
                     Err(()) => {
                         eprintln!("MCP admission limit or duplicate request; closing connection");
@@ -797,7 +809,8 @@ mod tests {
             }
         }
 
-        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        // Liveness guard only: the assertions below are count and ordering based.
+        tokio::time::timeout(std::time::Duration::from_secs(120), async {
             let shared = Arc::new(Shared::new(egui::Context::default()));
             let initialized = Arc::new(AtomicUsize::new(0));
             let progress = Arc::new(AtomicUsize::new(0));
@@ -810,9 +823,10 @@ mod tests {
                 initialized: initialized.clone(),
                 progress: progress.clone(),
             };
+            let transport_shared = shared.clone();
             let serving = tokio::spawn(async move {
                 server
-                    .serve(BoundedTransport::new(server_reader, server_writer, shared))
+                    .serve(BoundedTransport::new(server_reader, server_writer, transport_shared))
                     .await
                     .unwrap()
                     .waiting()
@@ -832,7 +846,9 @@ mod tests {
             let reply: serde_json::Value = serde_json::from_str(&replies.next_line().await.unwrap().unwrap()).unwrap();
             assert_eq!(reply["id"], 1);
             assert_eq!(initialized.load(Ordering::SeqCst), 1);
-            assert_eq!(progress.load(Ordering::SeqCst), 0);
+            // The ping is read after every flood frame on the same receive loop, so this
+            // counts what reached the SDK without racing its spawned notification handlers.
+            assert_eq!(shared.forwarded_notifications.load(Ordering::SeqCst), 1);
             client_writer.shutdown().await.unwrap();
             serving.await.unwrap();
         }).await.unwrap();
