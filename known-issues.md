@@ -534,13 +534,14 @@ ratio is reachable by an ordinary drag; the core refuses it with InvalidFactor, 
 line shows the refusal, and the drag continues from the last valid preview (release commits
 that preview).
 
-Rotate and Scale share one Object/World selector; Maya keeps one per tool. The selector,
+Rotate and Scale each keep their own Object/World selector, as Maya does. The selector,
 the axis choice and the numeric field are a row above the viewport standing in for the
 unsupported Tool Settings panel. Gimbal, Parent, Normal, Custom and Component are listed
-disabled. Move has the same row with an Axis Orientation selector fixed at World: Object,
-Component, Parent, Normal, Along Rotation Axis, Along Live Object Axis and Custom (the Maya 2026
-Move Tool order) are listed disabled, and Move's other Tool Settings are absent. The MCP `update_manipulation` takes an absolute Rotate angle in the scene
-angular unit and the native numeric field takes degrees; both reach the core as degrees.
+disabled. Move's row has only an Axis Orientation selector fixed at World: Object,
+Component, Parent, Normal, Along Rotation Axis, Along Live Object Axis and Custom (the
+Maya 2026 Move Tool order) are listed disabled, and Move's other Tool Settings, axis
+choice and numeric field are absent. The MCP `update_manipulation` takes an absolute
+Rotate angle in the scene angular unit and the native numeric field takes degrees; both reach the core as degrees.
 
 ## Grid lines over primitive faces are expected (#111, closed)
 

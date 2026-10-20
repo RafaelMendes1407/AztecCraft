@@ -674,34 +674,36 @@ impl Editor {
     // The Object/World selector, axis choice and numeric field of the active tool.
     pub(in crate::app) fn manipulation_options(&mut self, ui: &mut egui::Ui) {
         let tool = self.active_tool;
+        let enabled = !self.files.is_modal()
+            && !self.files.is_closing()
+            && self.history.active_manipulation().is_none();
         if tool == ActiveTool::Move {
             // Move drags along World axes only (Maya's default); the other orientations are shown
             // so their absence is visible.
             ui.horizontal(|ui| {
                 ui.label("Move tool");
-                egui::ComboBox::from_id_salt("move_axis_orientation")
-                    .selected_text("World")
-                    .show_ui(ui, |ui| {
-                        for name in MOVE_ORIENTATIONS {
-                            if name == "World" {
-                                let _ = ui.selectable_label(true, name);
-                            } else {
-                                ui.add_enabled(false, egui::Button::selectable(false, name))
-                                    .on_disabled_hover_text(
-                                        "unsupported: Move uses World axes only",
-                                    );
+                ui.add_enabled_ui(enabled, |ui| {
+                    egui::ComboBox::from_id_salt("move_axis_orientation")
+                        .selected_text("World")
+                        .show_ui(ui, |ui| {
+                            for name in MOVE_ORIENTATIONS {
+                                if name == "World" {
+                                    let _ = ui.selectable_label(true, name);
+                                } else {
+                                    ui.add_enabled(false, egui::Button::selectable(false, name))
+                                        .on_disabled_hover_text(
+                                            "unsupported: Move uses World axes only",
+                                        );
+                                }
                             }
-                        }
-                    });
+                        });
+                });
             });
             return;
         }
         if !matches!(tool, ActiveTool::Rotate | ActiveTool::Scale) {
             return;
         }
-        let enabled = !self.files.is_modal()
-            && !self.files.is_closing()
-            && self.history.active_manipulation().is_none();
         let mut apply = false;
         let mut chosen = None;
         ui.horizontal(|ui| {
