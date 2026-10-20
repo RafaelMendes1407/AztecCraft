@@ -648,6 +648,68 @@ fn unsupported_spaces_are_listed_disabled_with_the_reason() {
 }
 
 #[test]
+fn move_lists_maya_axis_orientations_with_only_world_enabled() {
+    let (mut editor, context, _) = setup(Key::W, 1.0);
+    assert_eq!(editor.active_tool, ActiveTool::Move);
+    context.enable_accesskit();
+    let output = idle(&mut editor, &context, 1.0);
+    let combo = output
+        .platform_output
+        .accesskit_update
+        .as_ref()
+        .unwrap()
+        .nodes
+        .iter()
+        .find_map(|(_, node)| {
+            (node.role() == egui::accesskit::Role::ComboBox && node.value() == Some("World"))
+                .then(|| node.bounds().unwrap())
+        })
+        .expect("the Move orientation selector");
+    let at = Pos2::new(
+        ((combo.x0 + combo.x1) / 2.0) as f32,
+        ((combo.y0 + combo.y1) / 2.0) as f32,
+    );
+    let before = (
+        editor.history.scene().clone(),
+        editor.active_tool,
+        editor.is_dirty(),
+    );
+    frame(
+        &mut editor,
+        &context,
+        raw(SIZE, Pos2::ZERO, 1.0, button(at, true)),
+    );
+    frame(
+        &mut editor,
+        &context,
+        raw(SIZE, Pos2::ZERO, 1.0, button(at, false)),
+    );
+    let output = idle(&mut editor, &context, 1.0);
+    let nodes = &output
+        .platform_output
+        .accesskit_update
+        .as_ref()
+        .unwrap()
+        .nodes;
+    for name in MOVE_ORIENTATIONS {
+        let found: Vec<bool> = nodes
+            .iter()
+            .filter(|(_, node)| node.label() == Some(name))
+            .map(|(_, node)| node.is_disabled())
+            .collect();
+        assert_eq!(found, [name != "World"], "{name}");
+    }
+    assert_eq!(
+        (
+            editor.history.scene().clone(),
+            editor.active_tool,
+            editor.is_dirty()
+        ),
+        before
+    );
+}
+
+#[test]
 fn face_vertex_and_edge_selection_refuse_rotate_and_scale_handles() {
     for (mode, noun) in [
         (SelectionMode::Face, "Face"),

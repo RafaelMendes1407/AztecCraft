@@ -149,6 +149,17 @@ fn scale_handle_name(handle: ScaleHandle) -> &'static str {
 
 // Maya's other modes for these tools. Each is drawn disabled in the selector.
 const UNSUPPORTED_SPACES: [&str; 5] = ["Gimbal", "Parent", "Normal", "Custom", "Component"];
+/// Maya 2026 Move Tool Axis Orientation entries in documented order; only World is implemented.
+const MOVE_ORIENTATIONS: [&str; 8] = [
+    "Object",
+    "World",
+    "Component",
+    "Parent",
+    "Normal",
+    "Along Rotation Axis",
+    "Along Live Object Axis",
+    "Custom",
+];
 
 pub(in crate::app) fn mode_refusal(tool: &str, mode: SelectionMode) -> Option<String> {
     let name = match mode {
@@ -663,6 +674,28 @@ impl Editor {
     // The Object/World selector, axis choice and numeric field of the active tool.
     pub(in crate::app) fn manipulation_options(&mut self, ui: &mut egui::Ui) {
         let tool = self.active_tool;
+        if tool == ActiveTool::Move {
+            // Move drags along World axes only (Maya's default); the other orientations are shown
+            // so their absence is visible.
+            ui.horizontal(|ui| {
+                ui.label("Move tool");
+                egui::ComboBox::from_id_salt("move_axis_orientation")
+                    .selected_text("World")
+                    .show_ui(ui, |ui| {
+                        for name in MOVE_ORIENTATIONS {
+                            if name == "World" {
+                                let _ = ui.selectable_label(true, name);
+                            } else {
+                                ui.add_enabled(false, egui::Button::selectable(false, name))
+                                    .on_disabled_hover_text(
+                                        "unsupported: Move uses World axes only",
+                                    );
+                            }
+                        }
+                    });
+            });
+            return;
+        }
         if !matches!(tool, ActiveTool::Rotate | ActiveTool::Scale) {
             return;
         }
