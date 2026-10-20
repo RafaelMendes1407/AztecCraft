@@ -331,6 +331,9 @@ PROVISIONAL until native Save QA on Windows:
   directory slot, so a recreated folder can reuse it. On FAT/exFAT, Active Save
   replacing a file that another handle has open is expected to fail rather than
   replace it; this is unverified.
+- Only symbolic links and junctions are refused as links. Other reparse points
+  (OneDrive placeholders, deduplicated or compressed files) are treated as
+  ordinary files; saving them is untested (PROVISIONAL).
 - Symbolic-link tests need Developer Mode or elevation; without it they print
   `SKIPPED` and pass without exercising links. CI's Windows runners can create
   links.

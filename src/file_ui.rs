@@ -1276,6 +1276,7 @@ mod tests {
         // Windows symbolic links need Developer Mode or elevation; skip where unavailable.
         #[cfg(windows)]
         if std::os::windows::fs::symlink_file(&source, &link).is_err() {
+            eprintln!("SKIPPED: this account cannot create symbolic links");
             return;
         }
         let mut editor = Editor::default();

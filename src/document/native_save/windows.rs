@@ -330,6 +330,10 @@ impl Transaction<'_> {
         } else {
             state.failure = Some(error);
         }
+        if error == Error::Io(io::ErrorKind::ResourceBusy) {
+            // Keep the raw code so the engine's rename retry still treats it as transient.
+            return io::Error::from_raw_os_error(ERROR_SHARING_VIOLATION);
+        }
         io::Error::from(match error {
             Error::Cancelled => io::ErrorKind::Interrupted,
             Error::DestinationExists => io::ErrorKind::AlreadyExists,
