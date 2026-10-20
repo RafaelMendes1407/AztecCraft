@@ -1,5 +1,12 @@
 use super::*;
 
+/// Status-line feedback planned for one operation; see [`Editor::status_feedback`].
+struct StatusFeedback {
+    status: Option<&'static str>,
+    step_label: Option<&'static str>,
+    activated: bool,
+}
+
 impl Editor {
     /// Rejects component selection outside its mode, and unbounded target paths, before any mutation.
     fn require_component_selection(
@@ -44,16 +51,24 @@ impl Editor {
         Ok(())
     }
     pub(super) fn native_operation(&mut self, operation: Operation) {
+        let feedback = self.status_feedback(&operation);
+        let result = self.apply_operation(operation);
+        self.record_feedback(feedback, &result);
+    }
+    /// What the status line reports for an operation, decided before it runs (Undo/Redo labels
+    /// change once it does). Native and remote callers share it, as Maya's Command Line feedback
+    /// reports a command's result whatever issued it.
+    fn status_feedback(&self, operation: &Operation) -> StatusFeedback {
         let activated = matches!(
-            operation,
+            *operation,
             Operation::SetActiveTool(ActiveTool::Rotate | ActiveTool::Scale)
         );
-        let step_label = match operation {
+        let step_label = match *operation {
             Operation::Undo => self.history.undo_label(),
             Operation::Redo => self.history.redo_label(),
             _ => None,
         };
-        let status = match operation {
+        let status = match *operation {
             Operation::Select { .. }
             | Operation::SelectFace { .. }
             | Operation::SelectVertex { .. }
@@ -77,7 +92,23 @@ impl Editor {
             | Operation::ResolveFileAction { .. } => None,
             _ => Some("Scene edited"),
         };
-        match self.apply_operation(operation) {
+        StatusFeedback {
+            status,
+            step_label,
+            activated,
+        }
+    }
+    fn record_feedback(
+        &mut self,
+        feedback: StatusFeedback,
+        result: &Result<OperationReply, OperationError>,
+    ) {
+        let StatusFeedback {
+            status,
+            step_label,
+            activated,
+        } = feedback;
+        match result {
             Ok(reply) => {
                 if let Some(status) = status {
                     self.status = match reply {
@@ -90,7 +121,7 @@ impl Editor {
                         _ => status,
                     }
                     .into();
-                    if let (OperationReply::Changed, Some(label)) = (&reply, step_label) {
+                    if let (OperationReply::Changed, Some(label)) = (reply, step_label) {
                         self.status = format!("{status} {label}");
                     }
                     self.error = false;
@@ -101,7 +132,7 @@ impl Editor {
                 }
             }
             Err(error) => {
-                self.set_error_status(&error);
+                self.set_error_status(error);
                 self.error = true;
             }
         }
@@ -150,11 +181,18 @@ impl Editor {
         {
             return Err(OperationError::BusyEditing);
         }
-        self.apply_operation_guarded(
+        // A remote success is reported on the status line like a native one. Refusals and
+        // failures go back to the caller only, preserving the native editor baseline.
+        let feedback = self.status_feedback(&request.operation);
+        let result = self.apply_operation_guarded(
             ManipulationProvenance::Remote,
             request.operation,
             may_install,
-        )
+        );
+        if result.is_ok() {
+            self.record_feedback(feedback, &result);
+        }
+        result
     }
     #[cfg(any(test, feature = "mcp"))]
     pub(super) fn transform_input(

@@ -1495,6 +1495,64 @@ pub(in crate::app) fn remote(
 }
 
 #[test]
+fn remote_successes_report_on_the_status_line_like_native_ones() {
+    let mut native = Editor::default();
+    let mut remote_editor = Editor::default();
+    let initial = native.status.clone();
+    assert_eq!(remote_editor.status, initial);
+    let steps: Vec<fn(&Editor) -> Operation> = vec![
+        |_| Operation::Create {
+            primitive: Primitive::Cube,
+            name: None,
+        },
+        |editor| Operation::Rename {
+            id: editor.selected.unwrap(),
+            name: "renamed".into(),
+        },
+        |editor| Operation::Rename {
+            id: editor.selected.unwrap(),
+            name: "renamed".into(),
+        },
+        |editor| Operation::Rename {
+            id: editor.selected.unwrap(),
+            name: "has space".into(),
+        },
+        |_| Operation::Undo,
+        |_| Operation::Redo,
+        |_| Operation::SetGridVisible { visible: false },
+        |_| Operation::SetActiveTool(ActiveTool::Rotate),
+    ];
+    for step in steps {
+        let operation = step(&native);
+        native.native_operation(operation);
+        let operation = step(&remote_editor);
+        let before = (remote_editor.status.clone(), remote_editor.error);
+        if remote(&mut remote_editor, operation).is_ok() {
+            assert_eq!(
+                (&remote_editor.status, remote_editor.error),
+                (&native.status, native.error)
+            );
+        } else {
+            // The caller gets the error; the native status line keeps its baseline.
+            assert!(native.error);
+            assert_eq!((remote_editor.status.clone(), remote_editor.error), before);
+        }
+    }
+    assert_ne!(native.status, initial);
+    // A request refused by the remote guards never reaches the scene or the status line.
+    let before = (remote_editor.status.clone(), remote_editor.error);
+    let refused = remote_editor.remote_operation(
+        RemoteRequest {
+            expected_scene_token: Some(uuid::Uuid::new_v4()),
+            operation: Operation::Undo,
+        },
+        &egui::Context::default(),
+    );
+    assert!(matches!(refused, Err(OperationError::StaleScene)));
+    assert_eq!((remote_editor.status, remote_editor.error), before);
+}
+
+#[test]
 fn grid_setter_is_idempotent_and_preserves_scene_history_and_editor_baseline() {
     let mut editor = Editor::default();
     assert!(editor.grid_visible);
