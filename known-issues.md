@@ -59,7 +59,7 @@ An acute CPU tessellation defect was reproduced and corrected; material, depth
 and clipping fidelity remain incomplete. Imported-scene GUI editing and the new
 native lifecycle still require final independent native evidence. Earlier JSON
 Save As verification does not establish native Maya writing. The current
-Unix binary Save candidate uses the ordinary vendored atomic engine. Its
+Unix and Windows binary Save candidate uses the ordinary vendored atomic engine. Its
 document-layer repeat-save checks are separate from current application checks
 and pending native Save QA.
 
@@ -100,9 +100,10 @@ hierarchy, f64 authoring channels and original source bytes. Triangle
 and quad derived views are supported; arbitrary loops/holes remain retained but
 unsupported for projection. Imported editing is limited to proved source-bound
 numeric changes; missing-record insertion and structural rewrites refuse safely.
-The provisional Unix binary Save/Save As candidate preserves proved existing
-records and reconciles uncertain installations. It does not support Maya ASCII,
-Windows writing or structural rewrites, and still needs native Save QA.
+The provisional Unix and Windows binary Save/Save As candidate preserves proved
+existing records and reconciles uncertain installations. It does not support Maya
+ASCII or structural rewrites, and still needs native Save QA. Windows limits are
+listed under "Windows binary Save limits".
 Recovery, autosave and camera/history persistence remain
 pending. Legacy JSON v1 and OBJ remain separate library utilities; their geometry
 tests don't establish native persistence. GUI Export remains disabled. Structural
@@ -295,6 +296,34 @@ The Maya scripting/API surface and existing plug-ins aren't implemented or teste
 With pinned egui 0.36.2, a previously unfocused name field drops a Text event delivered in the same frame as the initial pointer click. Its TextEdit builder processes text only when the field already has focus (builder.rs:572), before pointer handling requests focus (builder.rs:815). The same real Editor event sequence reproduces this without MCP. Text delivered in the following frame is inserted.
 
 The MCP regression compares native and bridge-connected Editors with identical events and proves equal drafts, focus, scene and history, plus BusyEditing rejection of queued remote changes. It proves no additional input loss from MCP; it does not fix the native first-click defect. Native input handling and Maya reference comparison remain outstanding.
+
+## Windows binary Save limits
+
+**Severity:** low
+**Area:** native document lifecycle
+
+Windows Save and Save As use the same transaction and uncertain-outcome receipt as
+Unix, through std path calls checked against the volume serial number and file
+index of the opened file and its folder. The following differ from Unix and are
+PROVISIONAL until native Save QA on Windows:
+
+- The opened scene's handle stays open, so Windows refuses to rename or move its
+  folder (or a parent folder) until another scene is opened or the editor closes.
+- Active Save refuses a file with the Hidden or System attribute, because the
+  replacement cannot carry them; Save As to a new name still works. A read-only
+  file refuses Save, as on Unix. Explicit ACL entries and alternate data streams of
+  the replaced file are not carried over; the new file inherits its folder's ACL.
+- Windows cannot flush a folder without administrator rights. After the rename
+  the installed file is flushed instead, which relies on the NTFS journal for the
+  name change; this durability claim is unverified.
+- Save As relies on hard links for its no-clobber install. Volumes without them
+  (FAT32, exFAT) refuse Save As rather than risk replacing a file.
+- File identity uses the 64-bit file index. It is unique on NTFS; ReFS 128-bit
+  identifiers are not compared in full.
+- Symbolic-link tests need Developer Mode or elevation and skip without it.
+- App-level tests that simulate an uncertain outcome by moving the scene's folder
+  stay Unix-only, because Windows refuses that move; the Windows core tests cover
+  the same receipt through injected faults.
 
 ## Native MCP idle responsiveness remains unverified
 
