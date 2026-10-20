@@ -86,6 +86,8 @@ pub struct Editor {
     move_viewport: Option<features::move_tool::MoveViewportFeedback>,
     move_consumed_frame: bool,
     move_suppress_primary: bool,
+    // egui reports lost_focus for two frames, so a pre-focus move suppresses blur commits for two.
+    blur_commit_skip_frames: u8,
     renderer: Option<crate::viewport_renderer::ViewportRenderer>,
     viewport_error: Option<crate::viewport_renderer::ViewportError>,
     name: String,
@@ -133,6 +135,7 @@ impl Default for Editor {
             move_viewport: None,
             move_consumed_frame: false,
             move_suppress_primary: false,
+            blur_commit_skip_frames: 0,
             renderer: None,
             viewport_error: None,
             name: String::new(),
@@ -292,14 +295,21 @@ fn unsupported(ui: &mut egui::Ui, label: &str) {
         .on_disabled_hover_text("Not implemented in this build");
 }
 
+fn text_field_ids() -> impl Iterator<Item = egui::Id> {
+    [
+        name_edit_id(),
+        material_edit_id(),
+        features::manipulation_tool::manipulation_value_id(),
+    ]
+    .into_iter()
+    .chain((0..9).map(channel_edit_id))
+}
+
 fn text_edit_focused(ctx: &egui::Context) -> bool {
     ctx.memory(|memory| {
-        memory.focused().is_some_and(|id| {
-            id == name_edit_id()
-                || id == material_edit_id()
-                || id == features::manipulation_tool::manipulation_value_id()
-                || (0..9).any(|index| id == channel_edit_id(index))
-        })
+        memory
+            .focused()
+            .is_some_and(|id| text_field_ids().any(|field| field == id))
     })
 }
 
