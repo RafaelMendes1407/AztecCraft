@@ -5535,7 +5535,7 @@ fn undo_clears_only_the_stale_pick_and_keeps_valid_ones() {
 }
 
 #[test]
-fn delete_hover_text_names_the_component_only_in_component_modes() {
+fn delete_hover_text_prefers_read_only_then_names_the_component_in_component_modes() {
     let mut editor = Editor::default();
     for (mode, menu, button) in [
         (
@@ -5555,8 +5555,17 @@ fn delete_hover_text_names_the_component_only_in_component_modes() {
         ),
     ] {
         editor.selection_mode = mode;
-        assert_eq!(editor.delete_disabled_hover(Some("read only"), true), menu);
+        assert_eq!(editor.delete_disabled_hover(None, true), menu);
         assert_eq!(editor.delete_disabled_hover(None, false), button);
+        // Object mode would not enable Delete on a read-only scene, so that reason wins.
+        assert_eq!(
+            editor.delete_disabled_hover(Some("read only"), true),
+            "read only"
+        );
+        assert_eq!(
+            editor.delete_disabled_hover(Some("read only"), false),
+            "read only"
+        );
     }
     for mode in [SelectionMode::Object, SelectionMode::Hierarchy] {
         editor.selection_mode = mode;

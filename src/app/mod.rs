@@ -172,9 +172,13 @@ impl Editor {
                 .collect()
         })
     }
-    /// Hover text for a disabled Delete control: the component refusal in a component mode,
-    /// otherwise the read-only reason, otherwise the missing selection.
+    /// Hover text for a disabled Delete control: the read-only reason (no mode change enables
+    /// Delete), otherwise the component refusal in a component mode, otherwise the missing
+    /// selection.
     fn delete_disabled_hover(&self, read_only: Option<&str>, menu: bool) -> String {
+        if let Some(reason) = read_only {
+            return reason.to_owned();
+        }
         match self.selection_mode.component_noun() {
             Some(noun) if menu => format!(
                 "Object or Hierarchy selection required; {} deletion is unsupported",
@@ -183,7 +187,7 @@ impl Editor {
             Some(noun) => {
                 format!("{noun} deletion is unsupported; switch to Object or Hierarchy selection")
             }
-            None => read_only.map_or_else(|| "Select an object to delete".into(), str::to_owned),
+            None => "Select an object to delete".into(),
         }
     }
     fn clear_remembered_components(&mut self) {
