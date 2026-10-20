@@ -4,7 +4,7 @@ use super::{
     transport::{Control, Shared, check_serialized_size},
 };
 use crate::editor_operations::{MAX_RESULT_BYTES, OperationError, OperationReply};
-use azteccraft::{history::ManipulationError, native_scene::NativeError};
+use azteccraft::{history::ManipulationError, native_scene::NativeError, scene::SceneError};
 use rmcp::{
     RoleServer, ServerHandler,
     model::{
@@ -87,6 +87,9 @@ fn tool_reply(reply: Result<OperationReply, OperationError>) -> CallToolResult {
                 OperationError::Scene(NativeError::AbsentChannelLeaf { .. }) => {
                     "absent_channel_leaf"
                 }
+                OperationError::Scene(NativeError::Legacy(
+                    SceneError::InvalidPrimitiveOptions(_),
+                )) => "invalid_primitive_options",
                 OperationError::Scene(_) => "scene_error",
                 OperationError::Camera(_) => "camera_error",
                 OperationError::File(_) => "file_error",
@@ -1402,5 +1405,22 @@ mod tests {
             "too_large"
         );
         assert!(check_serialized_size(&result, MAX_RESULT_BYTES).is_ok());
+    }
+
+    #[test]
+    fn invalid_primitive_options_have_their_own_error_code() {
+        let cause = azteccraft::primitive_options::PrimitiveOptions::default_for(
+            azteccraft::scene::Primitive::Cube,
+        )
+        .validate(azteccraft::scene::Primitive::Cone)
+        .unwrap_err();
+        let result = tool_reply(Err(OperationError::Scene(NativeError::Legacy(
+            SceneError::InvalidPrimitiveOptions(cause),
+        ))));
+        assert_eq!(result.is_error, Some(true));
+        assert_eq!(
+            result.structured_content.as_ref().unwrap()["error"]["code"],
+            "invalid_primitive_options"
+        );
     }
 }

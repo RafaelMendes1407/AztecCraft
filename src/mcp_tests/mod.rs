@@ -70,6 +70,7 @@ fn create_request(editor: &Editor) -> RemoteRequest {
         expected_scene_token: Some(editor.scene_token),
         operation: Operation::Create {
             primitive: Primitive::Cube,
+            options: None,
             name: None,
         },
     }
@@ -111,6 +112,7 @@ mod official_client {
     mod manipulation_mcp_tests;
     mod material;
     mod node_edit;
+    mod primitive_options;
     mod selection;
     mod session;
     mod session_material;

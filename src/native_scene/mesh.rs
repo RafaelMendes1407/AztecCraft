@@ -1,9 +1,9 @@
 use super::{NativeError, convert};
-use crate::{
-    mesh::Mesh,
-    scene::{Primitive, SceneError},
-};
+#[cfg(test)]
+use crate::scene::Primitive;
+use crate::{mesh::Mesh, primitive_options::PrimitiveOptions, scene::SceneError};
 use glam::DVec3;
+use std::collections::HashMap;
 use std::fmt;
 
 #[derive(Clone)]
@@ -137,6 +137,19 @@ impl NativeFace {
     }
     pub fn holes(&self) -> &[Vec<DirectedEdge>] {
         &self.holes
+    }
+}
+
+/// First edge index per unordered endpoint pair, local to one build.
+#[derive(Default)]
+struct EdgeIndex(HashMap<[usize; 2], usize>);
+impl EdgeIndex {
+    fn key(endpoints: [usize; 2]) -> [usize; 2] {
+        if endpoints[0] <= endpoints[1] {
+            endpoints
+        } else {
+            [endpoints[1], endpoints[0]]
+        }
     }
 }
 
@@ -303,14 +316,67 @@ impl NativeMesh {
     pub fn faces(&self) -> &[NativeFace] {
         &self.faces
     }
+    #[cfg(test)]
     pub(super) fn primitive(primitive: Primitive) -> Result<Self, NativeError> {
-        match primitive {
-            Primitive::Sphere => Ok(Self::polygon_sphere()),
-            Primitive::Cylinder => Ok(Self::polygon_cylinder()),
-            Primitive::Cone => Ok(Self::polygon_cone()),
-            Primitive::Cube | Primitive::Plane => {
-                Ok(Self::from_legacy(&Mesh::primitive(primitive)?))
-            }
+        Self::with_options(&PrimitiveOptions::default_for(primitive))
+    }
+    pub(super) fn with_options(options: &PrimitiveOptions) -> Result<Self, NativeError> {
+        options
+            .validate(options.primitive())
+            .map_err(SceneError::InvalidPrimitiveOptions)?;
+        match *options {
+            PrimitiveOptions::Cube {
+                width,
+                height,
+                depth,
+                sub_width,
+                sub_height,
+                sub_depth,
+                axis,
+            } => Ok(Self::cube_grid(&grid::CubeGrid {
+                size: [width, height, depth],
+                divisions: [sub_width, sub_height, sub_depth].map(|n| n as usize),
+                axis,
+            })),
+            PrimitiveOptions::Plane {
+                width,
+                height,
+                sub_width,
+                sub_height,
+                axis,
+            } => Ok(Self::plane_grid(
+                [width, height],
+                [sub_width, sub_height].map(|n| n as usize),
+                axis,
+            )),
+            PrimitiveOptions::Sphere {
+                radius,
+                sub_axis,
+                sub_height,
+                axis,
+            } => Ok(Self::polygon_sphere(&revolve(
+                radius, sub_axis, sub_height, axis,
+            ))),
+            PrimitiveOptions::Cylinder {
+                radius,
+                height,
+                sub_axis,
+                sub_height,
+                axis,
+            } => Ok(Self::polygon_cylinder(
+                &revolve(radius, sub_axis, sub_height, axis),
+                height,
+            )),
+            PrimitiveOptions::Cone {
+                radius,
+                height,
+                sub_axis,
+                sub_height,
+                axis,
+            } => Ok(Self::polygon_cone(
+                &revolve(radius, sub_axis, sub_height, axis),
+                height,
+            )),
         }
     }
     pub(super) fn from_legacy(mesh: &Mesh) -> Self {
@@ -321,9 +387,10 @@ impl NativeMesh {
             faces: Vec::new(),
             unsupported_channels: Vec::new(),
         };
+        let mut index = EdgeIndex::default();
         for face in mesh.faces() {
             let outer = (0..4)
-                .map(|i| native.edge([face[i], face[(i + 1) % 4]]))
+                .map(|i| native.edge(&mut index, [face[i], face[(i + 1) % 4]]))
                 .collect();
             native.faces.push(NativeFace {
                 outer,
@@ -341,9 +408,10 @@ impl NativeMesh {
             faces: Vec::new(),
             unsupported_channels: Vec::new(),
         };
+        let mut index = EdgeIndex::default();
         for corners in loops {
             let outer: Vec<DirectedEdge> = (0..corners.len())
-                .map(|i| mesh.edge([corners[i], corners[(i + 1) % corners.len()]]))
+                .map(|i| mesh.edge(&mut index, [corners[i], corners[(i + 1) % corners.len()]]))
                 .collect();
             mesh.faces.push(NativeFace {
                 outer,
@@ -352,7 +420,21 @@ impl NativeMesh {
         }
         mesh
     }
-    fn edge(&mut self, endpoints: [usize; 2]) -> DirectedEdge {
+    fn edge(&mut self, index: &mut EdgeIndex, endpoints: [usize; 2]) -> DirectedEdge {
+        let key = EdgeIndex::key(endpoints);
+        if let Some(&edge) = index.0.get(&key) {
+            return DirectedEdge {
+                edge,
+                reversed: self.edges[edge].endpoints != endpoints,
+            };
+        }
+        let appended = self.append_edge(endpoints);
+        index.0.insert(key, appended.edge);
+        appended
+    }
+    /// Reference lookup the indexed `edge` must match exactly.
+    #[cfg(test)]
+    fn edge_linear(&mut self, endpoints: [usize; 2]) -> DirectedEdge {
         for (edge, existing) in self.edges.iter().enumerate() {
             if existing.endpoints == endpoints {
                 return DirectedEdge {
@@ -536,8 +618,34 @@ impl NativeMesh {
     }
 }
 
+mod axis;
 mod cone;
+#[cfg(test)]
+mod cone_tests;
 mod cylinder;
+#[cfg(test)]
+mod cylinder_tests;
+#[cfg(test)]
+mod edge_index_tests;
+mod grid;
+#[cfg(test)]
+mod grid_tests;
 mod sphere;
 #[cfg(test)]
+mod sphere_tests;
+#[cfg(test)]
 mod tests;
+
+fn revolve(
+    radius: f64,
+    sub_axis: u32,
+    sub_height: u32,
+    axis: crate::primitive_options::Axis,
+) -> grid::RevolveGrid {
+    grid::RevolveGrid {
+        radius,
+        axis_divisions: sub_axis as usize,
+        height_divisions: sub_height as usize,
+        axis,
+    }
+}

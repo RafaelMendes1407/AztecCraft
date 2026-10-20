@@ -19,6 +19,7 @@ use azteccraft::native_scene::{
     MaterialChoice, NativeScene, RotateAxis, ScaleHandle, SessionMaterialId, TransformTarget,
     WorldAxis,
 };
+use azteccraft::primitive_options::{Axis, PrimitiveOptions};
 use std::fmt::Write as _;
 
 #[allow(dead_code)]
@@ -536,6 +537,7 @@ fn seeds(t: &Targets) -> Vec<Operation> {
         Operation::Inspect,
         Operation::Create {
             primitive: Primitive::Plane,
+            options: None,
             name: None,
         },
         Operation::Select {
@@ -819,6 +821,7 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
                 "create(plane)",
                 Operation::Create {
                     primitive: Primitive::Plane,
+                    options: None,
                     name: None,
                 },
             ),
@@ -826,6 +829,7 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
                 "create(sphere)",
                 Operation::Create {
                     primitive: Primitive::Sphere,
+                    options: None,
                     name: None,
                 },
             ),
@@ -833,6 +837,7 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
                 "create(cylinder)",
                 Operation::Create {
                     primitive: Primitive::Cylinder,
+                    options: None,
                     name: None,
                 },
             ),
@@ -840,6 +845,44 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
                 "create(cone)",
                 Operation::Create {
                     primitive: Primitive::Cone,
+                    options: None,
+                    name: None,
+                },
+            ),
+            sample(
+                "create(cube,options)",
+                Operation::Create {
+                    primitive: Primitive::Cube,
+                    options: Some(PrimitiveOptions::Cube {
+                        width: 2.0,
+                        height: 3.0,
+                        depth: 4.0,
+                        sub_width: 2,
+                        sub_height: 2,
+                        sub_depth: 2,
+                        axis: Axis::Z,
+                    }),
+                    name: None,
+                },
+            ),
+            sample(
+                "create(sphere,invalid options)",
+                Operation::Create {
+                    primitive: Primitive::Sphere,
+                    options: Some(PrimitiveOptions::Sphere {
+                        radius: -1.0,
+                        sub_axis: 20,
+                        sub_height: 20,
+                        axis: Axis::Y,
+                    }),
+                    name: None,
+                },
+            ),
+            sample(
+                "create(cone,mismatched options)",
+                Operation::Create {
+                    primitive: Primitive::Cone,
+                    options: Some(PrimitiveOptions::default_for(Primitive::Cube)),
                     name: None,
                 },
             ),
@@ -1306,6 +1349,7 @@ fn add_second_node(editor: &mut Editor) {
     editor
         .apply_operation(Operation::Create {
             primitive: Primitive::Plane,
+            options: None,
             name: None,
         })
         .unwrap();
