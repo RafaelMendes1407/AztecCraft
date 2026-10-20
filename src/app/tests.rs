@@ -1281,6 +1281,86 @@ fn ascii_channel_controls_are_disabled_and_show_the_shared_core_reason() {
 }
 
 #[test]
+fn read_only_scene_disables_creation_and_history_controls_with_the_core_reason() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("curve.ma");
+    std::fs::write(&path, ascii_fixture::specimen()).unwrap();
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    editor.history_step(false);
+    assert!(editor.history.can_redo());
+    editor
+        .apply_operation(Operation::OpenScene { path })
+        .unwrap();
+    // Open replaces the history, so nothing from the previous scene can be undone or redone.
+    assert!(!editor.history.can_undo() && !editor.history.can_redo());
+    let reason = editor
+        .history
+        .scene()
+        .authoring_read_only_reason()
+        .unwrap()
+        .to_string();
+    let ctx = egui::Context::default();
+    ctx.enable_accesskit();
+    ctx.global_style_mut(|style| style.interaction.tooltip_delay = 0.0);
+    let output = frame(&mut editor, &ctx, vec![]);
+    for label in ["Cube", "Plane", "Undo", "Redo"] {
+        assert!(button_disabled(&output, label), "{label} enabled");
+    }
+    for label in ["Cube", "Plane"] {
+        let ctx = egui::Context::default();
+        ctx.global_style_mut(|style| style.interaction.tooltip_delay = 0.0);
+        frame(&mut editor, &ctx, vec![]);
+        let output = frame(&mut editor, &ctx, vec![]);
+        let at = face_text_position(&output, label);
+        // The Channel Box already prints the reason; the hover must add a tooltip copy.
+        let count = |output: &egui::FullOutput| {
+            output
+                .shapes
+                .iter()
+                .filter(|shape| {
+                    matches!(&shape.shape, egui::Shape::Text(text) if text.galley.job.text == reason)
+                })
+                .count()
+        };
+        let baseline = count(&output);
+        let mut hovered = output;
+        for step in 1..=8 {
+            let mut input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1440.0, 900.0),
+                )),
+                time: Some(10.0 + f64::from(step) * 0.25),
+                events: vec![egui::Event::PointerMoved(at)],
+                ..Default::default()
+            };
+            input.viewports.entry(egui::ViewportId::ROOT).or_default();
+            hovered = ctx.run_ui(input, |ui| editor.render(ui));
+            hovered.textures_delta.clear();
+        }
+        assert_eq!(
+            count(&hovered),
+            baseline + 1,
+            "{label} has no reason tooltip"
+        );
+    }
+    let before = editor.history.scene().clone();
+    let menu = face_text_position(&frame(&mut editor, &ctx, vec![]), "Create");
+    let output = face_pointer_click(&mut editor, &ctx, menu, egui::Modifiers::NONE, vec![]);
+    for label in [
+        "Polygon cube",
+        "Polygon plane",
+        "Polygon sphere",
+        "Polygon cylinder",
+        "Polygon cone",
+    ] {
+        assert!(button_disabled(&output, label), "{label} enabled");
+    }
+    assert_eq!(editor.history.scene(), &before);
+}
+
+#[test]
 fn ascii_outliner_selection_and_frame_use_actual_curve_owner_without_authoring() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("curve.ma");

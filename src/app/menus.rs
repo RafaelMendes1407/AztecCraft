@@ -174,6 +174,7 @@ impl Editor {
             ui.menu_button("Create", |ui| {
                 if ui
                     .add_enabled(authoring, egui::Button::new("Polygon cube"))
+                    .on_disabled_hover_text(read_only_reason.unwrap_or_default())
                     .clicked()
                 {
                     self.create(Primitive::Cube);
@@ -181,6 +182,7 @@ impl Editor {
                 }
                 if ui
                     .add_enabled(authoring, egui::Button::new("Polygon plane"))
+                    .on_disabled_hover_text(read_only_reason.unwrap_or_default())
                     .clicked()
                 {
                     self.create(Primitive::Plane);
@@ -188,6 +190,7 @@ impl Editor {
                 }
                 if ui
                     .add_enabled(authoring, egui::Button::new("Polygon sphere"))
+                    .on_disabled_hover_text(read_only_reason.unwrap_or_default())
                     .clicked()
                 {
                     self.create(Primitive::Sphere);
@@ -195,6 +198,7 @@ impl Editor {
                 }
                 if ui
                     .add_enabled(authoring, egui::Button::new("Polygon cylinder"))
+                    .on_disabled_hover_text(read_only_reason.unwrap_or_default())
                     .clicked()
                 {
                     self.create(Primitive::Cylinder);
@@ -202,6 +206,7 @@ impl Editor {
                 }
                 if ui
                     .add_enabled(authoring, egui::Button::new("Polygon cone"))
+                    .on_disabled_hover_text(read_only_reason.unwrap_or_default())
                     .clicked()
                 {
                     self.create(Primitive::Cone);
@@ -283,10 +288,16 @@ impl Editor {
         self.status_line(ui, selection_intent);
         ui.separator();
         ui.horizontal(|ui| {
-            if crate::tool_icons::button(ui, "Cube", UiIcon::PolyCube, authoring).clicked() {
+            if crate::tool_icons::button(ui, "Cube", UiIcon::PolyCube, authoring)
+                .on_disabled_hover_text(read_only_reason.as_deref().unwrap_or_default())
+                .clicked()
+            {
                 self.create(Primitive::Cube);
             }
-            if crate::tool_icons::button(ui, "Plane", UiIcon::PolyPlane, authoring).clicked() {
+            if crate::tool_icons::button(ui, "Plane", UiIcon::PolyPlane, authoring)
+                .on_disabled_hover_text(read_only_reason.as_deref().unwrap_or_default())
+                .clicked()
+            {
                 self.create(Primitive::Plane);
             }
             ui.separator();
