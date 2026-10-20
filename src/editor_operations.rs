@@ -745,7 +745,8 @@ pub const STATUS_MESSAGE_WITHHELD: &str = "File operation failed (details withhe
 const STATUS_MESSAGE_MAX_BYTES: usize = STATUS_MESSAGE_MAX_CHARS * 6 + 32;
 #[cfg(any(test, feature = "mcp"))]
 const MOVE_INSPECTION_MAX_BYTES: usize = 32 * 1024;
-/// Eleven f32 values at most 16 JSON bytes each, plus field names.
+/// Nine f32 values (at most 15 JSON bytes each), three f64 degree values (at most 24) and the
+/// field names: about 330 bytes in the worst case.
 #[cfg(any(test, feature = "mcp"))]
 const CAMERA_INSPECTION_MAX_BYTES: usize = 512;
 
@@ -966,6 +967,7 @@ mod tests {
             eye: [f32::MIN; 3],
             distance: worst,
             yaw_degrees: f64::from(f32::MIN).to_degrees(),
+            // Unreachable for a valid camera, but the longest f64 text.
             pitch_degrees: -f64::MIN_POSITIVE,
             fov_y_degrees: f64::from(worst).to_degrees(),
             near_clip: worst,
