@@ -78,6 +78,32 @@ async fn sdk_camera_navigation_inspects_real_view_without_authoring_changes() {
             assert_eq!(actual, expected.to_array());
         }
         assert_eq!(camera["distance"].as_f64().unwrap() as f32, distance);
+        for (field, expected) in [
+            ("yaw_degrees", f64::from(editor.camera.yaw()).to_degrees()),
+            (
+                "pitch_degrees",
+                f64::from(editor.camera.pitch()).to_degrees(),
+            ),
+            (
+                "fov_y_degrees",
+                f64::from(editor.camera.fov_y()).to_degrees(),
+            ),
+            ("near_clip", f64::from(editor.camera.near())),
+            ("far_clip", f64::from(editor.camera.far())),
+        ] {
+            assert_eq!(camera[field].as_f64().unwrap(), expected, "{field}");
+        }
+        // The reported pose reproduces the eye, so a client can verify a navigation result.
+        let (yaw, pitch) = (
+            camera["yaw_degrees"].as_f64().unwrap().to_radians(),
+            camera["pitch_degrees"].as_f64().unwrap().to_radians(),
+        );
+        let offset = Vec3::new(
+            (yaw.sin() * pitch.cos()) as f32,
+            pitch.sin() as f32,
+            (yaw.cos() * pitch.cos()) as f32,
+        ) * distance;
+        assert!((target + offset - eye).length() < 0.001);
         assert_eq!(editor.history.scene(), &before);
         assert!(!editor.history.can_undo());
         assert!(editor.history.can_redo());
