@@ -309,6 +309,14 @@ PROVISIONAL until native Save QA on Windows:
 
 - The opened scene's handle stays open, so Windows refuses to rename or move its
   folder (or a parent folder) until another scene is opened or the editor closes.
+  A Save As destination folder is likewise pinned for the duration of the save.
+- A scene held by another process without delete sharing (some sync or backup
+  tools) refuses Save with an access-denied error after the engine's short retry;
+  a sharing or lock violation reports busy. Neither is reported as a changed file.
+  Retry once the file is released.
+- Destination names Windows cannot store as ordinary files (a `:` stream
+  separator, device names such as `CON.mb`, a trailing dot or space, wildcards)
+  are refused as invalid destinations.
 - Active Save refuses a file with the Hidden or System attribute, because the
   replacement cannot carry them; Save As to a new name still works. A read-only
   file refuses Save, as on Unix. Explicit ACL entries and alternate data streams of
@@ -319,8 +327,13 @@ PROVISIONAL until native Save QA on Windows:
 - Save As relies on hard links for its no-clobber install. Volumes without them
   (FAT32, exFAT) refuse Save As rather than risk replacing a file.
 - File identity uses the 64-bit file index. It is unique on NTFS; ReFS 128-bit
-  identifiers are not compared in full.
-- Symbolic-link tests need Developer Mode or elevation and skip without it.
+  identifiers are not compared in full, and FAT/exFAT derive the index from the
+  directory slot, so a recreated folder can reuse it. On FAT/exFAT, Active Save
+  replacing a file that another handle has open is expected to fail rather than
+  replace it; this is unverified.
+- Symbolic-link tests need Developer Mode or elevation; without it they print
+  `SKIPPED` and pass without exercising links. CI's Windows runners can create
+  links.
 - App-level tests that simulate an uncertain outcome by moving the scene's folder
   stay Unix-only, because Windows refuses that move; the Windows core tests cover
   the same receipt through injected faults.

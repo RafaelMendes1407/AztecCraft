@@ -16,12 +16,15 @@ use std::{
 
 // Win32 values; std exposes the flags and attribute words but not their names.
 const FILE_SHARE_ALL: u32 = 0x1 | 0x2 | 0x4;
+/// Read and write sharing without delete, so a bound folder cannot be moved or replaced.
+const FILE_SHARE_PINNED: u32 = 0x1 | 0x2;
+const ERROR_SHARING_VIOLATION: i32 = 32;
+const ERROR_LOCK_VIOLATION: i32 = 33;
 const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
 const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 const FILE_ATTRIBUTE_READONLY: u32 = 0x1;
 const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
 const FILE_ATTRIBUTE_SYSTEM: u32 = 0x4;
-const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 /// Attributes a replacement cannot carry over, so Save refuses rather than drop them silently.
 const KEPT_ATTRIBUTES: u32 =
     FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM;
@@ -43,30 +46,87 @@ impl Identity {
     }
 }
 fn io_error(error: impl Into<io::Error>) -> Error {
-    Error::Io(error.into().kind())
+    let error = error.into();
+    if locked(&error) {
+        Error::Io(io::ErrorKind::ResourceBusy)
+    } else {
+        Error::Io(error.kind())
+    }
 }
 fn changed() -> io::Error {
     io::Error::from(io::ErrorKind::InvalidData)
 }
-fn reparse(metadata: &Metadata) -> bool {
-    metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+/// Name-surrogate reparse points (symbolic links and junctions). Other reparse points, such as
+/// OneDrive placeholders or deduplicated files, are ordinary files and folders here.
+fn link(metadata: &Metadata) -> bool {
+    metadata.file_type().is_symlink()
+}
+/// Another process holds the file without sharing it: a lock, not a change.
+fn locked(error: &io::Error) -> bool {
+    matches!(
+        error.raw_os_error(),
+        Some(ERROR_SHARING_VIOLATION | ERROR_LOCK_VIOLATION)
+    )
+}
+fn changed_or_locked(error: io::Error) -> Error {
+    if locked(&error) {
+        Error::Io(io::ErrorKind::ResourceBusy)
+    } else {
+        Error::SourceChanged
+    }
+}
+/// Win32 file names cannot contain stream separators or wildcards, end with a dot or space, or
+/// name a device (`CON`, `NUL`, `COM1`, ...); verbatim `\\?\` paths would otherwise create
+/// alternate data streams or device-named files instead of refusing.
+fn valid_leaf(leaf: &OsStr) -> bool {
+    let Some(name) = leaf.to_str() else {
+        return false;
+    };
+    if name.is_empty()
+        || name.ends_with(['.', ' '])
+        || name
+            .chars()
+            .any(|c| c < ' ' || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'))
+    {
+        return false;
+    }
+    let stem = name
+        .split('.')
+        .next()
+        .unwrap_or(name)
+        .trim_end()
+        .to_ascii_uppercase();
+    let device = matches!(
+        stem.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) || (stem.len() == 4
+        && (stem.starts_with("COM") || stem.starts_with("LPT"))
+        && stem.as_bytes()[3].is_ascii_digit()
+        && stem.as_bytes()[3] != b'0');
+    !device
 }
 fn kept_attributes(file: &File) -> io::Result<u32> {
     Ok(file.metadata()?.file_attributes() & KEPT_ATTRIBUTES)
 }
 /// Opens a directory, following links unless `exact` asks for the entry itself.
+/// The `exact` handle is the one a destination holds: it does not share delete, so the folder
+/// cannot be moved or replaced while bound.
 fn open_directory(path: &Path, exact: bool) -> io::Result<File> {
-    let mut flags = FILE_FLAG_BACKUP_SEMANTICS;
-    if exact {
-        flags |= FILE_FLAG_OPEN_REPARSE_POINT;
-    }
+    let (flags, share) = if exact {
+        (
+            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+            FILE_SHARE_PINNED,
+        )
+    } else {
+        (FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_ALL)
+    };
     let file = OpenOptions::new()
         .read(true)
-        .share_mode(FILE_SHARE_ALL)
+        .share_mode(share)
         .custom_flags(flags)
         .open(path)?;
     let metadata = file.metadata()?;
-    if !metadata.is_dir() || (exact && reparse(&metadata)) {
+    if !metadata.is_dir() || (exact && link(&metadata)) {
         return Err(changed());
     }
     Ok(file)
@@ -75,7 +135,8 @@ fn open_directory(path: &Path, exact: bool) -> io::Result<File> {
 pub(in crate::document) struct Destination {
     requested_parent: PathBuf,
     canonical_parent: PathBuf,
-    /// Held so the folder's file index cannot be reused by another folder while bound.
+    /// Held without delete sharing: the folder cannot be moved, and its file index cannot be
+    /// reused by another folder, while bound.
     _parent: Arc<File>,
     identity: Identity,
     leaf: OsString,
@@ -89,6 +150,9 @@ impl Destination {
             std::env::current_dir()?.join(path)
         };
         let leaf = absolute.file_name().ok_or_else(changed)?.to_os_string();
+        if !valid_leaf(&leaf) {
+            return Err(io::Error::from(io::ErrorKind::InvalidInput));
+        }
         let requested_parent = absolute.parent().ok_or_else(changed)?.to_path_buf();
         let canonical_parent = requested_parent.canonicalize()?;
         let parent = open_directory(&canonical_parent, true)?;
@@ -129,7 +193,7 @@ impl Destination {
             .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
             .open(self.canonical_parent.join(leaf))?;
         let metadata = file.metadata()?;
-        if !metadata.is_file() || reparse(&metadata) {
+        if !metadata.is_file() || link(&metadata) {
             return Err(changed());
         }
         self.binding()?;
@@ -142,7 +206,7 @@ impl Destination {
     }
     pub(in crate::document) fn verify(&self, file: &File, bytes: &[u8]) -> Result<(), Error> {
         self.binding().map_err(|_| Error::SourceChanged)?;
-        let current = self.open(&self.leaf).map_err(|_| Error::SourceChanged)?;
+        let current = self.open(&self.leaf).map_err(changed_or_locked)?;
         if Identity::of(&current).map_err(io_error)? != Identity::of(file).map_err(io_error)?
             || !equal_bytes(&current, bytes).map_err(io_error)?
         {
@@ -252,7 +316,7 @@ impl Transaction<'_> {
             .map_err(|error| self.fail(io_error(error)))?;
         let metadata = file.metadata()?;
         if !metadata.is_file()
-            || reparse(&metadata)
+            || link(&metadata)
             || Identity::of(&file)? != Identity::of(&baseline.file)?
         {
             return Err(self.fail(Error::SourceChanged));
@@ -511,6 +575,7 @@ fn prepare<'a>(
             if !path
                 .extension()
                 .is_some_and(|extension| extension.eq_ignore_ascii_case("mb"))
+                || !path.file_name().is_some_and(valid_leaf)
             {
                 return Err(Error::InvalidDestination);
             }

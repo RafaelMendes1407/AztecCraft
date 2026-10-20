@@ -27,7 +27,11 @@ fn identity_of(path: &Path) -> Identity {
 /// Creating a symbolic link needs Developer Mode or elevation; tests that need one skip
 /// themselves where the account cannot create it.
 fn symlink(target: &Path, link: &Path) -> bool {
-    std::os::windows::fs::symlink_file(target, link).is_ok()
+    let created = std::os::windows::fs::symlink_file(target, link).is_ok();
+    if !created {
+        eprintln!("SKIPPED: this account cannot create symbolic links");
+    }
+    created
 }
 fn set_readonly(path: &Path, readonly: bool) {
     let mut permissions = std::fs::metadata(path).unwrap().permissions();
@@ -209,15 +213,86 @@ fn identical_copy_replacing_the_installed_file_is_not_confirmed() {
 }
 
 #[test]
-fn binding_refuses_a_folder_replaced_at_the_same_path() {
+fn a_bound_save_as_folder_cannot_be_moved_until_released() {
     let directory = tempfile::tempdir().unwrap();
     let parent = directory.path().join("work");
     std::fs::create_dir(&parent).unwrap();
     let destination = Destination::capture(&parent.join("new.mb")).unwrap();
-    std::fs::rename(&parent, directory.path().join("moved")).unwrap();
-    std::fs::create_dir(&parent).unwrap();
-    assert!(destination.binding().is_err());
-    assert!(matches!(destination.absent(), Err(Error::SourceChanged)));
+    let moved = directory.path().join("moved");
+    assert!(std::fs::rename(&parent, &moved).is_err());
+    assert!(destination.absent().is_ok());
+    drop(destination);
+    std::fs::rename(&parent, &moved).unwrap();
+}
+
+#[test]
+fn stream_device_and_trailing_dot_names_are_refused_before_writing() {
+    let directory = tempfile::tempdir().unwrap();
+    let (_, document) = opened(directory.path());
+    for name in [
+        "foreign:y.mb",
+        "CON.mb",
+        "nul.mb",
+        "com1.mb",
+        "LPT9.mb",
+        "wild*.mb",
+    ] {
+        let destination = directory.path().join(name);
+        assert!(
+            matches!(
+                save_native(
+                    &document.origin,
+                    &document.scene,
+                    SaveDestination::As(&destination),
+                    &|| true
+                ),
+                Err(Error::InvalidDestination)
+            ),
+            "{name}"
+        );
+    }
+    let names: Vec<_> = std::fs::read_dir(directory.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(names, ["scene.mb"]);
+    for name in ["com0.mb", "console.mb", "CONx.mb", "a.b.mb"] {
+        assert!(valid_leaf(OsStr::new(name)), "{name}");
+    }
+    for name in ["x.mb.", "x.mb ", "a	b.mb"] {
+        assert!(!valid_leaf(OsStr::new(name)), "{name}");
+    }
+}
+
+#[test]
+fn a_file_held_without_delete_sharing_is_refused_not_reported_changed() {
+    use std::os::windows::fs::OpenOptionsExt;
+    let directory = tempfile::tempdir().unwrap();
+    let (path, document) = opened(directory.path());
+    // Read and write sharing only: a sync or backup tool holding the scene this way blocks
+    // the replacing rename (the editor's own read handle rules out denying read sharing).
+    let lock = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0x1 | 0x2)
+        .open(&path)
+        .unwrap();
+    assert!(matches!(
+        save_native(
+            &document.origin,
+            &document.scene,
+            SaveDestination::Active,
+            &|| true
+        ),
+        Err(Error::Io(io::ErrorKind::PermissionDenied))
+    ));
+    drop(lock);
+    assert!(std::fs::read(&path).unwrap() == wire::specimen());
+    saved(save_native(
+        &document.origin,
+        &document.scene,
+        SaveDestination::Active,
+        &|| true,
+    ));
 }
 
 #[test]
@@ -820,7 +895,8 @@ fn replaced_deleted_and_redirected_parent_bindings_refuse_without_touching_arriv
     std::fs::create_dir(&parent).unwrap();
     let (_, document) = opened(&parent);
     let error = std::fs::rename(&parent, directory.path().join("moved")).unwrap_err();
-    assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+    // Access denied (open child) or sharing violation (the pinned folder handle).
+    assert!(matches!(error.raw_os_error(), Some(5 | 32)), "{error:?}");
     drop(document);
     // A junction retargeted after Open redirects the requested folder elsewhere.
     let first = directory.path().join("first");
