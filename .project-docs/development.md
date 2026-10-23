@@ -25,8 +25,11 @@ The corrected SDK test and independent verifier also exercised actual protocol
 Open of saved outputs and the new document token/origin. Root's bounded macOS
 native edit/Undo/Redo/Save As/Open journey passed, with independent byte checks
 limited to the authorized eight-byte word and unchanged original fixtures.
-Committed cold, ordinary hooks, CI and published combined-parent verification
-remain pending. Data editing does not imply evaluated Phong output,
+Cold verification of the committed source on main (`7ca0ebf`, 2026-10-19, see
+[native-verification.md](native-verification.md)) reproduced the tests above and a
+validation and a byte-patch mutation failure, and CI on that commit passed. A saved Save/NCRV/Face/Grid
+composition is NOT covered and cannot be built today: binary Save refuses scenes
+with curves and ASCII Save is refused. Data editing does not imply evaluated Phong output,
 textures, normals or color management.
 
 Install Rust 1.99.0 with Cargo, rustfmt and Clippy. The repository pins the same

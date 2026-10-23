@@ -10,8 +10,12 @@ words and one shared History value; the slider does not clamp untouched source
 data. No rendered material, texture lookup, assignment or color processor is
 provided. Isolated material widget/SDK and default/headless/client checks pass;
 the corrected protocol reopen journey was independently reproduced and bounded
-macOS native edit/Undo/Save/reopen passed. Committed cold verification, hooks/CI
-and published Save/NCRV/Face/Grid composition remain pending.
+macOS native edit/Undo/Save/reopen passed. Cold verification of the committed
+source on main (`7ca0ebf`) and its CI passed (see
+`.project-docs/native-verification.md`). The ordinary pre-commit hooks also passed on that tree. Still open:
+native visual re-check of the committed build, and a published Save/NCRV/Face/Grid
+composition, which no test covers (binary Save refuses curves; ASCII Save is
+refused), so the feature stays a candidate.
 
 ## Attribute Editor first slice is an approximation
 

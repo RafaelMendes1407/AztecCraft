@@ -47,9 +47,9 @@ client matrix pass. The corrected test performs actual protocol Open after Save,
 requiring new document tokens and inspected material values; independent focused
 verification reproduced it. Bounded macOS native data QA also passed.
 SDK edit/inspection/History coverage is portable; Save/reopen assertions are
-Unix-only because Windows native binary writing remains unsupported. Committed
-cold, hooks/CI and published combined-parent verification remain pending;
-material data changes do not enable rendered Phong output.
+Unix-only because Windows native binary writing remains unsupported. Cold
+verification of the committed code and CI are recorded in native-verification.md;
+a saved Save/NCRV/Face/Grid composition check remains open. Material data changes do not enable rendered Phong output.
 
 Call `inspect_scene` first. Every other tool requires `scene_token`, a UUID string from that inspection. IDs are unsigned 64-bit decimal strings, including values beyond JavaScript's exact integer range. JSON numbers are rejected for IDs. Unknown argument fields, invalid types and unknown tools are protocol errors.
 
