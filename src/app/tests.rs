@@ -1575,6 +1575,114 @@ pub(in crate::app) fn remote(
 }
 
 #[test]
+fn remote_successes_report_on_the_status_line_like_native_ones() {
+    let mut native = Editor::default();
+    let mut remote_editor = Editor::default();
+    let initial = native.status.clone();
+    assert_eq!(remote_editor.status, initial);
+    let steps: Vec<fn(&Editor) -> Operation> = vec![
+        |_| Operation::Create {
+            primitive: Primitive::Cube,
+            name: None,
+        },
+        |editor| Operation::Rename {
+            id: editor.selected.unwrap(),
+            name: "renamed".into(),
+        },
+        |editor| Operation::Rename {
+            id: editor.selected.unwrap(),
+            name: "renamed".into(),
+        },
+        |editor| Operation::Rename {
+            id: editor.selected.unwrap(),
+            name: String::new(),
+        },
+        |_| Operation::Undo,
+        |_| Operation::Redo,
+        |_| Operation::SetGridVisible { visible: false },
+        |_| Operation::SetActiveTool(ActiveTool::Rotate),
+    ];
+    let mut failures = 0;
+    for step in steps {
+        let operation = step(&native);
+        native.native_operation(operation);
+        let operation = step(&remote_editor);
+        let before = (remote_editor.status.clone(), remote_editor.error);
+        if remote(&mut remote_editor, operation).is_ok() {
+            assert!(!native.error);
+            assert_eq!(
+                (&remote_editor.status, remote_editor.error),
+                (&native.status, native.error)
+            );
+        } else {
+            // The caller gets the error; the native status line keeps its baseline.
+            assert!(native.error);
+            assert_eq!((remote_editor.status.clone(), remote_editor.error), before);
+            failures += 1;
+        }
+    }
+    assert_eq!(
+        failures, 1,
+        "the empty rename must exercise the failure path"
+    );
+    assert_ne!(native.status, initial);
+    // Remote manipulations leave the preview status to native drags and report the result with
+    // the native release and Esc wording.
+    remote(
+        &mut remote_editor,
+        Operation::SetActiveTool(ActiveTool::Move),
+    )
+    .unwrap();
+    for (finish, expected) in [
+        (
+            azteccraft::history::ManipulationFinish::Cancel,
+            "Edit cancelled",
+        ),
+        (
+            azteccraft::history::ManipulationFinish::Commit,
+            "Move committed",
+        ),
+    ] {
+        let before = remote_editor.status.clone();
+        let target = remote_editor.selected_move_target().unwrap();
+        remote(
+            &mut remote_editor,
+            Operation::BeginMove {
+                target,
+                axis: azteccraft::native_scene::WorldAxis::X,
+            },
+        )
+        .unwrap();
+        let id = remote_editor.history.active_manipulation().unwrap().id;
+        remote(
+            &mut remote_editor,
+            Operation::UpdateMove {
+                id,
+                distance: crate::editor_operations::MoveDistance::Centimeters(2.0),
+            },
+        )
+        .unwrap();
+        assert_eq!(remote_editor.status, before);
+        remote(&mut remote_editor, Operation::FinishMove { id, finish }).unwrap();
+        assert_eq!(
+            (remote_editor.status.as_str(), remote_editor.error),
+            (expected, false)
+        );
+    }
+    // A request refused by the remote guards never reaches the scene or the status line.
+    let before = (remote_editor.status.clone(), remote_editor.error);
+    let refused = remote_editor.remote_operation(
+        RemoteRequest {
+            expected_scene_token: Some(uuid::Uuid::new_v4()),
+            operation: Operation::Undo,
+        },
+        &egui::Context::default(),
+    );
+    assert!(matches!(refused, Err(OperationError::StaleScene)));
+    assert_eq!((remote_editor.status, remote_editor.error), before);
+}
+
+#[test]
 fn grid_setter_is_idempotent_and_preserves_scene_history_and_editor_baseline() {
     let mut editor = Editor::default();
     assert!(editor.grid_visible);
