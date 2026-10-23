@@ -478,7 +478,7 @@ Status values: `supported` means a registered tool or an `inspect_scene` field e
 | Tools | Numeric Move, Rotate and Scale and drag manipulation, cancel | supported | `begin_manipulation`, `update_manipulation`, `finish_manipulation` | `manipulation` | |
 | Tools | Rotate and Scale tool-settings space selector | supported | `set_tool_space` | `manipulation.rotate_space`, `manipulation.scale_space` | |
 | Tools | Persistent Rotate axis and Scale handle selection (tool-settings combo) | missing | | | #216 |
-| Tools | Gimbal, Parent, Normal, Custom and Component spaces; Move orientation modes | unsupported | | | |
+| Tools | Gimbal, Parent, Normal, Custom and Component spaces; Move orientation modes other than World (listed disabled in the native Move row) | unsupported | | | |
 | Tools | Lasso, Paint Selection, Last Used buttons | unsupported | | | |
 | History | Undo and Redo | supported | `undo`, `redo` | `can_undo`, `can_redo` | |
 | History | Undo and Redo command names (Edit menu hover) | missing | | | #188 |
