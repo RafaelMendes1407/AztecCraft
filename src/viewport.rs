@@ -137,6 +137,24 @@ impl Camera {
     pub fn distance(&self) -> f32 {
         self.distance
     }
+    /// Orbit angle about world Y in radians; zero looks from +Z toward the target.
+    pub fn yaw(&self) -> f32 {
+        self.yaw
+    }
+    /// Elevation in radians, positive above the target, strictly inside (-pi/2, pi/2).
+    pub fn pitch(&self) -> f32 {
+        self.pitch
+    }
+    /// Vertical field of view in radians.
+    pub fn fov_y(&self) -> f32 {
+        self.fov_y
+    }
+    pub fn near(&self) -> f32 {
+        self.near
+    }
+    pub fn far(&self) -> f32 {
+        self.far
+    }
     pub fn eye(&self) -> Vec3 {
         self.target
             + self.distance

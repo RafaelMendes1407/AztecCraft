@@ -637,6 +637,11 @@ pub struct CameraInspection {
     pub target: [f32; 3],
     pub eye: [f32; 3],
     pub distance: f32,
+    pub yaw_degrees: f64,
+    pub pitch_degrees: f64,
+    pub fov_y_degrees: f64,
+    pub near_clip: f32,
+    pub far_clip: f32,
 }
 
 #[derive(Debug)]
@@ -742,6 +747,10 @@ pub const STATUS_MESSAGE_WITHHELD: &str = "File operation failed (details withhe
 const STATUS_MESSAGE_MAX_BYTES: usize = STATUS_MESSAGE_MAX_CHARS * 6 + 32;
 #[cfg(any(test, feature = "mcp"))]
 const MOVE_INSPECTION_MAX_BYTES: usize = 32 * 1024;
+/// Nine f32 values (at most 15 JSON bytes each), three f64 degree values (at most 24) and the
+/// field names: about 330 bytes in the worst case.
+#[cfg(any(test, feature = "mcp"))]
+const CAMERA_INSPECTION_MAX_BYTES: usize = 512;
 
 #[cfg(any(test, feature = "mcp"))]
 const SESSION_MATERIAL_INSPECTION_MAX_BYTES: usize = 192;
@@ -751,8 +760,10 @@ pub fn check_inspection_size(
     scene: &azteccraft::native_scene::NativeScene,
 ) -> Result<(), OperationError> {
     let limit = MAX_RESULT_BYTES / 2;
-    let mut estimated_bytes =
-        APPEARANCE_SUMMARY_MAX_BYTES + MOVE_INSPECTION_MAX_BYTES + STATUS_MESSAGE_MAX_BYTES;
+    let mut estimated_bytes = APPEARANCE_SUMMARY_MAX_BYTES
+        + MOVE_INSPECTION_MAX_BYTES
+        + STATUS_MESSAGE_MAX_BYTES
+        + CAMERA_INSPECTION_MAX_BYTES;
     for node in scene.nodes() {
         estimated_bytes = estimated_bytes
             .saturating_add(1024)
@@ -949,6 +960,23 @@ mod tests {
                 .unwrap()
                 .contains("\"visible\":null")
         );
+    }
+
+    #[test]
+    fn camera_inspection_preflight_bounds_the_longest_serialized_values() {
+        let worst = -f32::MIN_POSITIVE * 1.000_000_1;
+        let camera = CameraInspection {
+            target: [worst; 3],
+            eye: [f32::MIN; 3],
+            distance: worst,
+            yaw_degrees: f64::from(f32::MIN).to_degrees(),
+            // Unreachable for a valid camera, but the longest f64 text.
+            pitch_degrees: -f64::MIN_POSITIVE,
+            fov_y_degrees: f64::from(worst).to_degrees(),
+            near_clip: worst,
+            far_clip: worst,
+        };
+        assert!(serde_json::to_vec(&camera).unwrap().len() <= CAMERA_INSPECTION_MAX_BYTES);
     }
 
     #[test]

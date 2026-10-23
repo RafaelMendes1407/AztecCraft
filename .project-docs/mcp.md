@@ -55,7 +55,7 @@ Call `inspect_scene` first. Every other tool requires `scene_token`, a UUID stri
 
 | Tool | Arguments besides `scene_token` | Result |
 | --- | --- | --- |
-| `inspect_scene` | No arguments; no token required | Committed mesh/curve metadata including the active manipulation preview, typed document origin, retained-source counts/read-only reason, units, instance paths, selected identity, history, pending action, dirty/draft/focus/modal/closing flags, the native `status_message` (nullable, at most 512 characters, a fixed notice for file-error text that can carry a local path) and camera |
+| `inspect_scene` | No arguments; no token required | Committed mesh/curve metadata including the active manipulation preview, typed document origin, retained-source counts/read-only reason, units, instance paths, selected identity, history, pending action, dirty/draft/focus/modal/closing flags, the native `status_message` (nullable, at most 512 characters, a fixed notice for file-error text that can carry a local path) and the camera pose: `target` and `eye` in scene world units, `distance`, `yaw_degrees` (about world Y, normally in [0, 360]; 0 puts the eye on +Z and 90 on +X), `pitch_degrees` (elevation, positive above the target, strictly between -90 and 90), `fov_y_degrees` (vertical perspective field of view) and `near_clip`/`far_clip`. `eye` = `target` + `distance` × (sin yaw · cos pitch, sin pitch, cos yaw · cos pitch). Read-only: no tool sets an absolute pose. The defaults are a 45 degree vertical field of view and a 0.01 to 10000 clip range; framing a large object can raise `far_clip`. They have not been compared with Maya's persp camera, whose Angle of View is horizontal |
 | `set_active_tool` | `tool`: `select`, `move`, `rotate` or `scale` | Activate a supported native tool through shared guards |
 | `set_tool_space` | `tool`: `rotate` or `scale`; `space`: `object` or `world` | Set that tool's Axis Orientation (`Operation::SetToolSpace`, the operation the native Tool Settings selector dispatches). Refused with `busy_manipulation` during any manipulation and `busy_editing` during a draft, modal or close; `inspect_scene` `manipulation.rotate_space` and `scale_space` report the current values |
 | `begin_manipulation` | `oneOf` by `kind`, each branch closed. `move`: `node_id`, full `instance_path` (1 to 256 decimal IDs), `axis` (`x`, `y` or `z`, World). `rotate`: the same plus `axis` and `space` (`object` or `world`). `scale`: the same plus `handle` (`x`, `y`, `z` or `uniform`) and `space` | Begin a remote-owned Move, Rotate or Scale of the exact selected transform; returns `manipulation_id`. A field of another kind (`handle` on a rotate, `space` on a move) is a protocol error |
@@ -472,8 +472,8 @@ Status values: `supported` means a registered tool or an `inspect_scene` field e
 | Camera | Orbit, pan, dolly | supported | `orbit_camera`, `pan_camera`, `dolly_camera` | `camera` | |
 | Camera | Frame selected (F) | supported | `frame_selected` | `camera` | |
 | Camera | Frame All (A, View menu) | supported | `frame_all` | `camera` | |
-| Camera | Camera pose read (target, eye, distance) | supported | | `camera` | |
-| Camera | Orthographic views, field of view | unsupported | | | |
+| Camera | Camera pose read (target, eye, distance, yaw/pitch, vertical field of view, clip planes) | supported | | `camera` | |
+| Camera | Orthographic views, field-of-view edits, restoring a saved view | unsupported | | | |
 | Tools | Select, Move, Rotate, Scale tool switch (Q W E R, Tool Box) | supported | `set_active_tool` | `manipulation.active_tool` | |
 | Tools | Numeric Move, Rotate and Scale and drag manipulation, cancel | supported | `begin_manipulation`, `update_manipulation`, `finish_manipulation` | `manipulation` | |
 | Tools | Rotate and Scale tool-settings space selector | supported | `set_tool_space` | `manipulation.rotate_space`, `manipulation.scale_space` | |
@@ -496,7 +496,7 @@ Status values: `supported` means a registered tool or an `inspect_scene` field e
 | Panels | Time Slider and animation controls, Layer Editor, Outliner filters | unsupported | | | |
 | Panels | Status line message text | missing | | | #214 |
 
-Outcome: the registered catalogue covers every implemented file, creation, selection, camera, tool, history, material, viewport and panel operation except the three missing rows (#188, #214, #216), each linked to its issue; the catch-up stays open until those close. Issue #161 asks for camera pose, and `inspect_scene` `camera` reports only target, eye and distance. Orientation, field of view and restoring a saved view (there is no absolute camera-set tool) remain open in #161, which stays open.
+Outcome: the registered catalogue covers every implemented file, creation, selection, camera, tool, history, material, viewport and panel operation except the three missing rows (#188, #214, #216), each linked to its issue; the catch-up stays open until those close. Issue #161 asks for camera pose: `inspect_scene` `camera` now also reports orientation (yaw/pitch), the vertical field of view and the clip planes. Restoring a saved view (there is no absolute camera-set tool) remains open in #161.
 
 ## Protocol references
 
