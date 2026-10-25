@@ -180,10 +180,10 @@ impl Editor {
                 if ui
                     .add_enabled(
                         self.history.can_undo(),
-                        egui::Button::new(format!(
-                            "Undo {}   Ctrl/Cmd Z",
-                            self.history.undo_label().unwrap_or_default()
-                        )),
+                        egui::Button::new(match self.history.undo_label() {
+                            Some(label) => format!("Undo {}   Ctrl/Cmd Z", label),
+                            None => "Undo   Ctrl/Cmd Z".to_string(),
+                        }),
                     )
                     .on_hover_text(history_hover("Undo", self.history.undo_label().as_deref()))
                     .clicked()
@@ -194,10 +194,10 @@ impl Editor {
                 if ui
                     .add_enabled(
                         self.history.can_redo(),
-                        egui::Button::new(format!(
-                            "Redo {}   Ctrl/Cmd Shift Z",
-                            self.history.redo_label().unwrap_or_default()
-                        )),
+                        egui::Button::new(match self.history.redo_label() {
+                            Some(label) => format!("Redo {}   Ctrl/Cmd Shift Z", label),
+                            None => "Redo   Ctrl/Cmd Shift Z".to_string(),
+                        }),
                     )
                     .on_hover_text(history_hover("Redo", self.history.redo_label().as_deref()))
                     .clicked()

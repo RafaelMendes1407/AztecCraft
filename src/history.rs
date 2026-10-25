@@ -33,6 +33,7 @@ pub enum Command {
     SetTransform {
         id: NodeId,
         transform: NativeTransform,
+        label: Option<String>,
     },
     EditNode {
         id: NodeId,
@@ -70,14 +71,13 @@ impl Command {
             Self::Rename { .. } => "Rename".to_string(),
             Self::SetTransform { transform, .. } => {
                 // Compare with default values to guess the action.
-                if transform.rotation.iter().any(|&v| v != 0.0) && transform.scale == [1.0, 1.0, 1.0] {
+                if transform.rotation.iter().any(|&v| v != 0.0)
+                    && transform.scale == [1.0, 1.0, 1.0]
+                {
                     "Rotate".to_string()
-                } 
-
-                else if transform.scale.iter().any(|&v| v != 1.0) {
+                } else if transform.scale.iter().any(|&v| v != 1.0) {
                     "Scale".to_string()
-                }
-                else {
+                } else {
                     "Move".to_string()
                 }
             }
@@ -184,7 +184,7 @@ impl History {
                 candidate.rename(id, &name)?;
                 EditOutcome::Changed
             }
-            Command::SetTransform { id, transform } => {
+            Command::SetTransform { id, transform, .. } => {
                 candidate.set_transform(id, transform)?;
                 EditOutcome::Changed
             }

@@ -537,6 +537,7 @@ impl Editor {
                 }
                 Command::EditNode { id, name, channels }
             }
+            
             #[cfg(any(test, feature = "mcp"))]
             Operation::SetTransform { id, transform } => {
                 let rotation = match self.history.scene().units().angular {
@@ -548,13 +549,34 @@ impl Editor {
                         ));
                     }
                 };
+
+                let new_transform = NativeTransform {
+                    translation: transform.translation,
+                    rotation,
+                    scale: transform.scale,
+                };
+
+                let current = self
+                    .history
+                    .scene()
+                    .node(id)
+                    .map(|n| n.transform())
+                    .unwrap_or_default();
+
+                let label = if new_transform.translation != current.translation {
+                    Some("Move".to_string())
+                } else if new_transform.rotation != current.rotation {
+                    Some("Rotate".to_string())
+                } else if new_transform.scale != current.scale {
+                    Some("Scale".to_string())
+                } else {
+                    None
+                };
+
                 Command::SetTransform {
                     id,
-                    transform: NativeTransform {
-                        translation: transform.translation,
-                        rotation,
-                        scale: transform.scale,
-                    },
+                    transform: new_transform,
+                    label,
                 }
             }
             #[cfg(any(test, feature = "mcp"))]
