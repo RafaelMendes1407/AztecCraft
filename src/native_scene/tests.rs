@@ -1,4 +1,4 @@
-use super::test_fixtures::{cube, grouped_shape, shared_shape};
+use super::test_fixtures::{chain_of_three, cube, grouped_shape, shared_shape};
 use super::*;
 
 #[test]
@@ -67,6 +67,7 @@ fn transform_path_discovery_refuses_excess_depth_without_a_partial_result() {
 
 fn retain(scene: &mut NativeScene, bytes: &[u8], records: Vec<Range<usize>>) {
     scene.source = Some(SourceRetention {
+        sites: Vec::new(),
         bytes: bytes.into(),
         format: SourceFormat::Ascii,
         records,
@@ -236,6 +237,7 @@ fn unit_conversion_only_changes_derived_view() {
 fn retained_ranges_and_exhausted_allocators_are_checked() {
     let (mut scene, _) = cube();
     scene.source = Some(SourceRetention {
+        sites: Vec::new(),
         bytes: vec![0; 4].into(),
         format: SourceFormat::Ascii,
         records: vec![0..3, 2..4],
@@ -244,6 +246,7 @@ fn retained_ranges_and_exhausted_allocators_are_checked() {
     });
     assert_eq!(scene.validate(), Err(NativeError::InvalidRetention));
     scene.source = Some(SourceRetention {
+        sites: Vec::new(),
         bytes: vec![0; 4].into(),
         format: SourceFormat::Ascii,
         records: std::iter::once(0..5).collect(),
@@ -357,8 +360,16 @@ fn root_leaf_removal_preserves_shared_shapes_and_refuses_groups_or_source_rewrit
     scene.validate().unwrap();
     let (mut scene, root, child, _) = grouped_shape();
     let before = scene.clone();
-    assert_eq!(scene.remove(root), Err(NativeError::UnsupportedEdit));
-    assert_eq!(scene.remove(child), Err(NativeError::UnsupportedEdit));
+    assert_eq!(
+        scene.remove(root),
+        Err(NativeError::UnsupportedDelete(
+            DeleteUnsupported::HasChildren
+        ))
+    );
+    assert_eq!(
+        scene.remove(child),
+        Err(NativeError::UnsupportedDelete(DeleteUnsupported::IsChild))
+    );
     assert_eq!(scene, before);
     let (mut scene, id) = cube();
     retain(&mut scene, b"original", std::iter::once(0..8).collect());
@@ -379,6 +390,19 @@ fn root_leaf_removal_preserves_shared_shapes_and_refuses_groups_or_source_rewrit
     assert_eq!(scene, before);
     assert_eq!(scene.next_id, before.next_id);
     assert_eq!(scene.next_native_id, before.next_native_id);
+}
+
+#[test]
+fn middle_node_with_parent_and_children_is_refused_as_has_children() {
+    let (mut scene, _, mid, _) = chain_of_three();
+    let before = scene.clone();
+    assert_eq!(
+        scene.remove(mid),
+        Err(NativeError::UnsupportedDelete(
+            DeleteUnsupported::HasChildren
+        ))
+    );
+    assert_eq!(scene, before);
 }
 
 #[test]
@@ -894,6 +918,7 @@ fn binary_candidate_finishes_once_preserving_source_and_runtime_identity() {
     candidate.shapes[0].uuid = None;
     candidate.nodes[0].name = "native:arbitrary exact name".into();
     candidate.source = Some(SourceRetention {
+        sites: Vec::new(),
         bytes: std::sync::Arc::from(&b"opaque original identity"[..]),
         format: SourceFormat::Binary,
         records: std::iter::once(0..24).collect(),

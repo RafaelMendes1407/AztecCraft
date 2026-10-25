@@ -340,21 +340,32 @@ The prior changed-parent full MCP-client run observed an unchanged transport
 notification-flood outer-timeout failure; its single isolated reproduction
 passed. The full run remains failed and the timing cause unproved.
 
-## Absent default transform leaves refuse Move on Maya binary scenes
+## Absent default transform leaves on Maya binary scenes
 
-**Area:** Move tool, Maya binary save
+**Area:** Move tool, Channel Box, `edit_node`, Maya binary save
 
-Maya `.mb` files omit default transform leaves (translate 0, rotate 0, scale 1),
-and the binary encoder has no reviewed path to insert a missing leaf
-(`src/native_scene/binary/encode.rs` refuses an absent origin). Move therefore
-refuses a Binary-source object whose translate leaf is absent with the typed
-`AbsentChannelLeaf` error (MCP code `absent_channel_leaf`; per axis, in the UI
-status and in the Move inspection reason) instead of accepting an edit that could
-never be saved. The refusal rate on real Maya files is unmeasured but is expected
-to be high, because default leaves are routinely omitted; the Move tool is
-effectively limited to objects that already carry a translate leaf. Source-free
-scenes (new, OBJ) are not refused but cannot be saved as Maya binary. Leaf
-insertion is a separate follow-up (#19).
+Maya `.mb` files omit default transform leaves (translate 0, rotate 0, scale 1).
+Saving an opened `.mb` now inserts an absent translate `t` leaf (`DBL3`) at a
+recorded site, copying the file's own header word and padding and refusing
+anything else (grammar and sources: `.project-docs/binary-leaf-insertion.md`).
+The insertion is reached by the encoder, `edit_node`, the Channel Box, native
+Move, MCP and document save. No AztecCraft-written file containing an inserted record has been opened in Maya; acceptance of inserted records is unproven (#5).
+Only AztecCraft's own decoder reopening the output is checked.
+
+Still refused: rotate and scale leaves, which are not part of this slice, and a
+translate on a node with no recorded site (the file has no `DBL3` at all, its
+`DBL3` header words differ, one has non-zero padding, or the transform's
+children do not match the grammar). The refusal differs by entry point. Move,
+Rotate and Scale (`begin_manipulation`) return the typed `AbsentChannelLeaf`
+error (MCP code `absent_channel_leaf`; for a siteless translate the text says
+"leaf insertion is unsupported"). Channel Box, `edit_node` and `set_transform`
+edits return `UnsupportedEdit` (MCP `scene_error`, "native ownership or edit
+effects are unsupported"). The refusal rate on real Maya files outside the
+five-file private corpus is unmeasured.
+
+Source-free scenes (new, OBJ) are not refused but cannot be saved as Maya
+binary. Setting every inserted word to +0.0 inserts nothing, because that is the
+default; -0.0 is a real edit.
 
 ## Move lifecycle gaps
 
@@ -419,7 +430,7 @@ Create > Polygon sphere and `create_primitive` with `sphere` build a radius-1,
 360 quads). The radius and subdivisions come from the polySphere node reference;
 the command page lists radius 0.5, and Maya 2026 defaults are unverified (#5).
 Vertex and face order and winding are not claimed to match Maya. Edges are hard,
-so the viewport looks faceted. There is no options dialog, no UVs or normals, and
+so the viewport looks faceted. There are no UVs or normals, and
 new nodes are not persisted (Save is unavailable for created scenes, as for the
 cube). Pole triangles cannot be extruded; body quads can. The new node is named
 `pSphere1` with shape `pSphereShape1`, as in Maya (#175).
@@ -462,8 +473,8 @@ lists sz 1 instead, so a Maya-default cylinder may have different counts, and th
 cap topology of both solids is derived, not verified against Maya 2026 (#5). The cone
 has 21 points, 40 edges and 21 faces (20 side triangles and a 20-gon base) with its apex
 at (0, 1, 0) and its base at y=-1. Vertex and face order and winding are not claimed to
-match Maya. Edges are hard, so the viewport looks faceted. There is no options dialog,
-no UVs or normals, and new nodes are not persisted. Caps and cone side triangles cannot
+match Maya. Edges are hard, so the viewport looks faceted. There are no UVs or normals,
+and new nodes are not persisted. Caps and cone side triangles cannot
 be extruded; cylinder side quads can. A pick on any cap triangle selects the whole cap,
 and its centre marker is the corner average. New nodes are named `pCylinder1` and
 `pCone1` with shapes `pCylinderShape1` and `pConeShape1`, as in Maya (#175). The legacy
@@ -571,7 +582,11 @@ Rotate angle in the scene angular unit and the native numeric field takes degree
 ## Primitive creation options are partial and PROVISIONAL (#174)
 
 `create_primitive` accepts size, subdivision and axis (X, Y or Z) options for cube, plane,
-sphere, cylinder and cone; the native Create menu has no option boxes yet (PR B). Created
+sphere, cylinder and cone, and each Create menu row has an option box that opens a
+"Polygon <name> Options" window (native visual QA pending). Its numeric fields are text-only, without the drag-to-scrub
+and sliders Maya's option boxes have (PROVISIONAL gap). Keeping the window open after Create
+and using the last created options for plain menu and shelf clicks are PROVISIONAL (Maya's
+pages do not say), session only and never saved. Created
 primitives are still not persisted: Save is unavailable for created scenes. The AztecCraft
 limits (size 1e-6 to 1e6 cm, subdivisions up to 128, at most 20,000 faces) are safety bounds,
 PROVISIONAL because the Maya pages state no ranges, until the pinned reference install (#5).
@@ -664,3 +679,13 @@ will carry no shading assignment. The invented items are the I rows of
 
 Reopen trigger: a public, licensed Maya 2026 file with a mesh becomes available (re-derive the
 profile from it), or Maya rejects, repairs or rewrites these files (issue #5 asks for a read-back).
+
+## Hierarchy delete is unsupported and its Maya semantics are provisional
+
+**Severity:** low
+**Area:** editor core
+**Issue:** cristim/AztecCraft#187
+
+Delete refuses any node with children or a parent (`unsupported_delete`), natively and over MCP.
+Maya's exact Delete semantics for hierarchies are PROVISIONAL: only the 2024 Delete help page was
+found and no 2026 page exists. Real hierarchy delete is blocked on a structural source rewriter.

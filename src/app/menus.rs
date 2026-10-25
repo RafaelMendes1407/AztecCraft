@@ -36,6 +36,10 @@ pub(super) const MODELING_SET_MENUS: [&str; 9] = [
 /// Help follows the Modeling set; its Maya position is UNCONFIRMED (the pages do not place it).
 pub(super) const HELP_MENU: &str = "Help";
 
+/// Maya's Edit > Delete by Type and Delete All by Type rows; the type list is not implemented.
+const DELETE_BY_TYPE_REASON: &str =
+    "Deleting by node type is not supported yet; select the object and use Delete";
+
 fn placeholder_menu(ui: &mut egui::Ui, label: &str) {
     ui.menu_button(label, |ui| {
         unsupported(ui, "Not implemented yet");
@@ -100,6 +104,37 @@ impl Editor {
                 run: |editor| editor.native_operation(Operation::SaveScene),
             },
         ]
+    }
+
+    /// One Create item with its option box, which opens that primitive's options window.
+    fn create_row(
+        &mut self,
+        ui: &mut egui::Ui,
+        primitive: Primitive,
+        label: &str,
+        read_only_reason: Option<&str>,
+    ) {
+        let authoring = read_only_reason.is_none();
+        ui.horizontal(|ui| {
+            let mut item = ui.add_enabled(authoring, egui::Button::new(label));
+            if let Some(reason) = read_only_reason {
+                item = item.on_disabled_hover_text(reason);
+            }
+            if item.clicked() {
+                self.create(primitive);
+                ui.close();
+            }
+            let option_box = features::primitive_options::option_box(
+                ui,
+                &format!("{label} option box"),
+                authoring,
+                read_only_reason,
+            );
+            if option_box.clicked() {
+                // The menu closes on this click by itself (tested).
+                self.open_primitive_options(primitive);
+            }
+        });
     }
 
     fn menu_bar(
@@ -183,47 +218,20 @@ impl Editor {
                     *delete_intent = true;
                     ui.close();
                 }
+                for label in ["Delete by Type", "Delete All by Type"] {
+                    ui.add_enabled(false, egui::Button::new(label))
+                        .on_disabled_hover_text(DELETE_BY_TYPE_REASON);
+                }
             });
             ui.menu_button("Create", |ui| {
-                if ui
-                    .add_enabled(authoring, egui::Button::new("Polygon cube"))
-                    .on_disabled_hover_text(read_only_reason.unwrap_or_default())
-                    .clicked()
-                {
-                    self.create(Primitive::Cube);
-                    ui.close();
-                }
-                if ui
-                    .add_enabled(authoring, egui::Button::new("Polygon plane"))
-                    .on_disabled_hover_text(read_only_reason.unwrap_or_default())
-                    .clicked()
-                {
-                    self.create(Primitive::Plane);
-                    ui.close();
-                }
-                if ui
-                    .add_enabled(authoring, egui::Button::new("Polygon sphere"))
-                    .on_disabled_hover_text(read_only_reason.unwrap_or_default())
-                    .clicked()
-                {
-                    self.create(Primitive::Sphere);
-                    ui.close();
-                }
-                if ui
-                    .add_enabled(authoring, egui::Button::new("Polygon cylinder"))
-                    .on_disabled_hover_text(read_only_reason.unwrap_or_default())
-                    .clicked()
-                {
-                    self.create(Primitive::Cylinder);
-                    ui.close();
-                }
-                if ui
-                    .add_enabled(authoring, egui::Button::new("Polygon cone"))
-                    .on_disabled_hover_text(read_only_reason.unwrap_or_default())
-                    .clicked()
-                {
-                    self.create(Primitive::Cone);
-                    ui.close();
+                for (primitive, label) in [
+                    (Primitive::Cube, "Polygon cube"),
+                    (Primitive::Plane, "Polygon plane"),
+                    (Primitive::Sphere, "Polygon sphere"),
+                    (Primitive::Cylinder, "Polygon cylinder"),
+                    (Primitive::Cone, "Polygon cone"),
+                ] {
+                    self.create_row(ui, primitive, label, read_only_reason);
                 }
                 unsupported(ui, "Other primitives");
             });
