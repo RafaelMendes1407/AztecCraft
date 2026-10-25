@@ -30,6 +30,8 @@ mod inspect;
 mod menus;
 mod panels;
 mod shortcuts;
+mod shutdown_signal;
+mod terminate_bridge;
 
 struct MaterialDraft {
     scene_token: Uuid,
@@ -106,6 +108,8 @@ pub struct Editor {
     error: bool,
     aspect: f32,
     files: files::FileState,
+    terminate: Box<dyn terminate_bridge::TerminateBridge>,
+    shutdown: shutdown_signal::ShutdownSignal,
 }
 
 impl Default for Editor {
@@ -152,6 +156,8 @@ impl Default for Editor {
             error: false,
             aspect: 1.0,
             files: files::FileState::default(),
+            terminate: terminate_bridge::platform_bridge(),
+            shutdown: Default::default(),
         }
     }
 }
@@ -207,6 +213,12 @@ impl Editor {
     #[cfg(feature = "mcp")]
     pub(crate) fn start_mcp(&mut self, context: &egui::Context) -> std::io::Result<()> {
         self.mcp = Some(crate::mcp::UiBridge::start(context.clone())?);
+        Ok(())
+    }
+    /// Routes SIGTERM into the close guard (#261, PROVISIONAL). Opt-in per process: tests and
+    /// headless editors never register a handler.
+    pub fn install_shutdown_signal(&mut self, ctx: &egui::Context) -> std::io::Result<()> {
+        self.shutdown = shutdown_signal::install(ctx)?;
         Ok(())
     }
     pub fn new(
