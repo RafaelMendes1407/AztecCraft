@@ -79,7 +79,10 @@ impl Editor {
         self.handle_close(ui.ctx());
         // Same gate as shortcuts(): Escape that closes a menu must not also cancel an edit. The
         // popup is still open here; egui closes it later in this pass, when the menus are shown.
-        if !self.files.is_modal() && !egui::Popup::is_any_open(ui.ctx()) {
+        if !self.files.is_modal()
+            && !egui::Popup::is_any_open(ui.ctx())
+            && !self.escape_closes_primitive_options(ui.ctx())
+        {
             self.cancel_on_escape(ui.ctx());
         }
         let tool_intent = self.shortcuts(ui.ctx());
@@ -287,6 +290,7 @@ impl Editor {
         }
         let admitted = frame_admitted && !self.files.is_modal() && !self.files.is_closing();
         self.file_modal(ui.ctx());
+        self.primitive_options_window(ui.ctx());
         let sidebar_request = self.sidebar_panel_request.take();
         let tab_request = self.attribute_editor_tab_request.take();
         if grid_requested && self.scene_token == frame_token {
