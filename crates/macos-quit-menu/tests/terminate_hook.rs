@@ -13,14 +13,15 @@ mod mac {
 
     use macos_quit_menu::{
         TerminateError, TerminateHookError, finish_terminate, install_terminate_guard,
-        install_terminate_guard_in, terminate_owed,
+        install_terminate_guard_in, terminate_owed, terminate_reply_queued,
     };
     use objc2::encode::Encode;
     use objc2::rc::Retained;
     use objc2::runtime::{AnyClass, AnyObject, ClassBuilder, NSObject, Sel};
     use objc2::{ClassType, MainThreadMarker, msg_send, sel};
     use objc2_app_kit::{
-        NSApplicationTerminateReply as Reply, NSBackingStoreType, NSWindow, NSWindowStyleMask,
+        NSApplication, NSApplicationTerminateReply as Reply, NSBackingStoreType, NSWindow,
+        NSWindowStyleMask,
     };
     use objc2_foundation::{NSPoint, NSRect, NSSize};
 
@@ -93,6 +94,9 @@ mod mac {
     #[link(name = "CoreFoundation", kind = "framework")]
     unsafe extern "C" {
         fn CFRelease(object: *const std::ffi::c_void);
+        static kCFRunLoopDefaultMode: *const std::ffi::c_void;
+        fn CFRunLoopRunInMode(mode: *const std::ffi::c_void, seconds: f64, return_after: u8)
+        -> i32;
     }
 
     /// Windows need a WindowServer connection; the session dictionary is NULL without one.
@@ -108,8 +112,17 @@ mod mac {
         true
     }
 
+    /// Runs the main queue, so a reply queued by `finish_terminate` is delivered.
+    fn drain_main_queue() {
+        // SAFETY: one 0.1 s default-mode pass of the main run loop runs the queued main-queue
+        // block. The arguments match CFRunLoopRunInMode's C signature, and kCFRunLoopDefaultMode
+        // is a constant CFStringRef. The pass waits the full 0.1 s because an earlier handled
+        // source can end a return-after-source run before the queue runs.
+        unsafe { CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.1, 0) };
+    }
+
     pub fn run() {
-        MainThreadMarker::new().expect("main thread");
+        let mtm = MainThreadMarker::new().expect("main thread");
 
         assert_eq!(Reply::ENCODING.to_string(), "Q", "reply type encoding");
 
@@ -185,6 +198,44 @@ mod mac {
         assert_eq!(finish_terminate(false), Ok(()));
         assert!(!terminate_owed());
         assert_eq!(finish_terminate(false), Err(TerminateError::NotOwed));
+        assert!(terminate_reply_queued());
+
+        // #268: while the previous reply is still queued, a new terminate is declined. It owes
+        // nothing and starts no close request, so the stale reply cannot answer it.
+        assert_eq!(terminate(&delegate), Reply::TerminateCancel);
+        assert!(!terminate_owed());
+        assert_eq!(PERFORM_CLOSE_CALLS.load(Ordering::SeqCst), 1);
+        // The queued block runs `replyToApplicationShouldTerminate:` with no terminate pending.
+        drain_main_queue();
+        assert!(!terminate_reply_queued());
+        assert!(!terminate_owed());
+
+        // Idle again: a new terminate begins normally.
+        assert_eq!(terminate(&delegate), Reply::TerminateLater);
+        assert!(terminate_owed());
+        assert_eq!(PERFORM_CLOSE_CALLS.load(Ordering::SeqCst), 2);
+        assert_eq!(finish_terminate(false), Ok(()));
+        drain_main_queue();
+        assert!(!terminate_reply_queued());
+
+        // #268: while an AppKit modal is active the terminate is declined and nothing is
+        // closed. The session shows the window and makes it key.
+        let app = NSApplication::sharedApplication(mtm);
+        let session = app.beginModalSessionForWindow(&window);
+        assert_eq!(app.modalWindow().as_deref(), Some(&*window));
+        assert_eq!(terminate(&delegate), Reply::TerminateCancel);
+        assert!(!terminate_owed());
+        assert_eq!(PERFORM_CLOSE_CALLS.load(Ordering::SeqCst), 2);
+        // SAFETY: `session` was returned by `beginModalSessionForWindow:` above and is ended once.
+        unsafe { app.endModalSession(session) };
+        assert!(app.modalWindow().is_none());
+        assert_eq!(terminate(&delegate), Reply::TerminateLater);
+        assert!(terminate_owed());
+        assert_eq!(PERFORM_CLOSE_CALLS.load(Ordering::SeqCst), 3);
+        assert_eq!(finish_terminate(false), Ok(()));
+        drain_main_queue();
+        assert!(!terminate_reply_queued());
+        window.orderOut(None);
         println!("terminate hook: ok");
     }
 }
