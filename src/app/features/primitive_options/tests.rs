@@ -736,22 +736,50 @@ fn a_disabled_option_box_shows_the_read_only_reason_on_hover() {
         })
     };
     assert_eq!(tooltip_layers(&ctx), 0, "no tooltip before the hover");
+    let reason = editor
+        .history
+        .scene()
+        .authoring_read_only_reason()
+        .expect("an ASCII scene is read-only")
+        .to_string();
+    let reason_texts = |output: &egui::FullOutput| {
+        output
+            .shapes
+            .iter()
+            .filter(|shape| {
+                matches!(&shape.shape, egui::Shape::Text(text) if text.galley.job.text == reason)
+            })
+            .count()
+    };
     // egui ignores a hover that follows a click too closely; give the frames real time.
-    for step in 1..=6 {
-        let mut input = egui::RawInput {
-            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SIZE)),
-            time: Some(10.0 + f64::from(step)),
-            ..Default::default()
-        };
-        if step == 1 {
-            input.events.push(Event::PointerMoved(target.rect.center()));
+    let frames = |editor: &mut Editor, first: f64, moved: bool| {
+        let mut last = None;
+        for step in 1..=6 {
+            let mut input = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SIZE)),
+                time: Some(first + f64::from(step)),
+                ..Default::default()
+            };
+            if step == 1 && moved {
+                input.events.push(Event::PointerMoved(target.rect.center()));
+            }
+            let mut output = ctx.run_ui(input, |ui| editor.render(ui));
+            output.textures_delta.clear();
+            last = Some(output);
         }
-        let mut output = ctx.run_ui(input, |ui| editor.render(ui));
-        output.textures_delta.clear();
-    }
+        last.unwrap()
+    };
+    let control = frames(&mut editor, 10.0, false);
+    assert_eq!(tooltip_layers(&ctx), 0, "no tooltip without the hover");
+    let hovered = frames(&mut editor, 20.0, true);
     assert!(
         tooltip_layers(&ctx) > 0,
         "the disabled box shows its reason"
+    );
+    assert_eq!(
+        reason_texts(&hovered),
+        reason_texts(&control) + 1,
+        "the tooltip adds one copy of the read-only reason"
     );
 }
 
@@ -780,6 +808,9 @@ fn clicking_a_read_only_option_box_opens_no_window() {
 #[test]
 fn escape_closing_the_window_consumes_the_pointer_sequence() {
     let (mut editor, ctx) = setup();
+    editor.create(Primitive::Cube);
+    editor.select(None);
+    run(&mut editor, &ctx, vec![]);
     open_dialog(&mut editor, &ctx, Primitive::Sphere);
     assert!(!editor.move_consumed_frame && !editor.move_suppress_primary);
     let at = Pos2::new(600.0, 400.0);
@@ -800,6 +831,21 @@ fn escape_closing_the_window_consumes_the_pointer_sequence() {
     assert!(
         editor.move_suppress_primary,
         "the held press is not replayed"
+    );
+    run(
+        &mut editor,
+        &ctx,
+        vec![Event::PointerButton {
+            pos: at,
+            button: PointerButton::Primary,
+            pressed: false,
+            modifiers: Modifiers::NONE,
+        }],
+    );
+    assert_eq!(
+        editor.selection_presentation().0,
+        None,
+        "releasing over the cube selects nothing"
     );
 }
 
