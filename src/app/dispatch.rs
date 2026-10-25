@@ -4,7 +4,7 @@ use azteccraft::history::{ManipulationFinish, ManipulationKindState};
 /// Status-line feedback planned for one operation; see [`Editor::status_feedback`].
 struct StatusFeedback {
     status: Option<&'static str>,
-    step_label: Option<&'static str>,
+    step_label: Option<String>,
     activated: bool,
     /// Report `status` whatever the reply, as a native drag release or Esc does.
     fixed: bool,
@@ -116,7 +116,7 @@ impl Editor {
         };
         StatusFeedback {
             status,
-            step_label: step_label.map(|s| &*Box::leak(s.into_boxed_str())),
+            step_label: step_label.clone(),
             activated,
             fixed: matches!(*operation, Operation::FinishMove { .. }),
         }

@@ -208,7 +208,9 @@ fn a_ring_drag_turns_about_the_picked_axis_and_is_one_rotate_history_entry() {
             );
             assert!(!editor.error);
         }
-        assert!(!editor.history.can_undo() || editor.history.undo_label() == Some("Create".to_string()));
+        assert!(
+            !editor.history.can_undo() || editor.history.undo_label() == Some("Create".to_string())
+        );
         release(&mut editor, &context, scale, view.ring(y, 40.0));
         assert!(editor.history.active_manipulation().is_none());
         assert!(editor.native_move.is_none());
