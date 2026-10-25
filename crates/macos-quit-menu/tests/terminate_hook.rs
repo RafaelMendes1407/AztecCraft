@@ -9,11 +9,14 @@ fn main() {}
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
 mod mac {
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::panic::{PanicHookInfo, catch_unwind, set_hook, take_hook};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     use macos_quit_menu::{
-        TerminateError, TerminateHookError, finish_terminate, install_terminate_guard,
-        install_terminate_guard_in, terminate_owed, terminate_reply_queued,
+        TerminateError, TerminateHookError, finish_terminate, install_panic_answer,
+        install_terminate_guard, install_terminate_guard_in, terminate_owed,
+        terminate_reply_queued, terminate_reply_queued_answer,
     };
     use objc2::encode::Encode;
     use objc2::rc::Retained;
@@ -29,8 +32,35 @@ mod mac {
 
     extern "C" fn noop(_: *mut AnyObject, _: Sel, _: *mut AnyObject) {}
 
-    extern "C" fn count_perform_close(_: *mut AnyObject, _: Sel, _: *mut AnyObject) {
+    static PREVIOUS_HOOK_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    static SILENT: AtomicBool = AtomicBool::new(false);
+
+    type Hook = Arc<dyn Fn(&PanicHookInfo<'_>) + Send + Sync>;
+
+    /// Reinstates the saved hook on the pass path. `set_hook` panics on a panicking thread, so
+    /// it is left alone while an assertion failure unwinds (the process is failing anyway).
+    struct RestoreHook(Hook);
+
+    impl Drop for RestoreHook {
+        fn drop(&mut self) {
+            if std::thread::panicking() {
+                return;
+            }
+            let saved = Arc::clone(&self.0);
+            set_hook(Box::new(move |info| saved(info)));
+        }
+    }
+
+    static PANIC_ON_CLOSE: AtomicBool = AtomicBool::new(false);
+
+    // `C-unwind` lets the panic cross `performClose:`'s message send back into
+    // `should_terminate`'s catch_unwind, which is the production path for a panic after begin().
+    extern "C-unwind" fn count_perform_close(_: *mut AnyObject, _: Sel, _: *mut AnyObject) {
         PERFORM_CLOSE_CALLS.fetch_add(1, Ordering::SeqCst);
+        if PANIC_ON_CLOSE.load(Ordering::SeqCst) {
+            panic!("forced in performClose:");
+        }
     }
 
     fn lookalike(name: &'static std::ffi::CStr, with_shape: bool) -> &'static AnyClass {
@@ -68,7 +98,7 @@ mod mac {
         unsafe {
             builder.add_method(
                 sel!(performClose:),
-                count_perform_close as extern "C" fn(*mut AnyObject, Sel, *mut AnyObject),
+                count_perform_close as extern "C-unwind" fn(*mut AnyObject, Sel, *mut AnyObject),
             );
         }
         let class = builder.register();
@@ -235,6 +265,60 @@ mod mac {
         assert_eq!(finish_terminate(false), Ok(()));
         drain_main_queue();
         assert!(!terminate_reply_queued());
+
+        // #270: the chained hook answers an owed terminate when the main thread panics
+        // elsewhere (a frame). The saved hook is restored afterwards.
+        // Only the forced panics are silenced; an assertion failure still prints.
+        let saved: Hook = Arc::from(take_hook());
+        let _restore = RestoreHook(Arc::clone(&saved));
+        set_hook(Box::new(move |info| {
+            if !SILENT.load(Ordering::SeqCst) {
+                saved(info);
+            }
+        }));
+        install_panic_answer();
+
+        // Case A: a panic outside should_terminate while a reply is owed declines it once.
+        assert_eq!(terminate(&delegate), Reply::TerminateLater);
+        assert!(terminate_owed());
+        SILENT.store(true, Ordering::SeqCst);
+        let caught = catch_unwind(|| panic!("forced"));
+        SILENT.store(false, Ordering::SeqCst);
+        assert!(caught.is_err());
+        assert!(!terminate_owed());
+        assert!(terminate_reply_queued());
+        assert_eq!(terminate_reply_queued_answer(), Some(false));
+        drain_main_queue();
+        assert!(!terminate_reply_queued());
+        assert_eq!(PERFORM_CLOSE_CALLS.load(Ordering::SeqCst), 4);
+
+        // Case B: a panic inside should_terminate after begin() is answered by its own guard
+        // alone: the hook stays out (IN_HOOK), so there is one cancel and no queued reply.
+        PANIC_ON_CLOSE.store(true, Ordering::SeqCst);
+        SILENT.store(true, Ordering::SeqCst);
+        let reply = terminate(&delegate);
+        SILENT.store(false, Ordering::SeqCst);
+        PANIC_ON_CLOSE.store(false, Ordering::SeqCst);
+        assert_eq!(reply, Reply::TerminateCancel);
+        assert_eq!(PERFORM_CLOSE_CALLS.load(Ordering::SeqCst), 5);
+        assert!(!terminate_owed());
+        assert!(!terminate_reply_queued());
+        drain_main_queue();
+        assert!(!terminate_reply_queued());
+
+        // The installed hook still calls the hook it replaced, so the default message prints.
+        {
+            let before: Hook = Arc::from(take_hook());
+            let _restore = RestoreHook(Arc::clone(&before));
+            set_hook(Box::new(|_| {
+                PREVIOUS_HOOK_CALLS.fetch_add(1, Ordering::SeqCst);
+            }));
+            install_panic_answer();
+            assert!(!terminate_owed());
+            assert!(catch_unwind(|| panic!("forced")).is_err());
+            assert_eq!(PREVIOUS_HOOK_CALLS.load(Ordering::SeqCst), 1);
+        }
+
         window.orderOut(None);
         println!("terminate hook: ok");
     }
