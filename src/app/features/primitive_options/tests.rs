@@ -708,3 +708,160 @@ fn a_failed_create_message_clears_after_a_valid_create_and_options_are_remembere
         PrimitiveOptions::Sphere { sub_axis: 9, .. }
     ));
 }
+
+#[test]
+fn a_disabled_option_box_shows_the_read_only_reason_on_hover() {
+    let (mut editor, ctx) = setup();
+    ctx.all_styles_mut(|style| style.interaction.tooltip_delay = 0.0);
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("curve.ma");
+    std::fs::write(&path, ascii_fixture::specimen()).unwrap();
+    editor
+        .apply_operation(Operation::OpenScene { path })
+        .unwrap();
+    let output = run(&mut editor, &ctx, vec![]);
+    click(&mut editor, &ctx, menu_create(&output).rect.center());
+    let output = run(&mut editor, &ctx, vec![]);
+    let target = find(&output, "Polygon sphere option box").unwrap();
+    assert!(target.disabled);
+    // The Attribute Editor paints the same reason text, so look for a tooltip layer instead.
+    let tooltip_layers = |ctx: &egui::Context| {
+        ctx.memory(|memory| {
+            memory
+                .areas()
+                .visible_layer_ids()
+                .into_iter()
+                .filter(|layer| layer.order == egui::Order::Tooltip)
+                .count()
+        })
+    };
+    assert_eq!(tooltip_layers(&ctx), 0, "no tooltip before the hover");
+    // egui ignores a hover that follows a click too closely; give the frames real time.
+    for step in 1..=6 {
+        let mut input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SIZE)),
+            time: Some(10.0 + f64::from(step)),
+            ..Default::default()
+        };
+        if step == 1 {
+            input.events.push(Event::PointerMoved(target.rect.center()));
+        }
+        let mut output = ctx.run_ui(input, |ui| editor.render(ui));
+        output.textures_delta.clear();
+    }
+    assert!(
+        tooltip_layers(&ctx) > 0,
+        "the disabled box shows its reason"
+    );
+}
+
+#[test]
+fn clicking_a_read_only_option_box_opens_no_window() {
+    let (mut editor, ctx) = setup();
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("curve.ma");
+    std::fs::write(&path, ascii_fixture::specimen()).unwrap();
+    editor
+        .apply_operation(Operation::OpenScene { path })
+        .unwrap();
+    let output = run(&mut editor, &ctx, vec![]);
+    click(&mut editor, &ctx, menu_create(&output).rect.center());
+    let output = run(&mut editor, &ctx, vec![]);
+    let target = find(&output, "Polygon sphere option box").unwrap();
+    assert!(target.disabled);
+    let before = editor.history.scene().clone();
+    click(&mut editor, &ctx, target.rect.center());
+    let output = run(&mut editor, &ctx, vec![]);
+    assert!(editor.primitive_options.dialog.is_none());
+    assert!(!dialog_open(&output, Primitive::Sphere));
+    assert_eq!(editor.history.scene(), &before);
+}
+
+#[test]
+fn escape_closing_the_window_consumes_the_pointer_sequence() {
+    let (mut editor, ctx) = setup();
+    open_dialog(&mut editor, &ctx, Primitive::Sphere);
+    assert!(!editor.move_consumed_frame && !editor.move_suppress_primary);
+    let at = Pos2::new(600.0, 400.0);
+    run(&mut editor, &ctx, vec![Event::PointerMoved(at)]);
+    run(
+        &mut editor,
+        &ctx,
+        vec![Event::PointerButton {
+            pos: at,
+            button: PointerButton::Primary,
+            pressed: true,
+            modifiers: Modifiers::NONE,
+        }],
+    );
+    run(&mut editor, &ctx, vec![key(Key::Escape)]);
+    assert!(editor.primitive_options.dialog.is_none());
+    assert!(editor.move_consumed_frame);
+    assert!(
+        editor.move_suppress_primary,
+        "the held press is not replayed"
+    );
+}
+
+#[test]
+fn dragging_over_a_field_does_not_scrub_its_value() {
+    let (mut editor, ctx) = setup();
+    open_dialog(&mut editor, &ctx, Primitive::Sphere);
+    let before = editor
+        .primitive_options
+        .dialog
+        .as_ref()
+        .unwrap()
+        .texts
+        .clone();
+    run(&mut editor, &ctx, vec![]);
+    let field = ctx
+        .read_response(option_field_id(0))
+        .expect("field response");
+    let start = field.rect.center();
+    run(&mut editor, &ctx, vec![Event::PointerMoved(start)]);
+    run(
+        &mut editor,
+        &ctx,
+        vec![Event::PointerButton {
+            pos: start,
+            button: PointerButton::Primary,
+            pressed: true,
+            modifiers: Modifiers::NONE,
+        }],
+    );
+    for step in 1..=5 {
+        run(
+            &mut editor,
+            &ctx,
+            vec![Event::PointerMoved(
+                start + egui::vec2(20.0 * step as f32, 0.0),
+            )],
+        );
+    }
+    run(
+        &mut editor,
+        &ctx,
+        vec![Event::PointerButton {
+            pos: start + egui::vec2(100.0, 0.0),
+            button: PointerButton::Primary,
+            pressed: false,
+            modifiers: Modifiers::NONE,
+        }],
+    );
+    assert_eq!(
+        editor.primitive_options.dialog.as_ref().unwrap().texts,
+        before,
+        "the fields are text-only (PROVISIONAL: Maya's option fields may scrub)"
+    );
+}
+
+#[test]
+fn escape_while_a_close_is_in_progress_keeps_the_hidden_window() {
+    let (mut editor, ctx) = setup();
+    open_dialog(&mut editor, &ctx, Primitive::Sphere);
+    editor.apply_operation(Operation::RequestClose).unwrap();
+    assert!(editor.files.is_closing() && !editor.files.is_modal());
+    run(&mut editor, &ctx, vec![key(Key::Escape)]);
+    assert!(editor.primitive_options.dialog.is_some());
+}
