@@ -40,6 +40,39 @@ pub(super) const HELP_MENU: &str = "Help";
 pub(super) const DELETE_BY_TYPE_REASON: &str =
     "Deleting by node type is not supported yet; select the object and use Delete";
 
+pub(super) const POLYGON_PRIMITIVES_MENU: &str = "Polygon Primitives";
+
+pub(super) const INTERACTIVE_CREATION_REASON: &str =
+    "Interactive creation is not implemented; primitives are created at the origin";
+pub(super) const EXIT_ON_COMPLETION_REASON: &str =
+    "Only applies to interactive creation, which is not implemented";
+
+/// Maya 2027's Create > Polygon Primitives list (docs GUID-45D2EAD4-5BCF-42DA-A1AB-EC6EE09FE705);
+/// the order within the submenu is PROVISIONAL. `None` marks an entry not built yet.
+pub(super) const POLYGON_PRIMITIVES: [(&str, Option<Primitive>); 15] = [
+    ("Sphere", Some(Primitive::Sphere)),
+    ("Cube", Some(Primitive::Cube)),
+    ("Cylinder", Some(Primitive::Cylinder)),
+    ("Cone", Some(Primitive::Cone)),
+    ("Torus", None),
+    ("Plane", Some(Primitive::Plane)),
+    ("Disc", None),
+    ("Platonic Solid", None),
+    ("Pyramid", None),
+    ("Prism", None),
+    ("Pipe", None),
+    ("Helix", None),
+    ("Gear", None),
+    ("Soccer Ball", None),
+    ("Super Shapes", None),
+];
+
+fn unbuilt_primitive_reason(label: &str) -> String {
+    format!(
+        "{label} is not implemented yet; the supported primitives are Sphere, Cube, Cylinder, Cone and Plane"
+    )
+}
+
 fn placeholder_menu(ui: &mut egui::Ui, label: &str) {
     ui.menu_button(label, |ui| {
         unsupported(ui, "Not implemented yet");
@@ -218,16 +251,29 @@ impl Editor {
                 }
             });
             ui.menu_button("Create", |ui| {
-                for (primitive, label) in [
-                    (Primitive::Cube, "Polygon cube"),
-                    (Primitive::Plane, "Polygon plane"),
-                    (Primitive::Sphere, "Polygon sphere"),
-                    (Primitive::Cylinder, "Polygon cylinder"),
-                    (Primitive::Cone, "Polygon cone"),
-                ] {
-                    self.create_row(ui, primitive, label, read_only_reason);
-                }
-                unsupported(ui, "Other primitives");
+                ui.menu_button(POLYGON_PRIMITIVES_MENU, |ui| {
+                    // Toggles per Maya-Modeling GUID-6D21314A-54AD-41D4-AFC0-AAED13CD50A6; their
+                    // position and the unchecked Exit on Completion default are PROVISIONAL.
+                    for (label, reason) in [
+                        ("Interactive Creation", INTERACTIVE_CREATION_REASON),
+                        ("Exit on Completion", EXIT_ON_COMPLETION_REASON),
+                    ] {
+                        ui.add_enabled(false, egui::Checkbox::new(&mut false, label))
+                            .on_disabled_hover_text(reason);
+                    }
+                    ui.separator();
+                    for (label, primitive) in POLYGON_PRIMITIVES {
+                        match primitive {
+                            Some(primitive) => {
+                                self.create_row(ui, primitive, label, read_only_reason);
+                            }
+                            None => {
+                                ui.add_enabled(false, egui::Button::new(label))
+                                    .on_disabled_hover_text(unbuilt_primitive_reason(label));
+                            }
+                        }
+                    }
+                });
             });
             ui.menu_button("Select", |ui| {
                 if ui.button("Object / Component   F8").clicked() {
