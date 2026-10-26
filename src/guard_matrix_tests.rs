@@ -11,7 +11,8 @@
 
 use super::*;
 use crate::editor_operations::{
-    FileDecision, ManipulationSpace, ManipulationValue, MoveDistance, RemoteRequest, TransformInput,
+    FileDecision, ManipulationSpace, ManipulationValue, MoveDistance, RemoteRequest, ToolHandle,
+    TransformInput,
 };
 use azteccraft::history::Command;
 use azteccraft::history::{ManipulationFinish, ManipulationId};
@@ -519,6 +520,7 @@ fn seeds(t: &Targets) -> Vec<Operation> {
             tool: ActiveTool::Scale,
             space: ManipulationSpace::Object,
         },
+        Operation::SetToolHandle(ToolHandle::RotateAxis(RotateAxis::Y)),
         Operation::BeginMove {
             target: t.transform_target(),
             axis: WorldAxis::X,
@@ -684,6 +686,20 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
                     tool: ActiveTool::Move,
                     space: ManipulationSpace::World,
                 },
+            ),
+        ],
+        Operation::SetToolHandle(_) => vec![
+            sample(
+                "set_tool_handle(rotate,y)",
+                Operation::SetToolHandle(ToolHandle::RotateAxis(RotateAxis::Y)),
+            ),
+            sample(
+                "set_tool_handle(scale,uniform)",
+                Operation::SetToolHandle(ToolHandle::ScaleHandle(ScaleHandle::Uniform)),
+            ),
+            sample(
+                "set_tool_handle(scale,x)",
+                Operation::SetToolHandle(ToolHandle::ScaleHandle(ScaleHandle::X)),
             ),
         ],
         Operation::BeginMove { .. } => vec![
@@ -1342,6 +1358,16 @@ fn observe(editor: &Editor, roots: &[&std::path::Path]) -> Observed {
         ("dirty", editor.is_dirty().to_string()),
         ("can_undo", editor.history.can_undo().to_string()),
         ("can_redo", editor.history.can_redo().to_string()),
+        (
+            "tool_settings",
+            format!(
+                "rotate_space={:?} scale_space={:?} rotate_axis={:?} scale_handle={:?}",
+                editor.manipulation.space(ActiveTool::Rotate),
+                editor.manipulation.space(ActiveTool::Scale),
+                editor.manipulation.rotate_axis(),
+                editor.manipulation.scale_handle()
+            ),
+        ),
     ];
     Observed {
         scene: scene.clone(),

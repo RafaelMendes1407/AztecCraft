@@ -166,6 +166,14 @@ pub enum MoveDistance {
     Declared(f64),
 }
 
+/// The persistent selection behind the Rotate axis and Scale handle controls. The sum type makes
+/// a Rotate "uniform" or a Scale axis-only choice unrepresentable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ToolHandle {
+    RotateAxis(RotateAxis),
+    ScaleHandle(ScaleHandle),
+}
+
 pub enum Operation {
     SetActiveTool(ActiveTool),
     /// Sets the Axis Orientation of the Rotate or Scale tool settings; any other `tool` is an
@@ -174,6 +182,8 @@ pub enum Operation {
         tool: ActiveTool,
         space: ManipulationSpace,
     },
+    /// Sets the persistent Rotate axis or Scale handle that numeric entry uses.
+    SetToolHandle(ToolHandle),
     BeginMove {
         target: TransformTarget,
         axis: WorldAxis,
@@ -460,6 +470,10 @@ pub struct ManipulationInspection {
     /// The Axis Orientation each tool uses for its next manipulation.
     pub rotate_space: ManipulationSpace,
     pub scale_space: ManipulationSpace,
+    /// The persistent Rotate axis ("x", "y", "z") and Scale handle ("x", "y", "z", "uniform")
+    /// that numeric entry uses, spelled as the tool arguments are.
+    pub rotate_axis: &'static str,
+    pub scale_handle: &'static str,
     /// What each parameter of `update_manipulation` is measured in.
     pub units: ManipulationUnits,
     /// Whether a numeric manipulation of each kind could begin on the selection now.
@@ -746,7 +760,7 @@ pub const STATUS_MESSAGE_WITHHELD: &str = "File operation failed (details withhe
 #[cfg(any(test, feature = "mcp"))]
 const STATUS_MESSAGE_MAX_BYTES: usize = STATUS_MESSAGE_MAX_CHARS * 6 + 32;
 #[cfg(any(test, feature = "mcp"))]
-const MOVE_INSPECTION_MAX_BYTES: usize = 32 * 1024;
+pub(crate) const MOVE_INSPECTION_MAX_BYTES: usize = 32 * 1024;
 /// Nine f32 values (at most 15 JSON bytes each), three f64 degree values (at most 24) and the
 /// field names: about 330 bytes in the worst case.
 #[cfg(any(test, feature = "mcp"))]
