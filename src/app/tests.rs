@@ -8539,3 +8539,222 @@ fn unbuilt_primitives_and_the_interactive_toggles_are_disabled_with_their_reason
         open_polygon_primitives(&mut editor, &ctx, size);
     }
 }
+
+fn pose_op(yaw: f32, pitch: f32, distance: f32) -> Operation {
+    Operation::SetCameraPose {
+        target: [1.0, 0.5, -2.0],
+        distance,
+        yaw,
+        pitch,
+    }
+}
+
+fn remote_pose(
+    editor: &mut Editor,
+    token: Uuid,
+    operation: Operation,
+) -> Result<OperationReply, OperationError> {
+    editor.remote_operation(
+        RemoteRequest {
+            expected_scene_token: Some(token),
+            operation,
+        },
+        &egui::Context::default(),
+    )
+}
+
+#[test]
+fn set_camera_pose_changes_only_the_camera_and_reports_unchanged_on_repeat() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let (token, dirty, scene, undoable) = (
+        editor.scene_token,
+        editor.is_dirty(),
+        editor.history.scene().clone(),
+        editor.history.can_undo(),
+    );
+    let lens = editor.camera.clone();
+    let reply = remote_pose(&mut editor, token, pose_op(7.0, 0.2, 5.0)).unwrap();
+    assert!(matches!(reply, OperationReply::Changed));
+    assert_eq!(editor.camera.target(), Vec3::new(1.0, 0.5, -2.0));
+    assert_eq!(editor.camera.distance(), 5.0);
+    assert_eq!(editor.camera.pitch(), 0.2);
+    assert_eq!(
+        editor.camera.yaw(),
+        7.0_f32.rem_euclid(std::f32::consts::TAU)
+    );
+    assert_eq!(
+        [
+            editor.camera.fov_y(),
+            editor.camera.near(),
+            editor.camera.far()
+        ],
+        [lens.fov_y(), lens.near(), lens.far()]
+    );
+    let again = remote_pose(&mut editor, token, pose_op(7.0, 0.2, 5.0)).unwrap();
+    assert!(matches!(again, OperationReply::Unchanged));
+    assert_eq!(editor.scene_token, token);
+    assert_eq!(editor.is_dirty(), dirty);
+    assert_eq!(editor.history.scene(), &scene);
+    assert_eq!(editor.history.can_undo(), undoable);
+}
+
+#[test]
+fn set_camera_pose_rejects_invalid_fields_with_a_named_error_and_keeps_the_camera() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let token = editor.scene_token;
+    let camera = editor.camera.clone();
+    let status = editor.status.clone();
+    for (operation, text) in [
+        (pose_op(0.0, 1.6, 5.0), "pitch"),
+        (pose_op(f32::NAN, 0.2, 5.0), "yaw"),
+        (pose_op(0.0, 0.2, 0.0), "distance"),
+        (pose_op(0.0, 0.2, f32::INFINITY), "distance"),
+    ] {
+        let error = remote_pose(&mut editor, token, operation).unwrap_err();
+        assert!(matches!(error, OperationError::CameraPose(_)), "{error}");
+        assert!(error.to_string().contains(text), "{error}");
+        assert_eq!(editor.camera, camera);
+        assert_eq!(editor.scene_token, token);
+        assert_eq!(editor.status, status);
+    }
+}
+
+#[test]
+fn set_camera_pose_rejects_a_stale_token_and_native_dispatch_matches_remote() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let camera = editor.camera.clone();
+    let error = remote_pose(&mut editor, Uuid::new_v4(), pose_op(0.3, 0.2, 5.0)).unwrap_err();
+    assert!(matches!(error, OperationError::StaleScene));
+    assert_eq!(editor.camera, camera);
+    editor.native_operation(pose_op(0.3, 0.2, 5.0));
+    assert_eq!(editor.camera.distance(), 5.0);
+    assert!(!editor.error);
+    editor.native_operation(pose_op(0.3, 0.2, -1.0));
+    assert_eq!(editor.camera.distance(), 5.0);
+    assert!(editor.error);
+}
+
+fn disturb_camera(editor: &mut Editor) {
+    editor.camera.orbit(glam::Vec2::new(1.2, -0.7)).unwrap();
+    editor.camera.pan(glam::Vec2::new(2.0, -1.0)).unwrap();
+    editor.camera.dolly(2.5).unwrap();
+    assert_ne!(editor.camera, Camera::default());
+}
+
+fn disturbed_camera_editor() -> Editor {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    disturb_camera(&mut editor);
+    editor
+}
+
+/// Presses and releases Home so egui does not mark the next press as a repeat.
+fn press_alt_home(editor: &mut Editor, ctx: &egui::Context, modifiers: egui::Modifiers) {
+    frame(editor, ctx, vec![key_with(Key::Home, modifiers)]);
+    frame(
+        editor,
+        ctx,
+        vec![egui::Event::Key {
+            key: Key::Home,
+            physical_key: None,
+            pressed: false,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }],
+    );
+}
+
+#[test]
+fn view_menu_default_view_row_restores_the_default_pose() {
+    let mut editor = disturbed_camera_editor();
+    let (token, scene) = (editor.scene_token, editor.history.scene().clone());
+    let ctx = egui::Context::default();
+    ctx.enable_accesskit();
+    let output = frame(&mut editor, &ctx, vec![]);
+    let menu = face_text_position(&output, "View");
+    let output = face_pointer_click(&mut editor, &ctx, menu, egui::Modifiers::NONE, vec![]);
+    let row = face_text_position(&output, "Default View (Alt+Home)");
+    face_pointer_click(&mut editor, &ctx, row, egui::Modifiers::NONE, vec![]);
+    assert_eq!(editor.camera, Camera::default());
+    assert_eq!(editor.scene_token, token);
+    assert_eq!(editor.history.scene(), &scene);
+}
+
+#[test]
+fn default_view_after_frame_all_restores_the_pose_but_keeps_the_grown_far_clip() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    editor.create(Primitive::Cube);
+    let transform = NativeTransform {
+        translation: [500000.0, 0.0, 0.0],
+        ..Default::default()
+    };
+    let input = editor.transform_input(transform).unwrap();
+    let id = editor.selected.unwrap();
+    remote(
+        &mut editor,
+        Operation::SetTransform {
+            id,
+            transform: input,
+        },
+    )
+    .unwrap();
+    let default = Camera::default();
+    remote(&mut editor, Operation::FrameAll).unwrap();
+    assert!(editor.camera.far() > default.far());
+    let grown = editor.camera.far();
+    editor.default_view();
+    let camera = &editor.camera;
+    assert_eq!(camera.target(), default.target());
+    assert_eq!(camera.distance(), default.distance());
+    assert_eq!(camera.yaw(), default.yaw());
+    assert_eq!(camera.pitch(), default.pitch());
+    assert_eq!(camera.far(), grown);
+}
+
+#[test]
+fn alt_home_restores_the_default_pose_and_other_modifiers_do_not() {
+    let mut editor = disturbed_camera_editor();
+    let disturbed = editor.camera.clone();
+    let ctx = egui::Context::default();
+    frame(&mut editor, &ctx, vec![]);
+    for modifiers in [
+        egui::Modifiers::NONE,
+        egui::Modifiers::SHIFT | egui::Modifiers::ALT,
+        egui::Modifiers::CTRL | egui::Modifiers::ALT,
+        egui::Modifiers::COMMAND | egui::Modifiers::ALT,
+    ] {
+        press_alt_home(&mut editor, &ctx, modifiers);
+        assert_eq!(editor.camera, disturbed, "{modifiers:?}");
+    }
+    press_alt_home(&mut editor, &ctx, egui::Modifiers::ALT);
+    assert_eq!(editor.camera, Camera::default());
+}
+
+#[test]
+fn alt_home_and_default_view_are_refused_while_modal_or_closing() {
+    let ctx = egui::Context::default();
+    let mut editor = disturbed_camera_editor();
+    editor.new_document().unwrap();
+    frame(&mut editor, &ctx, vec![]);
+    frame(&mut editor, &ctx, vec![]);
+    assert!(editor.files.is_modal());
+    let disturbed = editor.camera.clone();
+    press_alt_home(&mut editor, &ctx, egui::Modifiers::ALT);
+    assert_eq!(editor.camera, disturbed, "modal");
+
+    let mut editor = Editor::default();
+    editor.close_document().unwrap();
+    disturb_camera(&mut editor);
+    assert!(editor.files.is_closing());
+    let disturbed = editor.camera.clone();
+    press_alt_home(&mut editor, &ctx, egui::Modifiers::ALT);
+    assert_eq!(editor.camera, disturbed, "closing");
+    assert!(!editor.error, "the shortcut gate stops it before dispatch");
+    editor.default_view();
+    assert_eq!(editor.camera, disturbed, "menu path while closing");
+    assert!(editor.error);
+}
