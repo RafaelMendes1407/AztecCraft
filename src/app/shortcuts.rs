@@ -6,12 +6,15 @@ const USE_ALL_LIGHTS_NAME: &str = "Use All Lights (7)";
 
 /// One reason string for the hotkey status and the disabled menu row.
 pub(super) fn unsupported_shading_reason(name: &str) -> String {
-    format!("{name} is not implemented in this build")
+    format!("{name} is not implemented yet")
 }
 
 impl Editor {
     pub(super) fn shortcuts(&mut self, ctx: &egui::Context) -> Option<ActiveTool> {
-        if ctx.egui_wants_keyboard_input() || egui::Popup::is_any_open(ctx) || self.files.is_modal()
+        if ctx.egui_wants_keyboard_input()
+            || egui::Popup::is_any_open(ctx)
+            || self.files.is_modal()
+            || self.files.is_closing()
         {
             return None;
         }
@@ -62,10 +65,12 @@ impl Editor {
                 _ => None,
             })
         });
-        let (undo, redo, frame, frame_all, save, save_as) = ctx.input(|i| {
+        let (undo, redo, frame, frame_all) = ctx.input(|i| {
             (
                 i.modifiers.command && !i.modifiers.shift && i.key_pressed(Key::Z),
-                i.modifiers.command && i.modifiers.shift && i.key_pressed(Key::Z),
+                // Ctrl/Cmd Y is the documented Redo; Shift+Z stays as an extra.
+                i.modifiers.command && i.modifiers.shift && i.key_pressed(Key::Z)
+                    || i.modifiers.command && !i.modifiers.shift && i.key_pressed(Key::Y),
                 i.modifiers.is_none() && i.key_pressed(Key::F),
                 i.events.iter().any(|event| {
                     matches!(event, egui::Event::Key {
@@ -76,8 +81,6 @@ impl Editor {
                         ..
                     } if modifiers.is_none())
                 }),
-                i.modifiers.command && !i.modifiers.shift && i.key_pressed(Key::S),
-                i.modifiers.command && i.modifiers.shift && i.key_pressed(Key::S),
             )
         });
         // Maya documents Ctrl+A on every platform, so the modifier is explicit Ctrl, never Command.
@@ -126,11 +129,13 @@ impl Editor {
         if frame_all {
             self.frame_all();
         }
-        if save && self.files.save_available() {
-            self.native_operation(Operation::SaveScene);
-        }
-        if save_as && self.files.save_as_available() {
-            self.save_as_dialog();
+        if let Some(chord) = ctx.input(|i| menus::file_chord(&i.events)) {
+            let actions = self.file_actions();
+            if let Some(index) = menus::chord_entry(&actions, chord)
+                && actions[index].enabled
+            {
+                (actions[index].run)(self);
+            }
         }
         tool_intent
     }
