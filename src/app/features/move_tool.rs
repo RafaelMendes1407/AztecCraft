@@ -168,6 +168,7 @@ impl Editor {
                 operation,
                 Operation::SetActiveTool(_)
                     | Operation::Select { .. }
+                    | Operation::DeselectAll
                     | Operation::SetSelectionMode(_)
                     | Operation::SelectFace { .. }
                     | Operation::SelectVertex { .. }
