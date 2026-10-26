@@ -1,5 +1,29 @@
 # Known limitations
 
+## Manipulator size is PROVISIONAL and session-only
+
+**Severity:** low
+**Area:** viewport manipulators
+**Issue:** cristim/AztecCraft#165
+
+The + and - keys and `set_manipulator_size` set one global size from 0.10 to 10.00 for the Move,
+Rotate and Scale manipulators (Maya's Global scale). No parity with Maya is claimed. The Maya docs
+state the range but not the default, the step, key repeat or persistence, so these are PROVISIONAL:
+default 1.0, keys step on the 1.25^k grid (integer k from -10 to 10, about 0.107 to 9.31, so round
+trips are exact), key repeat steps again, and the size is session-only (no preferences store; it
+never dirties the scene or enters history). The MCP tool accepts any value from 0.1 to 10, rounded to three decimals; a later key step moves to the next grid value in its direction that changes the three-decimal value.
+
+- The drawn length is `max(72 * size, 36)` px before the view foreshortening, so below size 0.5 the
+  manipulator stops shrinking on screen. A foreshortened axis (#155) can still become hard to pick.
+- The arrowhead, boxes, centre zones and pick radius stay fixed in pixels.
+- At very large sizes with a wide field of view, ring segments behind the camera are dropped rather
+  than near-clipped, and the hemisphere cull is approximate.
+- Unsupported: the Preferences Manipulators page, Handle size and Line size (`manipOptions
+  -handleSize` and `-lineSize`).
+- Plain-text focus keeps the keys for the field (the shortcut gate returns early while a text field
+  wants keyboard input); this is checked by code reading only, with no test. Native QA covered + and -
+  resizing the Move manipulator, not text-field focus.
+
 ## Material data editing is a bounded candidate
 
 The native Common Material Attributes/Diffuse control and `set_material_diffuse`

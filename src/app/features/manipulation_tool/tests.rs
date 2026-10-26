@@ -2,6 +2,7 @@ use super::*;
 use crate::app::features::move_tool::tests::{button, frame, key, raw, viewport};
 use azteccraft::{
     manipulator_handles::{DisabledKind, HandleFrame, RotateHandles},
+    move_handles::ManipulatorSize,
     native_scene::{NativeError, ScaleUnsupported},
     scene::Primitive,
     viewport::Camera,
@@ -92,11 +93,16 @@ impl View {
 
     // The point of the ring about `axis` at `degrees` from the ring point nearest the eye.
     fn ring(&self, axis: Vec3, degrees: f32) -> Pos2 {
+        self.ring_sized(axis, degrees, 1.0)
+    }
+
+    // The same point on a ring whose radius is `factor` times the default one.
+    fn ring_sized(&self, axis: Vec3, degrees: f32, factor: f32) -> Pos2 {
         let eye = self.camera.eye();
         let u = (eye - axis * eye.dot(axis)).normalize();
         let v = axis.cross(u);
         let angle = degrees.to_radians();
-        self.screen((u * angle.cos() + v * angle.sin()) * self.radius())
+        self.screen((u * angle.cos() + v * angle.sin()) * self.radius() * factor)
     }
 }
 
@@ -1403,6 +1409,320 @@ fn inspection_reports_the_persistent_axis_and_handle_in_tool_argument_spelling()
         editor.native_operation(Operation::SetToolHandle(ToolHandle::ScaleHandle(handle)));
         assert_eq!(read(&editor), ("x", text));
     }
+}
+
+fn size(value: f64) -> ManipulatorSize {
+    ManipulatorSize::new(value).unwrap()
+}
+
+#[test]
+fn set_manipulator_size_reports_changed_then_unchanged_without_touching_the_scene() {
+    let mut editor = Editor::default();
+    assert!(!editor.is_dirty());
+    let depth = undo_depth(&mut editor);
+    assert!(matches!(
+        editor.apply_operation(Operation::SetManipulatorSize(size(2.5))),
+        Ok(OperationReply::Changed)
+    ));
+    assert!(matches!(
+        editor.apply_operation(Operation::SetManipulatorSize(size(2.5))),
+        Ok(OperationReply::Unchanged)
+    ));
+    assert_eq!(editor.inspect_manipulation().unwrap().manipulator_size, 2.5);
+    assert!(!editor.is_dirty());
+    assert_eq!(undo_depth(&mut editor), depth);
+}
+
+#[test]
+fn manipulator_size_survives_a_new_scene() {
+    let mut editor = Editor::default();
+    editor.native_operation(Operation::SetManipulatorSize(size(3.0)));
+    editor.native_operation(Operation::NewScene);
+    assert_eq!(editor.manipulation.manipulator_size(), size(3.0));
+}
+
+#[test]
+fn a_native_size_change_resizes_the_next_handles() {
+    let (mut editor, context, view) = setup(Key::E, 1.0);
+    editor.native_operation(Operation::SetManipulatorSize(size(2.0)));
+    idle(&mut editor, &context, 1.0);
+    // The default ring radius no longer matches the drawn ring.
+    press(&mut editor, &context, 1.0, view.ring(Vec3::Y, 0.0));
+    assert!(editor.history.active_manipulation().is_none());
+    press(
+        &mut editor,
+        &context,
+        1.0,
+        view.ring_sized(Vec3::Y, 0.0, 2.0),
+    );
+    assert!(editor.history.active_manipulation().is_some());
+}
+
+#[test]
+fn manipulator_size_is_refused_during_a_manipulation_with_the_size_unchanged() {
+    let (mut editor, context, view) = setup(Key::E, 1.0);
+    press(&mut editor, &context, 1.0, view.ring(Vec3::Y, 0.0));
+    assert!(editor.history.active_manipulation().is_some());
+    editor.native_operation(Operation::SetManipulatorSize(size(2.0)));
+    assert_eq!(editor.status, OperationError::BusyManipulation.to_string());
+    assert!(editor.error);
+    assert_eq!(editor.manipulation.manipulator_size(), size(1.0));
+    let token = editor.scene_token;
+    let result = editor.remote_operation(
+        crate::editor_operations::RemoteRequest {
+            expected_scene_token: Some(token),
+            operation: Operation::SetManipulatorSize(size(2.0)),
+        },
+        &context,
+    );
+    assert!(matches!(result, Err(OperationError::BusyManipulation)));
+    // The draft commit before native dispatch refuses with the same status text, so only the
+    // operation's own result proves the move-dispatch guard holds.
+    assert!(matches!(
+        editor.apply_operation(Operation::SetManipulatorSize(size(2.0))),
+        Err(OperationError::BusyManipulation)
+    ));
+    assert_eq!(editor.manipulation.manipulator_size(), size(1.0));
+}
+
+#[test]
+fn manipulator_size_is_refused_while_a_modal_prompt_is_open() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    editor.request_close();
+    assert!(editor.files.is_modal());
+    // Native dispatch reaches the per-variant modal list; the remote path is refused earlier.
+    editor.native_operation(Operation::SetManipulatorSize(size(2.0)));
+    assert_eq!(editor.manipulation.manipulator_size(), size(1.0));
+    assert!(editor.error);
+    assert_eq!(editor.status, OperationError::BusyEditing.to_string());
+}
+
+#[test]
+fn a_remote_size_change_is_refused_during_a_human_draft_and_native_commits_the_draft_first() {
+    let (mut editor, context, _) = setup(Key::E, 1.0);
+    editor.channels[0] = "2".into();
+    let token = editor.scene_token;
+    let result = editor.remote_operation(
+        crate::editor_operations::RemoteRequest {
+            expected_scene_token: Some(token),
+            operation: Operation::SetManipulatorSize(size(2.0)),
+        },
+        &context,
+    );
+    assert!(matches!(result, Err(OperationError::BusyEditing)));
+    assert_eq!(editor.manipulation.manipulator_size(), size(1.0));
+    assert!(editor.has_draft());
+    editor.native_operation(Operation::SetManipulatorSize(size(2.0)));
+    assert!(!editor.has_draft());
+    assert_eq!(editor.manipulation.manipulator_size(), size(2.0));
+}
+
+fn size_key(key: Key, repeat: bool, modifiers: Modifiers) -> Event {
+    Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat,
+        modifiers,
+    }
+}
+
+fn press_size_key(tool: Key, event: Event) -> Editor {
+    let (mut editor, context, _) = setup(tool, 1.0);
+    frame(
+        &mut editor,
+        &context,
+        raw(SIZE, Pos2::ZERO, 1.0, vec![event]),
+    );
+    editor
+}
+
+#[test]
+fn plus_with_or_without_shift_and_equals_grow_and_minus_shrinks() {
+    let shift = Modifiers::SHIFT;
+    for event in [
+        size_key(Key::Plus, false, shift),
+        size_key(Key::Plus, false, Modifiers::NONE),
+        size_key(Key::Equals, false, Modifiers::NONE),
+    ] {
+        let editor = press_size_key(Key::W, event);
+        assert_eq!(editor.manipulation.manipulator_size(), size(1.25));
+    }
+    let editor = press_size_key(Key::E, size_key(Key::Minus, false, Modifiers::NONE));
+    assert_eq!(editor.manipulation.manipulator_size(), size(0.8));
+    let editor = press_size_key(Key::R, size_key(Key::Plus, false, Modifiers::NONE));
+    assert_eq!(editor.manipulation.manipulator_size(), size(1.25));
+}
+
+const TOP_STATUS: &str = "Manipulator size is at or above its largest key step (9.31); set_manipulator_size reaches 10.00";
+const BOTTOM_STATUS: &str = "Manipulator size is at or below its smallest key step (0.11); set_manipulator_size reaches 0.10";
+
+fn tap(editor: &mut Editor, context: &egui::Context, key: Key) {
+    frame(
+        editor,
+        context,
+        raw(
+            SIZE,
+            Pos2::ZERO,
+            1.0,
+            vec![size_key(key, false, Modifiers::NONE)],
+        ),
+    );
+}
+
+#[test]
+fn holding_a_size_key_stops_at_the_grid_end_and_names_that_limit() {
+    for (key, steps, end, status) in [
+        (Key::Plus, 10, 1.25_f64.powi(10), TOP_STATUS),
+        (Key::Minus, 10, 1.25_f64.powi(-10), BOTTOM_STATUS),
+    ] {
+        let (mut editor, context, _) = setup(Key::W, 1.0);
+        for _ in 0..steps {
+            tap(&mut editor, &context, key);
+        }
+        assert_eq!(editor.manipulation.manipulator_size().get(), end);
+        assert!(editor.status.is_empty(), "{}", editor.status);
+        tap(&mut editor, &context, key);
+        assert_eq!(editor.status, status);
+        assert_eq!(editor.manipulation.manipulator_size().get(), end);
+    }
+}
+
+#[test]
+fn an_mcp_size_above_the_key_grid_end_is_refused_by_plus_without_changing() {
+    let (mut editor, context, _) = setup(Key::W, 1.0);
+    editor.native_operation(Operation::SetManipulatorSize(size(9.5)));
+    tap(&mut editor, &context, Key::Plus);
+    assert_eq!(editor.status, TOP_STATUS);
+    assert_eq!(editor.manipulation.manipulator_size().get(), 9.5);
+}
+
+#[test]
+fn one_key_press_and_its_release_step_exactly_once() {
+    let (mut editor, context, _) = setup(Key::W, 1.0);
+    let release = Event::Key {
+        key: Key::Plus,
+        physical_key: None,
+        pressed: false,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    };
+    for event in [size_key(Key::Plus, false, Modifiers::NONE), release] {
+        frame(
+            &mut editor,
+            &context,
+            raw(SIZE, Pos2::ZERO, 1.0, vec![event]),
+        );
+    }
+    assert_eq!(editor.manipulation.manipulator_size(), size(1.25));
+}
+
+#[test]
+fn other_modifiers_shift_minus_and_the_select_tool_do_not_resize() {
+    for event in [
+        size_key(Key::Plus, false, Modifiers::CTRL),
+        size_key(Key::Minus, false, Modifiers::COMMAND),
+        size_key(Key::Equals, false, Modifiers::ALT),
+        size_key(Key::Minus, false, Modifiers::SHIFT),
+    ] {
+        let editor = press_size_key(Key::W, event);
+        assert_eq!(editor.manipulation.manipulator_size(), size(1.0));
+    }
+    let editor = press_size_key(Key::Q, size_key(Key::Plus, false, Modifiers::NONE));
+    assert_eq!(editor.manipulation.manipulator_size(), size(1.0));
+}
+
+#[test]
+fn key_repeat_steps_and_the_bounds_report_a_status_without_an_operation() {
+    let (mut editor, context, _) = setup(Key::W, 1.0);
+    for _ in 0..2 {
+        frame(
+            &mut editor,
+            &context,
+            raw(
+                SIZE,
+                Pos2::ZERO,
+                1.0,
+                vec![size_key(Key::Plus, true, Modifiers::NONE)],
+            ),
+        );
+    }
+    assert_eq!(editor.manipulation.manipulator_size().get(), 1.5625);
+    editor.native_operation(Operation::SetManipulatorSize(size(10.0)));
+    frame(
+        &mut editor,
+        &context,
+        raw(
+            SIZE,
+            Pos2::ZERO,
+            1.0,
+            vec![size_key(Key::Plus, false, Modifiers::NONE)],
+        ),
+    );
+    assert_eq!(editor.status, TOP_STATUS);
+    assert!(!editor.error);
+    editor.native_operation(Operation::SetManipulatorSize(size(0.1)));
+    frame(
+        &mut editor,
+        &context,
+        raw(
+            SIZE,
+            Pos2::ZERO,
+            1.0,
+            vec![size_key(Key::Minus, false, Modifiers::NONE)],
+        ),
+    );
+    assert_eq!(editor.status, BOTTOM_STATUS);
+    assert_eq!(editor.manipulation.manipulator_size(), size(0.1));
+    frame(
+        &mut editor,
+        &context,
+        raw(
+            SIZE,
+            Pos2::ZERO,
+            1.0,
+            vec![size_key(Key::Plus, false, Modifiers::NONE)],
+        ),
+    );
+    assert!(
+        editor.status.is_empty() && !editor.error,
+        "{}",
+        editor.status
+    );
+}
+
+#[test]
+fn the_size_keys_are_refused_during_a_drag_and_ignored_under_a_modal() {
+    let (mut editor, context, view) = setup(Key::E, 1.0);
+    press(&mut editor, &context, 1.0, view.ring(Vec3::Y, 0.0));
+    assert!(editor.history.active_manipulation().is_some());
+    frame(
+        &mut editor,
+        &context,
+        raw(
+            SIZE,
+            Pos2::ZERO,
+            1.0,
+            vec![size_key(Key::Plus, false, Modifiers::NONE)],
+        ),
+    );
+    assert_eq!(editor.manipulation.manipulator_size(), size(1.0));
+    assert!(editor.history.active_manipulation().is_some());
+    release(&mut editor, &context, 1.0, view.ring(Vec3::Y, 0.0));
+    editor.request_close();
+    assert!(editor.files.is_modal());
+    frame(
+        &mut editor,
+        &context,
+        raw(
+            SIZE,
+            Pos2::ZERO,
+            1.0,
+            vec![size_key(Key::Plus, false, Modifiers::NONE)],
+        ),
+    );
+    assert_eq!(editor.manipulation.manipulator_size(), size(1.0));
 }
 
 #[test]
