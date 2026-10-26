@@ -83,7 +83,7 @@ impl fmt::Display for InvalidCameraPose {
 }
 impl std::error::Error for InvalidCameraPose {}
 
-/// Orbit's pitch limit, just short of the poles so the view never flips.
+/// Pitch limit shared by `new`, `set_pose` and `orbit`, just short of the poles so the view never flips.
 pub const MAX_PITCH: f32 = std::f32::consts::FRAC_PI_2 - 0.001;
 
 impl Default for Camera {
@@ -135,6 +135,8 @@ impl Camera {
                 .map(f32::to_bits)
     }
 
+    /// Builds a camera in the same normal form `orbit` and `set_pose` keep: yaw wraps into
+    /// `[0, TAU)` and a pitch beyond `MAX_PITCH` is rejected, not clamped.
     pub fn new(
         target: Vec3,
         yaw: f32,
@@ -146,7 +148,7 @@ impl Camera {
     ) -> Result<Self, InvalidCameraInput> {
         let camera = Self {
             target,
-            yaw,
+            yaw: wrap_yaw(yaw),
             pitch,
             distance,
             fov_y,
@@ -161,7 +163,7 @@ impl Camera {
         if !self.target.is_finite()
             || !self.yaw.is_finite()
             || !self.pitch.is_finite()
-            || self.pitch.abs() >= std::f32::consts::FRAC_PI_2
+            || self.pitch.abs() > MAX_PITCH
             || !self.distance.is_finite()
             || self.distance <= 0.0
             || !self.fov_y.is_finite()
@@ -189,7 +191,7 @@ impl Camera {
     pub fn yaw(&self) -> f32 {
         self.yaw
     }
-    /// Elevation in radians, positive above the target, strictly inside (-pi/2, pi/2).
+    /// Elevation in radians, positive above the target, within ±`MAX_PITCH`.
     pub fn pitch(&self) -> f32 {
         self.pitch
     }
@@ -265,6 +267,8 @@ impl Camera {
     /// Restores an absolute view. Yaw wraps like `orbit`; a pitch beyond orbit's limit is
     /// rejected rather than clamped so a pose that was read back never changes silently.
     /// fov and clip planes are untouched. The camera is unchanged on error.
+    /// Changed/Unchanged is numeric: -0.0 equals 0.0, so a pose differing only in zero signs is
+    /// no change although the stored bits may flip; `same_capture` compares bits.
     pub fn set_pose(
         &mut self,
         target: Vec3,

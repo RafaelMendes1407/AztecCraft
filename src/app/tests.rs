@@ -3633,6 +3633,109 @@ fn new_chord_ignores_shift_repeat_and_missing_command() {
     }
 }
 
+/// A selected cube and a camera panned off it, so framing visibly moves the camera.
+fn frame_key_editor() -> Editor {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    assert!(editor.selected_move_target().is_ok());
+    editor.camera.pan(glam::vec2(4.0, 3.0)).unwrap();
+    editor
+}
+
+/// egui keeps only the frame-final modifiers, so F must be judged by its own event.
+#[test]
+fn frame_selected_pressed_with_a_modifier_is_not_rescued_by_a_same_frame_release() {
+    for held in [
+        egui::Modifiers::CTRL,
+        egui::Modifiers::SHIFT,
+        egui::Modifiers::ALT,
+        egui::Modifiers::COMMAND,
+    ] {
+        let mut editor = frame_key_editor();
+        let before = editor.camera.clone();
+        let events = vec![
+            key_event(Key::F, held, false),
+            egui::Event::ModifiersChanged(egui::Modifiers::NONE),
+        ];
+        shortcuts_in(&egui::Context::default(), &mut editor, held, events);
+        assert!(editor.camera.same_capture(&before), "{held:?}");
+    }
+}
+
+#[test]
+fn frame_selected_pressed_bare_is_not_cancelled_by_a_modifier_arriving_later() {
+    let mut editor = frame_key_editor();
+    let before = editor.camera.clone();
+    let events = vec![
+        key_event(Key::F, egui::Modifiers::NONE, false),
+        egui::Event::ModifiersChanged(egui::Modifiers::CTRL),
+    ];
+    let none = egui::Modifiers::NONE;
+    shortcuts_in(&egui::Context::default(), &mut editor, none, events);
+    assert!(!editor.camera.same_capture(&before));
+}
+
+/// Held F repeats (PROVISIONAL, known-issues.md): the second frame on one context, with no
+/// release between, carries an OS repeat event and frames again.
+#[test]
+fn frame_selected_repeats_while_f_is_held() {
+    let mut editor = frame_key_editor();
+    let ctx = egui::Context::default();
+    let none = egui::Modifiers::NONE;
+    shortcuts_in(
+        &ctx,
+        &mut editor,
+        none,
+        vec![key_event(Key::F, none, false)],
+    );
+    let first = editor.camera.clone();
+    editor.camera.pan(glam::vec2(4.0, 3.0)).unwrap();
+    let panned = editor.camera.clone();
+    assert!(!panned.same_capture(&first));
+    shortcuts_in(&ctx, &mut editor, none, vec![key_event(Key::F, none, true)]);
+    let repeated = ctx.input(|i| {
+        i.events.iter().any(|event| {
+            matches!(
+                event,
+                egui::Event::Key {
+                    key: Key::F,
+                    repeat: true,
+                    ..
+                }
+            )
+        })
+    });
+    assert!(repeated, "the second frame must carry a repeat event");
+    assert!(!editor.camera.same_capture(&panned));
+}
+
+/// Only the press frames: a release, in the same frame or a later one, must not frame again.
+#[test]
+fn frame_selected_counts_the_f_press_and_not_the_release() {
+    let none = egui::Modifiers::NONE;
+    let release = || egui::Event::Key {
+        key: Key::F,
+        physical_key: None,
+        pressed: false,
+        repeat: false,
+        modifiers: none,
+    };
+    let mut editor = frame_key_editor();
+    let ctx = egui::Context::default();
+    let both = vec![key_event(Key::F, none, false), release()];
+    shortcuts_in(&ctx, &mut editor, none, both);
+    let framed = editor.camera.clone();
+    editor.camera.pan(glam::vec2(4.0, 3.0)).unwrap();
+    let panned = editor.camera.clone();
+    assert!(!panned.same_capture(&framed));
+    shortcuts_in(&ctx, &mut editor, none, vec![release()]);
+    assert!(editor.camera.same_capture(&panned));
+    let mut lone = frame_key_editor();
+    let before = lone.camera.clone();
+    shortcuts_in(&ctx, &mut lone, none, vec![release()]);
+    assert!(lone.camera.same_capture(&before));
+}
+
 /// Held Undo and Redo repeat; Maya's hotkeys page does not say (PROVISIONAL, known-issues.md).
 #[test]
 fn held_undo_and_redo_chords_repeat() {
@@ -8820,6 +8923,37 @@ fn remote_pose(
         },
         &egui::Context::default(),
     )
+}
+
+/// The reply is numeric, so -0.0 over 0.0 is `Unchanged` although the stored sign bits flip.
+#[test]
+fn set_camera_pose_negative_zero_over_zero_replies_unchanged_and_flips_the_stored_bits() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let token = editor.scene_token;
+    let pose = |zero: f32| Operation::SetCameraPose {
+        target: [zero; 3],
+        distance: 5.0,
+        yaw: zero,
+        pitch: zero,
+    };
+    let reply = remote_pose(&mut editor, token, pose(0.0)).unwrap();
+    assert!(matches!(reply, OperationReply::Changed));
+    let (dirty, scene, undoable) = (
+        editor.is_dirty(),
+        editor.history.scene().clone(),
+        editor.history.can_undo(),
+    );
+    let reply = remote_pose(&mut editor, token, pose(-0.0)).unwrap();
+    assert!(matches!(reply, OperationReply::Unchanged));
+    assert_eq!(editor.scene_token, token);
+    assert_eq!(editor.is_dirty(), dirty);
+    assert_eq!(editor.history.scene(), &scene);
+    assert_eq!(editor.history.can_undo(), undoable);
+    let negative = (-0.0_f32).to_bits();
+    assert_eq!(editor.camera.yaw().to_bits(), negative);
+    assert_eq!(editor.camera.pitch().to_bits(), negative);
+    assert_eq!(editor.camera.target().x.to_bits(), negative);
 }
 
 #[test]

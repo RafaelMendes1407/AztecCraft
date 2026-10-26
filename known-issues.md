@@ -767,9 +767,9 @@ docs give bare names (PROVISIONAL).
 Held Ctrl/Cmd Z and Ctrl/Cmd Y keep repeating Undo and Redo (egui reports OS key repeat), capped at
 one step per frame, so the rate is frame-rate bound. Keys that ignore repeat: the file chords N, O, S
 and Shift+S (menus.rs:128), Q/W/E/R (shortcuts.rs:26), 4/5/6/7 (shortcuts.rs:44), Alt+Home
-(shortcuts.rs:74), A (shortcuts.rs:88) and Ctrl+A (shortcuts.rs:101). Keys that repeat besides Undo
+(shortcuts.rs:74), A (shortcuts.rs:95) and Ctrl+A (shortcuts.rs:108). Keys that repeat besides Undo
 and Redo: the manipulator size keys +, = and - (shortcuts.rs:52), F (shortcuts.rs:83), Escape
-(shortcuts.rs:185, idempotent), and F8/F9/F10/F11 and Delete (panels.rs:48-62, no repeat filter). Not
+(shortcuts.rs:192, idempotent), and F8/F9/F10/F11 and Delete (panels.rs:48-62, no repeat filter). Not
 reviewed against Maya: a held Delete or F8-F11 repeats. The Maya 2027 hotkeys page lists Ctrl z and Ctrl y
 (https://help.autodesk.com/cloudhelp/2027/ENU/Maya-KeyboardShortcuts/files/GUID-30CACC9D-8FBE-4B85-8A8F-C5ADF32DDD4E.htm)
 but does not say whether a held key repeats, so the repeat is PROVISIONAL and no Maya parity is claimed.
@@ -784,3 +784,8 @@ compared with Maya: PROVISIONAL. Default View restores only the pose (target, di
 pitch); the far clip plane, which framing can grow, is not reset. Fn+Option+Left as Alt+Home on compact Mac keyboards is unchecked.
 Maya's Undo/Redo View Change, the `[` and `]` view history and View > Bookmarks are not
 implemented; camera changes create no undo entries (see Core authoring limits).
+
+Set Camera Pose and `set_camera_pose` judge Changed/Unchanged numerically, so -0.0 over 0.0 (target, yaw or
+pitch) replies Unchanged while the stored sign bits flip; the view renders identically and inspect may show
+-0. Move-handle drag capture compares bits (`same_capture`), so the flip can only cancel a live drag
+conservatively, and the human-input guard keeps remote camera operations out of a held drag.
