@@ -784,3 +784,12 @@ chords and tool keys ignore repeat. The Maya 2027 hotkeys page lists Ctrl z and 
 but does not say whether a held key repeats, so the repeat is PROVISIONAL and no Maya parity is claimed.
 It is the behaviour before #283; a test pins it. File chords ignore repeat to avoid a second dialog or
 New, which does not apply to history steps.
+
+## Default View pose and view history are unverified
+
+The Default View row and Alt+Home restore AztecCraft's own default camera (target 0, yaw 0.6 rad,
+pitch 0.4 rad, distance 8). Maya documents no default perspective pose, so the pose is not
+compared with Maya: PROVISIONAL. Default View restores only the pose (target, distance, yaw,
+pitch); the far clip plane, which framing can grow, is not reset. Fn+Option+Left as Alt+Home on compact Mac keyboards is unchecked.
+Maya's Undo/Redo View Change, the `[` and `]` view history and View > Bookmarks are not
+implemented; camera changes create no undo entries (see Core authoring limits).
