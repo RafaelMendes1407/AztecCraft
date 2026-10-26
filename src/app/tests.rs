@@ -3701,6 +3701,262 @@ fn alt_modified_undo_and_redo_do_nothing() {
     }
 }
 
+/// An editor with both Undo and Redo available.
+fn history_chord_editor() -> Editor {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    editor.create(Primitive::Cube);
+    editor.history_step(false);
+    assert!(editor.history.can_undo() && editor.history.can_redo());
+    editor
+}
+
+/// What a refused history chord must leave untouched.
+fn history_outcome(editor: &Editor) -> impl PartialEq + std::fmt::Debug + use<> {
+    (
+        editor.history.scene().clone(),
+        editor.status.clone(),
+        editor.error,
+        editor.scene_token,
+    )
+}
+
+/// egui keeps only the frame-final modifiers, so the press must be judged by its own snapshot.
+#[test]
+fn history_chord_pressed_with_alt_is_not_rescued_by_a_same_frame_alt_release() {
+    let (command, shift) = (egui::Modifiers::COMMAND, egui::Modifiers::SHIFT);
+    let alt = command | egui::Modifiers::ALT;
+    for (pressed, key) in [(alt, Key::Z), (alt | shift, Key::Z), (alt, Key::Y)] {
+        let mut editor = history_chord_editor();
+        let before = history_outcome(&editor);
+        let events = vec![
+            key_event(key, pressed, false),
+            egui::Event::ModifiersChanged(command),
+        ];
+        shortcuts_in(&egui::Context::default(), &mut editor, pressed, events);
+        assert_eq!(history_outcome(&editor), before, "{pressed:?} {key:?}");
+    }
+}
+
+#[test]
+fn history_chord_pressed_with_alt_is_not_rescued_through_the_frame() {
+    let mut editor = history_chord_editor();
+    let before = history_outcome(&editor);
+    let command = egui::Modifiers::COMMAND;
+    let events = vec![
+        egui::Event::ModifiersChanged(command | egui::Modifiers::ALT),
+        key_event(Key::Z, command | egui::Modifiers::ALT, false),
+        egui::Event::ModifiersChanged(command),
+    ];
+    frame(&mut editor, &egui::Context::default(), events);
+    assert_eq!(history_outcome(&editor), before);
+}
+
+#[test]
+fn history_chord_pressed_before_alt_is_not_cancelled_by_alt_arriving_later() {
+    let mut editor = history_chord_editor();
+    let undone = editor.history.scene().clone();
+    let command = egui::Modifiers::COMMAND;
+    let events = vec![
+        key_event(Key::Z, command, false),
+        egui::Event::ModifiersChanged(command | egui::Modifiers::ALT),
+    ];
+    shortcuts_in(&egui::Context::default(), &mut editor, command, events);
+    assert_ne!(editor.history.scene(), &undone);
+    assert!(editor.status.starts_with("Undo"), "{}", editor.status);
+}
+
+/// The assertions before each dialog call make a broken setup panic instead of reaching rfd.
+#[test]
+fn save_as_dialog_refuses_while_closing_and_keeps_the_active_move() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let Ok(OperationReply::PendingConfirmation {
+        pending_action_id, ..
+    }) = editor.close_document()
+    else {
+        panic!("a dirty scene must ask before closing");
+    };
+    editor
+        .apply_operation(Operation::ResolveFileAction {
+            pending_id: Uuid::parse_str(&pending_action_id).unwrap(),
+            decision: crate::editor_operations::FileDecision::Discard,
+        })
+        .unwrap();
+    let target = editor.history.scene().transform_paths().unwrap().remove(0);
+    editor
+        .history
+        .begin_move(
+            &target,
+            azteccraft::native_scene::WorldAxis::X,
+            editor.scene_token,
+            ManipulationProvenance::Remote,
+            1 << 20,
+        )
+        .unwrap();
+    // Without the guard the move yields BusyManipulation, a different status, so this fails
+    // instead of reaching rfd.
+    assert!(
+        editor.files.is_closing()
+            && !editor.files.save_as_available()
+            && editor.history.active_manipulation().is_some()
+    );
+    editor.save_as_dialog();
+    assert_eq!(editor.status, OperationError::BusyEditing.to_string());
+    assert!(editor.error);
+    assert!(editor.history.active_manipulation().is_some());
+}
+
+#[test]
+fn open_dialog_refuses_while_closing_and_keeps_the_active_move() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let Ok(OperationReply::PendingConfirmation {
+        pending_action_id, ..
+    }) = editor.close_document()
+    else {
+        panic!("a dirty scene must ask before closing");
+    };
+    editor
+        .apply_operation(Operation::ResolveFileAction {
+            pending_id: Uuid::parse_str(&pending_action_id).unwrap(),
+            decision: crate::editor_operations::FileDecision::Discard,
+        })
+        .unwrap();
+    editor.new_document().unwrap();
+    let target = editor.history.scene().transform_paths().unwrap().remove(0);
+    editor
+        .history
+        .begin_move(
+            &target,
+            azteccraft::native_scene::WorldAxis::X,
+            editor.scene_token,
+            ManipulationProvenance::Remote,
+            1 << 20,
+        )
+        .unwrap();
+    assert!(
+        editor.files.is_closing()
+            && editor.files.is_modal()
+            && editor.history.active_manipulation().is_some()
+    );
+    editor.open_dialog();
+    assert_eq!(editor.status, OperationError::BusyEditing.to_string());
+    assert!(editor.error);
+    assert!(editor.history.active_manipulation().is_some());
+}
+
+/// egui-winit stamps a key release with the held modifiers, so only the press may step history.
+#[test]
+fn undo_and_redo_step_once_per_keystroke_not_on_release() {
+    let command = egui::Modifiers::COMMAND;
+    let release = |key| egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed: false,
+        repeat: false,
+        modifiers: command,
+    };
+    for key in [Key::Z, Key::Y] {
+        for same_frame in [true, false] {
+            let mut editor = Editor::default();
+            for _ in 0..3 {
+                editor.create(Primitive::Cube);
+            }
+            let one_object_more = editor.history.scene().clone();
+            editor.history_step(false);
+            let middle = editor.history.scene().clone();
+            editor.history_step(false);
+            let two_undone = editor.history.scene().clone();
+            // Z starts from the full scene, Y from the doubly undone one; one step reaches `middle`.
+            if key == Key::Z {
+                editor.history_step(true);
+                editor.history_step(true);
+            }
+            assert_ne!(middle, one_object_more);
+            assert_ne!(middle, two_undone);
+            let ctx = egui::Context::default();
+            if same_frame {
+                let events = vec![key_event(key, command, false), release(key)];
+                shortcuts_in(&ctx, &mut editor, command, events);
+            } else {
+                let press = vec![key_event(key, command, false)];
+                shortcuts_in(&ctx, &mut editor, command, press);
+                shortcuts_in(&ctx, &mut editor, command, vec![release(key)]);
+            }
+            assert_eq!(
+                editor.history.scene(),
+                &middle,
+                "{key:?} same_frame={same_frame}"
+            );
+        }
+    }
+}
+
+/// Undo and Redo take one step per frame, and the last history chord in the frame wins.
+#[test]
+fn history_chords_step_once_per_frame_and_the_last_one_wins() {
+    let command = egui::Modifiers::COMMAND;
+    let redo_chord = command | egui::Modifiers::SHIFT;
+    let release = || egui::Event::Key {
+        key: Key::Z,
+        physical_key: None,
+        pressed: false,
+        repeat: false,
+        modifiers: command,
+    };
+    let steps = |events: Vec<egui::Event>, redo_available: bool| {
+        let mut editor = Editor::default();
+        for _ in 0..3 {
+            editor.create(Primitive::Cube);
+        }
+        let full = editor.history.scene().clone();
+        editor.history_step(false);
+        let one_undone = editor.history.scene().clone();
+        editor.history_step(false);
+        let two_undone = editor.history.scene().clone();
+        if !redo_available {
+            editor.history_step(true);
+            editor.history_step(true);
+        }
+        let start = editor.history.scene().clone();
+        shortcuts_in(&egui::Context::default(), &mut editor, command, events);
+        (
+            full,
+            one_undone,
+            two_undone,
+            start,
+            editor.history.scene().clone(),
+        )
+    };
+    // Two Undo presses with a release between: one step, not one per press.
+    let events = vec![
+        key_event(Key::Z, command, false),
+        release(),
+        key_event(Key::Z, command, false),
+    ];
+    let (full, one_undone, _, start, after) = steps(events, false);
+    assert_eq!(start, full);
+    assert_eq!(after, one_undone);
+    // Redo chord then Undo chord: Undo wins. With the redo stack empty a leaked Redo would re-apply it.
+    let events = vec![
+        key_event(Key::Z, redo_chord, false),
+        egui::Event::ModifiersChanged(command),
+        key_event(Key::Z, command, false),
+    ];
+    let (full, one_undone, _, start, after) = steps(events, false);
+    assert_eq!(start, full);
+    assert_eq!(after, one_undone);
+    // Undo chord then Redo chord: Redo wins and takes exactly one step.
+    let events = vec![
+        key_event(Key::Z, command, false),
+        key_event(Key::Z, redo_chord, false),
+    ];
+    let (_, one_undone, two_undone, start, after) = steps(events, true);
+    assert_eq!(start, two_undone);
+    assert_eq!(after, one_undone);
+}
+
 #[test]
 fn save_chord_does_nothing_while_save_is_unavailable() {
     let mut editor = Editor::default();
@@ -3726,15 +3982,18 @@ fn cmd_y_redoes_after_undo_and_shift_y_does_not() {
     assert!(editor.status.starts_with("Redo"), "{}", editor.status);
 }
 
+/// Two creates so an Undo that also fires in the same frame as the Redo leaves one object, not two.
 #[test]
 fn cmd_shift_z_still_redoes() {
     let mut editor = Editor::default();
     editor.create(Primitive::Cube);
+    editor.create(Primitive::Cube);
+    let full = editor.history.scene().clone();
     editor.history_step(false);
-    let undone = editor.history.scene().clone();
+    assert_ne!(editor.history.scene(), &full);
     let chord = egui::Modifiers::COMMAND | egui::Modifiers::SHIFT;
     shortcuts_with(&mut editor, chord, &[Key::Z]);
-    assert_ne!(editor.history.scene(), &undone);
+    assert_eq!(editor.history.scene(), &full);
 }
 
 #[test]
