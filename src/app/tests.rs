@@ -1235,6 +1235,49 @@ fn face_mode_on_a_curves_only_ascii_scene_refuses_face_targets_and_preserves_sta
     assert_eq!(inspection.curves.len(), 1);
 }
 
+fn channel_text(output: &egui::FullOutput) -> String {
+    output
+        .shapes
+        .iter()
+        .filter_map(|shape| match &shape.shape {
+            egui::Shape::Text(text) => Some(text.galley.job.text.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("|")
+}
+
+fn help_line_text(editor: &mut Editor) -> String {
+    let context = egui::Context::default();
+    let mut output = context.run_ui(egui::RawInput::default(), |ui| editor.help_line(ui));
+    output.textures_delta.clear();
+    channel_text(&output)
+}
+
+/// Channel Box text while the pointer rests on `field`, so tooltips are included.
+fn hover_texts(editor: &mut Editor, context: &egui::Context, field: egui::Id) -> String {
+    context.global_style_mut(|style| style.interaction.tooltip_delay = 0.0);
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(420.0, 900.0));
+    let mut text = String::new();
+    for step in 0..8 {
+        let at = context
+            .read_response(field)
+            .map_or(egui::pos2(60.0, 60.0), |response| response.rect.center());
+        let mut output = context.run_ui(
+            egui::RawInput {
+                screen_rect: Some(screen),
+                time: Some(10.0 + f64::from(step) * 0.25),
+                events: vec![egui::Event::PointerMoved(at)],
+                ..Default::default()
+            },
+            |ui| editor.channels(ui, &mut false),
+        );
+        output.textures_delta.clear();
+        text = channel_text(&output);
+    }
+    text
+}
+
 #[test]
 fn ascii_channel_controls_are_disabled_and_show_the_shared_core_reason() {
     let directory = tempfile::tempdir().unwrap();
@@ -1272,7 +1315,16 @@ fn ascii_channel_controls_are_disabled_and_show_the_shared_core_reason() {
             .authoring_read_only_reason()
             .unwrap()
             .to_string();
-        assert!(output.shapes.iter().any(|shape| matches!(&shape.shape,egui::Shape::Text(text) if text.galley.job.text.contains(&reason))));
+        assert!(
+            !channel_text(&output).contains(&reason),
+            "the panel no longer prints the reason"
+        );
+        let help = help_line_text(&mut editor);
+        assert!(help.contains(&reason), "{help}");
+        assert!(
+            hover_texts(&mut editor, &context, text_id).contains(&reason),
+            "no reason tooltip on the disabled field"
+        );
         assert_eq!((&editor.name, &editor.channels), (&fields.0, &fields.1));
         assert!(!context.memory(|memory| memory.has_focus(text_id)));
         assert!(!editor.has_draft());
@@ -1419,7 +1471,7 @@ fn ascii_outliner_selection_and_frame_use_actual_curve_owner_without_authoring()
 }
 
 #[test]
-fn channel_box_appearance_summary_precedes_controls_and_preserves_human_state() {
+fn channel_box_keeps_human_state_and_leaves_diagnostics_to_the_help_line() {
     for width in [240.0, 420.0] {
         let context = egui::Context::default();
         let mut editor = Editor::default();
@@ -1444,29 +1496,9 @@ fn channel_box_appearance_summary_precedes_controls_and_preserves_human_state() 
             frame.textures_delta.clear();
             output = Some(frame);
         }
-        let output = output.unwrap();
-        let labels: Vec<_> = output
-            .shapes
-            .iter()
-            .filter_map(|shape| match &shape.shape {
-                egui::Shape::Text(text) => Some((text.galley.job.text.as_str(), text.pos.y)),
-                _ => None,
-            })
-            .collect();
-        let summary = labels
-            .iter()
-            .find(|(text, _)| *text == "Direct shapes (1)")
-            .unwrap();
-        let controls = labels
-            .iter()
-            .find(|(text, _)| *text == "Object name")
-            .unwrap();
-        assert!(summary.1 < controls.1);
-        assert!(
-            labels
-                .iter()
-                .any(|(text, _)| text.contains("Evaluation unavailable"))
-        );
+        let text = channel_text(&output.unwrap());
+        assert!(text.contains("Translate X"), "{text}");
+        assert!(!text.contains("Direct shapes") && !text.contains("Evaluation unavailable"));
         assert_eq!(editor.history.scene(), &scene);
         assert_eq!(editor.selection_presentation().0, selected);
         assert_eq!(editor.selection_presentation().1, path);
@@ -1474,6 +1506,163 @@ fn channel_box_appearance_summary_precedes_controls_and_preserves_human_state() 
         assert_eq!(editor.name, "pending human draft");
         assert!(context.memory(|memory| memory.has_focus(name_edit_id())));
     }
+}
+
+#[test]
+fn help_line_summary_is_closed_until_the_scene_diagnostics_header_opens() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let ctx = egui::Context::default();
+    frame(&mut editor, &ctx, vec![]);
+    let output = frame(&mut editor, &ctx, vec![]);
+    let text = channel_text(&output);
+    assert!(text.contains("Scene diagnostics"), "{text}");
+    assert!(!text.contains("Direct shapes") && !text.contains("Evaluation unavailable"));
+    let header = face_text_position(&output, "Scene diagnostics");
+    face_pointer_click(&mut editor, &ctx, header, egui::Modifiers::NONE, vec![]);
+    for _ in 0..3 {
+        frame(&mut editor, &ctx, vec![]);
+    }
+    let text = channel_text(&frame(&mut editor, &ctx, vec![]));
+    assert!(text.contains("Direct shapes (1)"), "{text}");
+    assert!(text.contains("Evaluation unavailable"), "{text}");
+}
+
+#[test]
+fn channel_box_lists_unsupported_sections_in_maya_order_without_changing_state() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let scene = editor.history.scene().clone();
+    let context = egui::Context::default();
+    context.enable_accesskit();
+    let mut output = context.run_ui(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(420.0, 1200.0),
+            )),
+            ..Default::default()
+        },
+        |ui| editor.channels(ui, &mut false),
+    );
+    output.textures_delta.clear();
+    let y = |label: &str| face_text_position(&output, label).y;
+    let order = [
+        "Translate X",
+        "SHAPES",
+        "INPUTS",
+        "OUTPUTS",
+        "Materials",
+        "Layers",
+    ];
+    for pair in order.windows(2) {
+        assert!(y(pair[0]) < y(pair[1]), "{} before {}", pair[0], pair[1]);
+    }
+    let stubs = output
+        .platform_output
+        .accesskit_update
+        .as_ref()
+        .unwrap()
+        .nodes
+        .iter()
+        .filter(|(_, node)| {
+            node.label()
+                .is_some_and(|label| label.ends_with(": not implemented yet"))
+        })
+        .collect::<Vec<_>>();
+    let mut names = stubs
+        .iter()
+        .map(|(_, node)| node.label().unwrap())
+        .collect::<Vec<_>>();
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        [
+            "INPUTS: not implemented yet",
+            "Layers: not implemented yet",
+            "OUTPUTS: not implemented yet",
+            "SHAPES: not implemented yet",
+        ]
+    );
+    assert!(stubs.iter().all(|(_, node)| node.is_disabled()));
+    assert_eq!(editor.history.scene(), &scene);
+    assert!(!editor.has_draft());
+}
+
+#[test]
+fn channel_box_reaches_delete_and_layers_at_the_minimum_window_size() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let ctx = egui::Context::default();
+    let size = egui::vec2(960.0, 640.0);
+    let painted = |output: &egui::FullOutput, text: &str| {
+        output.shapes.iter().any(|shape| match &shape.shape {
+            egui::Shape::Text(t) => t.galley.job.text == text && t.pos.y < size.y,
+            _ => false,
+        })
+    };
+    let mut output = frame_with(&mut editor, &ctx, size, 1.0, vec![]);
+    assert!(painted(&output, "Translate X"));
+    assert!(!painted(&output, "Delete selected"), "scroll not exercised");
+    let camera = editor.camera.clone();
+    // Pointer over the right-hand Channel Box panel, below its heading.
+    let over_panel = egui::pos2(size.x - 100.0, 300.0);
+    let mut events = vec![egui::Event::PointerMoved(over_panel)];
+    for _ in 0..10 {
+        events.push(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -200.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: egui::Modifiers::NONE,
+        });
+        output = frame_with(&mut editor, &ctx, size, 1.0, std::mem::take(&mut events));
+    }
+    assert_eq!(editor.camera, camera, "wheel reached the viewport");
+    assert!(painted(&output, "Delete selected"), "Delete unreachable");
+    assert!(painted(&output, "Layers"), "Layers unreachable");
+}
+
+#[test]
+fn channel_box_is_blank_with_nothing_selected() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    editor.select(None);
+    assert!(editor.single_target().is_err());
+    let (text, _) = channel_box_text(&mut editor);
+    assert_eq!(text, "Channel Box|Layers|Not implemented yet");
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("curve.ma");
+    std::fs::write(&path, ascii_fixture::specimen()).unwrap();
+    let mut editor = Editor::default();
+    editor
+        .apply_operation(Operation::OpenScene { path })
+        .unwrap();
+    editor.select(None);
+    let (text, _) = channel_box_text(&mut editor);
+    for absent in ["Select an object", "Direct shapes", "Curves:", "read-only"] {
+        assert!(!text.contains(absent), "{text}");
+    }
+}
+
+#[test]
+fn help_line_carries_the_read_only_reason_and_curves_note() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("curve.ma");
+    std::fs::write(&path, ascii_fixture::specimen()).unwrap();
+    let mut editor = Editor::default();
+    editor
+        .apply_operation(Operation::OpenScene { path })
+        .unwrap();
+    let reason = editor.read_only_reason().unwrap();
+    let text = help_line_text(&mut editor);
+    assert!(text.contains(&reason) && text.contains("Curves:"), "{text}");
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let text = help_line_text(&mut editor);
+    assert!(
+        !text.contains("Curves:") && text.contains("Scene diagnostics"),
+        "{text}"
+    );
 }
 
 #[test]
@@ -1879,7 +2068,20 @@ fn display_menu_shows_grid_options_disabled_with_the_default_grid_reason() {
     let menu = face_text_position(&output, "Display");
     let output = face_pointer_click(&mut editor, &ctx, menu, egui::Modifiers::NONE, vec![]);
     let row = face_text_position(&output, "Grid Options");
-    assert!(face_text_position(&output, "Not implemented yet").y < row.y);
+    // The Channel Box on the right also carries unsupported stubs; the menu row is the left one.
+    let stub = output
+        .shapes
+        .iter()
+        .find_map(|shape| match &shape.shape {
+            egui::Shape::Text(text)
+                if text.galley.job.text == "Not implemented yet" && text.pos.x < 1100.0 =>
+            {
+                Some(text.pos)
+            }
+            _ => None,
+        })
+        .expect("menu stub row");
+    assert!(stub.y < row.y);
     let before = (editor.grid_visible, editor.history.scene().clone());
     face_pointer_click(&mut editor, &ctx, row, egui::Modifiers::NONE, vec![]);
     assert_eq!(
@@ -4358,7 +4560,11 @@ mod menu_bar_wire {
             let opened = frame(&mut editor, &context, vec![]);
             let rows: Vec<Control> = controls(&opened)
                 .into_iter()
-                .filter(|c| c.rect.top() > 30.0 && c.label == "Not implemented yet")
+                .filter(|c| {
+                    c.rect.top() > 20.0
+                        && c.rect.left() < 1100.0
+                        && c.label == "Not implemented yet"
+                })
                 .collect();
             assert_eq!(rows.len(), 1, "{label}");
             assert!(rows[0].disabled, "{label} row must be disabled");
@@ -6803,9 +7009,16 @@ fn modified_clicks_in_vertex_and_edge_modes_are_refused_without_changes() {
 fn a_mode_intent_in_the_click_frame_makes_the_click_use_the_new_mode() {
     for (key_code, vertex) in [(Key::F9, true), (Key::F10, false)] {
         let (mut editor, ctx, rect) = component_click_editor();
+        assert_eq!(
+            face_viewport_rect(&frame(&mut editor, &ctx, vec![])),
+            rect,
+            "stale viewport rect"
+        );
         let (front, points) = front_vertices(&editor);
         let at = screen_point(&editor, rect, points[front[0]]);
-        face_pointer_click(&mut editor, &ctx, at, egui::Modifiers::NONE, vec![]);
+        let center = screen_point(&editor, rect, glam::Vec3::ZERO);
+        // The vertex sits on the silhouette; a click there can miss the cube and deselect it.
+        face_pointer_click(&mut editor, &ctx, center, egui::Modifiers::NONE, vec![]);
         assert_eq!(editor.selection_mode, SelectionMode::Object);
         face_pointer_click(
             &mut editor,
@@ -7423,6 +7636,123 @@ fn release_click_and_tab_after_a_first_click_defer_the_blur_commit_once() {
     }
     assert_eq!(undo_entries(&mut editor), undo_before + 2);
     assert!(!editor.has_draft());
+}
+
+fn type_into_name(editor: &mut Editor, ctx: &egui::Context, text: &str) {
+    ctx.memory_mut(|memory| memory.request_focus(name_edit_id()));
+    frame(editor, ctx, vec![]);
+    frame(editor, ctx, vec![egui::Event::Text(text.into())]);
+}
+
+fn node_name(editor: &Editor) -> String {
+    editor.history.scene().nodes()[0].name().to_string()
+}
+
+#[test]
+fn heading_name_enter_commits_one_rename() {
+    let (mut editor, ctx) = unfocused_cube_editor();
+    let undo_before = undo_entries(&mut editor);
+    type_into_name(&mut editor, &ctx, "Boxy");
+    assert!(editor.name.ends_with("Boxy") && editor.has_draft());
+    frame(&mut editor, &ctx, vec![key(Key::Enter)]);
+    assert!(node_name(&editor).ends_with("Boxy"));
+    for _ in 0..3 {
+        frame(&mut editor, &ctx, vec![]);
+    }
+    assert_eq!(undo_entries(&mut editor), undo_before + 1);
+    assert!(!editor.has_draft());
+}
+
+#[test]
+fn heading_name_tab_blur_commits_exactly_once() {
+    let (mut editor, ctx) = unfocused_cube_editor();
+    let undo_before = undo_entries(&mut editor);
+    type_into_name(&mut editor, &ctx, "Boxy");
+    frame(&mut editor, &ctx, vec![key(Key::Tab)]);
+    for _ in 0..4 {
+        frame(&mut editor, &ctx, vec![]);
+    }
+    assert!(node_name(&editor).ends_with("Boxy"));
+    assert_eq!(undo_entries(&mut editor), undo_before + 1);
+}
+
+#[test]
+fn heading_name_blur_honours_the_skip_frames_and_the_kept_draft_commits_after() {
+    let (mut editor, ctx) = unfocused_cube_editor();
+    let original = node_name(&editor);
+    let undo_before = undo_entries(&mut editor);
+    type_into_name(&mut editor, &ctx, "Boxy");
+    editor.blur_commit_skip_frames = 3;
+    frame(&mut editor, &ctx, vec![key(Key::Tab)]);
+    assert_eq!(node_name(&editor), original);
+    assert!(editor.has_draft());
+    assert_eq!(undo_entries(&mut editor), undo_before);
+    // The blur was swallowed, so the draft stays until a later commit trigger.
+    editor.blur_commit_skip_frames = 0;
+    editor.commit_pending();
+    assert!(node_name(&editor).ends_with("Boxy"));
+    assert_eq!(undo_entries(&mut editor), undo_before + 1);
+}
+
+#[test]
+fn heading_name_rejected_rename_keeps_the_draft() {
+    let (mut editor, ctx) = unfocused_cube_editor();
+    let original = node_name(&editor);
+    let undo_before = undo_entries(&mut editor);
+    ctx.memory_mut(|memory| memory.request_focus(name_edit_id()));
+    frame(&mut editor, &ctx, vec![]);
+    editor.name.clear();
+    editor.name_intent = true;
+    frame(&mut editor, &ctx, vec![key(Key::Enter)]);
+    for _ in 0..3 {
+        frame(&mut editor, &ctx, vec![]);
+    }
+    assert_eq!(node_name(&editor), original);
+    assert_eq!(editor.name, "");
+    assert!(editor.name_intent && editor.error);
+    assert_eq!(undo_entries(&mut editor), undo_before);
+}
+
+#[test]
+fn read_only_heading_still_exposes_the_object_name_label() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("curve.ma");
+    std::fs::write(&path, ascii_fixture::specimen()).unwrap();
+    let mut editor = Editor::default();
+    editor
+        .apply_operation(Operation::OpenScene { path })
+        .unwrap();
+    let id = editor.history.scene().nodes()[0].id();
+    editor.select(Some(id));
+    let context = egui::Context::default();
+    context.enable_accesskit();
+    let mut output = context.run_ui(egui::RawInput::default(), |ui| {
+        editor.channels(ui, &mut false)
+    });
+    output.textures_delta.clear();
+    let node = output
+        .platform_output
+        .accesskit_update
+        .as_ref()
+        .unwrap()
+        .nodes
+        .iter()
+        .find(|(_, node)| node.label() == Some("Object name"))
+        .expect("heading label");
+    assert!(node.1.is_disabled());
+}
+
+#[test]
+fn attribute_editor_keeps_the_labelled_object_name_row() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    let ctx = egui::Context::default();
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| editor.attribute_editor(ui));
+    output.textures_delta.clear();
+    assert!(output.shapes.iter().any(|shape| matches!(
+        &shape.shape,
+        egui::Shape::Text(text) if text.galley.job.text == "Object name"
+    )));
 }
 
 mod primitive_options_create {
