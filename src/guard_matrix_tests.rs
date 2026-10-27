@@ -11,14 +11,17 @@
 
 use super::*;
 use crate::editor_operations::{
-    FileDecision, ManipulationSpace, ManipulationValue, MoveDistance, RemoteRequest, TransformInput,
+    FileDecision, ManipulationSpace, ManipulationValue, MoveDistance, RemoteRequest, ToolHandle,
+    TransformInput,
 };
 use azteccraft::history::Command;
 use azteccraft::history::{ManipulationFinish, ManipulationId};
+use azteccraft::move_handles::ManipulatorSize;
 use azteccraft::native_scene::{
     MaterialChoice, NativeScene, RotateAxis, ScaleHandle, SessionMaterialId, TransformTarget,
     WorldAxis,
 };
+use azteccraft::primitive_options::{Axis, PrimitiveOptions};
 use std::fmt::Write as _;
 
 #[allow(dead_code)]
@@ -34,6 +37,17 @@ mod material_fixture {
     include!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/support/maya_appearance.rs"
+    ));
+}
+#[allow(dead_code)]
+mod sited_fixture {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/support/maya_binary_sites.rs"
+    ));
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/support/maya_binary_sited.rs"
     ));
 }
 mod ascii_fixture {
@@ -81,11 +95,12 @@ enum State {
     StaleNativeInput,
     ReadOnlyAscii,
     BinaryDirty,
+    SitedBinaryDirty,
     NoInstall,
     NoInstallModal,
 }
 
-const STATES: [State; 21] = [
+const STATES: [State; 22] = [
     State::Idle,
     State::Closing,
     State::Modal,
@@ -105,6 +120,7 @@ const STATES: [State; 21] = [
     State::StaleNativeInput,
     State::ReadOnlyAscii,
     State::BinaryDirty,
+    State::SitedBinaryDirty,
     State::NoInstall,
     State::NoInstallModal,
 ];
@@ -131,6 +147,7 @@ impl State {
             Self::StaleNativeInput => "stale_token+native_input_pending",
             Self::ReadOnlyAscii => "read_only_ascii",
             Self::BinaryDirty => "binary_dirty",
+            Self::SitedBinaryDirty => "sited_binary_dirty",
             Self::NoInstall => "no_install",
             Self::NoInstallModal => "no_install_modal",
         }
@@ -328,8 +345,21 @@ fn material_editor() -> Editor {
 
 /// A dirty, writable Maya binary document: the only fixture whose Save paths reach the installer.
 fn binary_editor(directory: &std::path::Path) -> Editor {
+    dirty_binary_editor(directory, material_wire::specimen())
+}
+
+/// A dirty binary document whose `object` transform has no translate leaf but a recorded site, so
+/// the edit that dirtied it makes Save insert the leaf (issue #19).
+fn sited_binary_editor(directory: &std::path::Path) -> Editor {
+    dirty_binary_editor(
+        directory,
+        sited_fixture::sited_scene(&material_wire::mesh_payload(&[0, 1, 0x6000_0002])),
+    )
+}
+
+fn dirty_binary_editor(directory: &std::path::Path, bytes: Vec<u8>) -> Editor {
     let path = directory.join("original.mb");
-    std::fs::write(&path, material_wire::specimen()).unwrap();
+    std::fs::write(&path, bytes).unwrap();
     let mut editor = Editor::default();
     editor
         .apply_operation(Operation::OpenScene { path })
@@ -468,6 +498,7 @@ fn build(state: State) -> Rig {
             );
         }
         State::BinaryDirty => editor = binary_editor(directory.path()),
+        State::SitedBinaryDirty => editor = sited_binary_editor(directory.path()),
         State::NoInstall => {
             editor = binary_editor(directory.path());
             may_install = false;
@@ -490,6 +521,8 @@ fn seeds(t: &Targets) -> Vec<Operation> {
             tool: ActiveTool::Scale,
             space: ManipulationSpace::Object,
         },
+        Operation::SetToolHandle(ToolHandle::RotateAxis(RotateAxis::Y)),
+        Operation::SetManipulatorSize(ManipulatorSize::new(2.0).unwrap()),
         Operation::BeginMove {
             target: t.transform_target(),
             axis: WorldAxis::X,
@@ -536,6 +569,7 @@ fn seeds(t: &Targets) -> Vec<Operation> {
         Operation::Inspect,
         Operation::Create {
             primitive: Primitive::Plane,
+            options: None,
             name: None,
         },
         Operation::Select {
@@ -609,6 +643,13 @@ fn seeds(t: &Targets) -> Vec<Operation> {
             world_units: [1.0, 0.0],
         },
         Operation::Dolly { factor: 1.1 },
+        // Differs from the rig's default camera so a Changed outcome is observable.
+        Operation::SetCameraPose {
+            target: [1.0, 0.5, -2.0],
+            distance: 5.0,
+            yaw: 0.3,
+            pitch: 0.2,
+        },
     ]
 }
 
@@ -654,6 +695,30 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
                     tool: ActiveTool::Move,
                     space: ManipulationSpace::World,
                 },
+            ),
+        ],
+        Operation::SetToolHandle(_) => vec![
+            sample(
+                "set_tool_handle(rotate,y)",
+                Operation::SetToolHandle(ToolHandle::RotateAxis(RotateAxis::Y)),
+            ),
+            sample(
+                "set_tool_handle(scale,uniform)",
+                Operation::SetToolHandle(ToolHandle::ScaleHandle(ScaleHandle::Uniform)),
+            ),
+            sample(
+                "set_tool_handle(scale,x)",
+                Operation::SetToolHandle(ToolHandle::ScaleHandle(ScaleHandle::X)),
+            ),
+        ],
+        Operation::SetManipulatorSize(_) => vec![
+            sample(
+                "set_manipulator_size(2)",
+                Operation::SetManipulatorSize(ManipulatorSize::new(2.0).unwrap()),
+            ),
+            sample(
+                "set_manipulator_size(1)",
+                Operation::SetManipulatorSize(ManipulatorSize::default()),
             ),
         ],
         Operation::BeginMove { .. } => vec![
@@ -819,6 +884,7 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
                 "create(plane)",
                 Operation::Create {
                     primitive: Primitive::Plane,
+                    options: None,
                     name: None,
                 },
             ),
@@ -826,6 +892,7 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
                 "create(sphere)",
                 Operation::Create {
                     primitive: Primitive::Sphere,
+                    options: None,
                     name: None,
                 },
             ),
@@ -833,6 +900,7 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
                 "create(cylinder)",
                 Operation::Create {
                     primitive: Primitive::Cylinder,
+                    options: None,
                     name: None,
                 },
             ),
@@ -840,6 +908,44 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
                 "create(cone)",
                 Operation::Create {
                     primitive: Primitive::Cone,
+                    options: None,
+                    name: None,
+                },
+            ),
+            sample(
+                "create(cube,options)",
+                Operation::Create {
+                    primitive: Primitive::Cube,
+                    options: Some(PrimitiveOptions::Cube {
+                        width: 2.0,
+                        height: 3.0,
+                        depth: 4.0,
+                        sub_width: 2,
+                        sub_height: 2,
+                        sub_depth: 2,
+                        axis: Axis::Z,
+                    }),
+                    name: None,
+                },
+            ),
+            sample(
+                "create(sphere,invalid options)",
+                Operation::Create {
+                    primitive: Primitive::Sphere,
+                    options: Some(PrimitiveOptions::Sphere {
+                        radius: -1.0,
+                        sub_axis: 20,
+                        sub_height: 20,
+                        axis: Axis::Y,
+                    }),
+                    name: None,
+                },
+            ),
+            sample(
+                "create(cone,mismatched options)",
+                Operation::Create {
+                    primitive: Primitive::Cone,
+                    options: Some(PrimitiveOptions::default_for(Primitive::Cube)),
                     name: None,
                 },
             ),
@@ -1149,6 +1255,15 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
             },
         )],
         Operation::Dolly { .. } => vec![sample("dolly", Operation::Dolly { factor: 1.1 })],
+        Operation::SetCameraPose { .. } => vec![sample(
+            "set_camera_pose",
+            Operation::SetCameraPose {
+                target: [1.0, 0.5, -2.0],
+                distance: 5.0,
+                yaw: 0.3,
+                pitch: 0.2,
+            },
+        )],
     }
 }
 
@@ -1271,6 +1386,20 @@ fn observe(editor: &Editor, roots: &[&std::path::Path]) -> Observed {
         ("dirty", editor.is_dirty().to_string()),
         ("can_undo", editor.history.can_undo().to_string()),
         ("can_redo", editor.history.can_redo().to_string()),
+        (
+            "tool_settings",
+            format!(
+                "rotate_space={:?} scale_space={:?} rotate_axis={:?} scale_handle={:?}",
+                editor.manipulation.space(ActiveTool::Rotate),
+                editor.manipulation.space(ActiveTool::Scale),
+                editor.manipulation.rotate_axis(),
+                editor.manipulation.scale_handle()
+            ),
+        ),
+        (
+            "manipulator_size",
+            editor.manipulation.manipulator_size().get().to_string(),
+        ),
     ];
     Observed {
         scene: scene.clone(),
@@ -1306,6 +1435,7 @@ fn add_second_node(editor: &mut Editor) {
     editor
         .apply_operation(Operation::Create {
             primitive: Primitive::Plane,
+            options: None,
             name: None,
         })
         .unwrap();

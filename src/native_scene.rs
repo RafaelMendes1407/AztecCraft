@@ -1,6 +1,7 @@
 pub(crate) mod admission;
 mod appearance;
 pub mod ascii;
+mod authored;
 pub mod binary;
 mod curve;
 mod manipulator_frame;
@@ -29,6 +30,7 @@ pub use session_material::{
 use source::{ScalarOrigin, SourceFormat, SourceRetention, TransformField};
 pub use transform_extras::{InternalExtras, TransformAttributes, TransformExtras};
 
+use crate::primitive_options::PrimitiveOptions;
 use crate::scene::{NodeId, Primitive, Scene, SceneError, Transform};
 use glam::{DMat3, DMat4, DVec3, Vec3};
 use std::fmt;
@@ -225,6 +227,7 @@ impl Scalar {
         if self.origin.is_none()
             && source.is_some_and(|source| source.format == SourceFormat::Binary)
             && value.to_bits() != self.value.to_bits()
+            && !source.is_some_and(|source| source.can_insert(owner, field))
         {
             return Err(NativeError::UnsupportedEdit);
         }
@@ -261,7 +264,11 @@ impl Scalar {
         component: usize,
     ) -> Result<(), NativeError> {
         match (&self.origin, source) {
-            (None, Some(source)) if source.format == SourceFormat::Binary && self.replaced => {
+            (None, Some(source))
+                if source.format == SourceFormat::Binary
+                    && self.replaced
+                    && !source.can_insert(owner, field) =>
+            {
                 Err(NativeError::InvalidRetention)
             }
             (None, _) => Ok(()),
@@ -676,6 +683,7 @@ impl NativeScene {
             native.append(
                 node.id(),
                 node.name(),
+                format!("{}Shape", node.name()),
                 NativeMesh::from_legacy(node.mesh()),
                 transform,
             )?;
@@ -961,7 +969,59 @@ impl NativeScene {
     }
 
     pub fn create(&mut self, primitive: Primitive, name: &str) -> Result<NodeId, NativeError> {
+        self.create_with_options(primitive, &PrimitiveOptions::default_for(primitive), name)
+    }
+
+    /// Validates `options` against `primitive` before any mutation. An explicit name gives the
+    /// shape `<name>Shape`, as Maya's `polyCube -n` does.
+    pub fn create_with_options(
+        &mut self,
+        primitive: Primitive,
+        options: &PrimitiveOptions,
+        name: &str,
+    ) -> Result<NodeId, NativeError> {
+        self.create_named(primitive, options, name, format!("{name}Shape"))
+    }
+
+    /// Creates with Maya's default names: the transform takes the lowest free `pCube<N>` and
+    /// the shape, numbered separately, the lowest free `pCubeShape<M>` (#175). A name is free
+    /// when no transform or shape has it, because authored saves need unique names.
+    pub fn create_default_named(
+        &mut self,
+        primitive: Primitive,
+        options: &PrimitiveOptions,
+    ) -> Result<NodeId, NativeError> {
+        let base = match primitive {
+            Primitive::Cube => "pCube",
+            Primitive::Plane => "pPlane",
+            Primitive::Sphere => "pSphere",
+            Primitive::Cylinder => "pCylinder",
+            Primitive::Cone => "pCone",
+        };
+        let count = authored::names(self).count();
+        let free = |prefix: &str| {
+            (1..=count + 1)
+                .map(|suffix| format!("{prefix}{suffix}"))
+                .find(|name| !authored::names(self).any(|(_, taken)| taken == name))
+                .expect("count names cannot take count + 1 suffixes")
+        };
+        let name = free(base);
+        let shape_name = free(&format!("{base}Shape"));
+        self.create_named(primitive, options, &name, shape_name)
+    }
+
+    fn create_named(
+        &mut self,
+        primitive: Primitive,
+        options: &PrimitiveOptions,
+        name: &str,
+        shape_name: String,
+    ) -> Result<NodeId, NativeError> {
         self.structural_edit()?;
+        // The primitive/options pairing is the one check NativeMesh::with_options does not repeat.
+        options
+            .validate(primitive)
+            .map_err(SceneError::InvalidPrimitiveOptions)?;
         self.validate_new_name(None, name)?;
         let next = self
             .next_id
@@ -971,7 +1031,8 @@ impl NativeScene {
         self.append(
             id,
             name,
-            NativeMesh::primitive(primitive)?,
+            shape_name,
+            NativeMesh::with_options(options)?,
             NativeTransform::default(),
         )?;
         self.next_id = next;
@@ -982,6 +1043,7 @@ impl NativeScene {
         &mut self,
         id: NodeId,
         name: &str,
+        shape_name: String,
         mesh: NativeMesh,
         transform: NativeTransform,
     ) -> Result<(), NativeError> {
@@ -1007,7 +1069,7 @@ impl NativeScene {
         self.shapes.push(NativeMeshShape {
             id: shape_id,
             uuid: Some(Uuid::new_v4()),
-            name: format!("{name}Shape"),
+            name: shape_name,
             mesh,
             restrictions: Vec::new(),
             view: GeometryViewFacts::authored(),
@@ -1154,28 +1216,71 @@ impl NativeScene {
         self.structural_edit()?;
         let index = self.editable(id)?;
         self.validate_new_name(Some(id), name)?;
-        self.nodes[index].name = name.into();
+        self.set_transform_name(index, name);
         Ok(())
     }
-    pub fn remove(&mut self, id: NodeId) -> Result<(), NativeError> {
-        self.structural_edit()?;
-        let index = self.editable(id)?;
+    /// Renames the transform and, as Maya's `rename` does, each direct shape whose name is
+    /// still derived from it: `<old>Shape` becomes `<new>Shape`, and `<oldBase>Shape<digits>`
+    /// becomes `<newBase>Shape<newDigits>`, where a base is the name without trailing digits.
+    /// Other shape names are kept (#175). A derived name that another transform or shape
+    /// already has is not taken either: Maya allows that duplicate under another parent, but
+    /// authored saves need unique names.
+    fn set_transform_name(&mut self, index: usize, name: &str) {
+        let old = std::mem::replace(&mut self.nodes[index].name, name.into());
+        if old == name {
+            return;
+        }
         let transform = self.nodes[index].transform_id;
+        let children: Vec<_> = self
+            .dag
+            .iter()
+            .filter(|edge| edge.parent == Some(transform))
+            .map(|edge| edge.child)
+            .collect();
+        let renames: Vec<_> = self
+            .shapes
+            .iter()
+            .enumerate()
+            .filter(|(_, shape)| children.contains(&shape.id))
+            .filter_map(|(at, shape)| Some((at, derived_shape_name(&shape.name, &old, name)?)))
+            .collect();
+        for (at, renamed) in renames {
+            if !authored::names(self).any(|(_, taken)| taken == renamed) {
+                self.shapes[at].name = renamed;
+            }
+        }
+    }
+    pub fn remove(&mut self, id: NodeId) -> Result<(), NativeError> {
+        self.authoring_preflight()?;
+        self.validate()?;
+        let index = self
+            .nodes
+            .iter()
+            .position(|n| n.id == id)
+            .ok_or(SceneError::MissingNode(id))?;
+        let transform = self.nodes[index].transform_id;
+        let has_children = self.dag.iter().any(|edge| {
+            edge.parent == Some(transform)
+                && self
+                    .nodes
+                    .iter()
+                    .any(|node| node.transform_id == edge.child)
+        });
+        if has_children {
+            return Err(NativeError::UnsupportedDelete(
+                DeleteUnsupported::HasChildren,
+            ));
+        }
         let incoming: Vec<_> = self
             .dag
             .iter()
             .filter(|edge| edge.child == transform)
             .collect();
-        if incoming.len() != 1
-            || incoming[0].parent.is_some()
-            || self.dag.iter().any(|edge| {
-                edge.parent == Some(transform)
-                    && self
-                        .nodes
-                        .iter()
-                        .any(|node| node.transform_id == edge.child)
-            })
-        {
+        if incoming.iter().any(|edge| edge.parent.is_some()) {
+            return Err(NativeError::UnsupportedDelete(DeleteUnsupported::IsChild));
+        }
+        self.check_effects(transform)?;
+        if self.source.is_some() || incoming.len() != 1 {
             return Err(NativeError::UnsupportedEdit);
         }
         let exclusive: Vec<_> = self
@@ -1254,7 +1359,7 @@ impl NativeScene {
         }
         self.nodes[index].channels = replacement;
         if let Some(name) = name {
-            self.nodes[index].name = name.into();
+            self.set_transform_name(index, name);
         }
         Ok(())
     }
@@ -1485,12 +1590,45 @@ impl NativeScene {
     }
 }
 
+/// The shape name for a shape whose transform is renamed from `old` to `new`, or `None` when
+/// the shape name is not derived from `old` and stays as it is. The rule is inferred from
+/// Maya 2025.1 `rename` observations (PROVISIONAL, #175).
+fn derived_shape_name(shape: &str, old: &str, new: &str) -> Option<String> {
+    fn split(name: &str) -> (&str, &str) {
+        name.split_at(name.trim_end_matches(|c: char| c.is_ascii_digit()).len())
+    }
+    if shape.strip_suffix("Shape") == Some(old) {
+        return Some(format!("{new}Shape"));
+    }
+    let digits = shape.strip_prefix(split(old).0)?.strip_prefix("Shape")?;
+    if !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let (base, digits) = split(new);
+    Some(format!("{base}Shape{digits}"))
+}
+
 fn convert(values: [f64; 3], factor: f64) -> Result<Vec3, NativeError> {
     let value = Vec3::from_array(values.map(|v| (v * factor) as f32));
     if !value.is_finite() {
         return Err(NativeError::UnsupportedView("f32 coordinates"));
     }
     Ok(value)
+}
+
+/// Why Delete refuses a node whose hierarchy it cannot yet remove.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeleteUnsupported {
+    HasChildren,
+    IsChild,
+}
+impl fmt::Display for DeleteUnsupported {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::HasChildren => "Deleting a node with children is not supported yet",
+            Self::IsChild => "Deleting a node that has a parent is not supported yet",
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1509,6 +1647,7 @@ pub enum NativeError {
     InvalidName,
     NameCollision,
     UnsupportedEdit,
+    UnsupportedDelete(DeleteUnsupported),
     ReadOnlyFormat,
     UnknownSessionMaterial(SessionMaterialId),
     SessionColorOutOfRange,
@@ -1558,6 +1697,7 @@ impl fmt::Display for NativeError {
             Self::UnsupportedEdit => {
                 f.write_str("native ownership or edit effects are unsupported")
             }
+            Self::UnsupportedDelete(reason) => write!(f, "{reason}"),
             Self::ReadOnlyFormat => f.write_str("Maya ASCII scenes are read-only in this version"),
             Self::UnknownSessionMaterial(id) => {
                 write!(f, "session material {} does not exist", id.index())
@@ -1593,6 +1733,8 @@ mod tests;
 
 #[cfg(test)]
 mod edit_policy_tests;
+#[cfg(test)]
+mod shape_naming_tests;
 #[cfg(test)]
 pub(crate) mod test_fixtures;
 
