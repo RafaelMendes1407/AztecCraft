@@ -1,6 +1,6 @@
 # Maya parity inventory (framework)
 
-Status: framework plus the expanded families listed in the family files (Interchange and Polygon modeling have rows); every other family is empty. No figure is computed. Tracking issue: cristim/AztecCraft#6 (every slice says "Refs #6"; only the freeze slice closes it).
+Status: framework plus the expanded families listed in the family files (Interchange, Polygon modeling and Scene management have rows); every other family is empty. No figure is computed. Tracking issue: cristim/AztecCraft#6 (every slice says "Refs #6"; only the freeze slice closes it).
 
 This inventory replaces the provisional [workflow seed](../inventory-seed.md) as the candidate denominator once all 14 family files are expanded and frozen. It never says AztecCraft matches Maya. Exact parity needs comparison against the pinned reference and remains an open acceptance requirement (see [parity.md](../parity.md)).
 
@@ -23,7 +23,7 @@ Status describes documented behaviour only, never equivalence to Maya. The order
 | Partial | Partly implemented (tested or not), or fully implemented with only some dimensions evidenced. |
 | Doc-conformant | The behaviour the cited page describes is fully implemented. The Evidence cell names every dimension (interaction, semantic output, persistence, undo, invalid input, interop) and gives for each either its evidence or `n/a: <reason>`. A dimension left unnamed counts as not checked, which makes the row Partial. A single happy-path test does not qualify. |
 | Out-of-scope | Excluded with a recorded reason (see the list below). |
-| retired | An ID kept for an option-box or duplicate row folded into another row. Not in the divisor; counted separately. |
+| retired | An ID kept for an option-box row, a duplicate row, or a row merged into another under the row rule (Row format, for example MOD-096), folded into that row. Not in the divisor; counted separately. |
 
 Rows needing a running Maya (numerics, pixels, binary acceptance by Maya) are tagged `runtime-only`. They stay in the denominator at 0 until a reference run exists (#5).
 
@@ -100,12 +100,12 @@ Categories the File menu rows and the menu map also use, each pending maintainer
 
 ## Families
 
-Names and order match [parity.md](../parity.md). Owner issues are open feature, epic or verification issues; bug issues and #202 are not owners (#202 is a custom path tracer, not a Maya workflow). Each file lists its own owners. An issue may own rows in two families (for example #156 and #189 under SCN and INT and #21 and #58 under PIP and INT); each row cites it independently.
+Names and order match [parity.md](../parity.md). Owner issues are open feature, epic or verification issues; bug issues and #202 are not owners (#202 is a custom path tracer, not a Maya workflow). Each file lists its own owners. An issue may own rows in two families (for example #58, #189 and #272 under SCN and INT and #21 and #58 under PIP and INT); each row cites it independently.
 
 | # | Family | File | ID prefix | Owner issues |
 | --- | --- | --- | --- | --- |
 | 1 | Application shell | [01-application-shell.md](01-application-shell.md) | SHL | #59, #60, #61, #63, #64, #65, #66, #67, #68, #69, #71, #170, #178 |
-| 2 | Scene management | [02-scene-management.md](02-scene-management.md) | SCN | #42, #105, #156, #167, #189 |
+| 2 | Scene management | [02-scene-management.md](02-scene-management.md) | SCN | #29, #30, #32, #35, #36, #37, #38, #39, #41, #42, #47, #53, #58, #60, #66, #67, #68, #69, #105, #166, #167, #178, #189, #272, #313 |
 | 3 | Viewport | [03-viewport.md](03-viewport.md) | VPT | #29, #30, #32, #35, #36, #37, #38, #39, #40, #41, #48, #49, #166, #292 |
 | 4 | Polygon modeling | [04-polygon-modeling.md](04-polygon-modeling.md) | MOD | #29, #41, #43, #44, #45, #46, #47, #49, #51, #52, #53, #55, #64 |
 | 5 | Curves and surfaces | [05-curves-and-surfaces.md](05-curves-and-surfaces.md) | CRV | #47 |
@@ -126,9 +126,9 @@ Documented menus and the family that owns their content. The always-available me
 | Menu (set) | Family | Source and note |
 | --- | --- | --- |
 | File (all) | INT; New Scene in SCN (AztecCraft's File > Close, not a Maya item, also lives in SCN); Exit in SHL; View Image and View Sequence in RND; Save Preferences in SHL | [File menu](https://help.autodesk.com/cloudhelp/2027/ENU/Maya-Basics/files/GUID-9D1021A8-60A4-4B72-9A90-7C5070A9E037.htm) |
-| Edit | SCN (undo, redo, duplicate, group, parent, delete) | per-item split when SCN expands |
+| Edit | SCN (undo, redo, repeat, recent commands, delete, duplicate, transfer attribute values, group, ungroup, LOD, parent, unparent); ANM (Keys submenu) | per-item rows in [02-scene-management.md](02-scene-management.md) |
 | Create | MOD (Polygon Primitives, Type, SVG, Sweep Mesh), CRV (NURBS Primitives, Curve Tools), MAT (Volume Primitives, Lights), VPT (Cameras, Free Image Plane, Construction Plane), SCN (Empty Group, Sets, Asset, Scene Assembly, Locator, Annotation, Measure Tools), DYN (Bifrost Graph), INT (Universal Scene Description); Open Flow Studio: Flow services, OOS pending maintainer confirmation | split per submenu when those families expand; Scene Assembly and Bifrost Graph placement PROVISIONAL |
-| Select | SCN | |
+| Select | SCN; CRV (NURBS Curves and NURBS Surfaces submenus) | per-item rows in [02-scene-management.md](02-scene-management.md) |
 | Modify > Transform, Pivot | SCN (transform tools, freeze, pivot); VPT (tool settings) | [Modify menu](https://help.autodesk.com/cloudhelp/2027/ENU/Maya-Basics/files/GUID-378D7FF6-492F-4DA4-A468-507E6ABF8B58.htm) (fetched 2026-10-27, groups Transform, Pivot, Align, Rotate Order, Nodes, Naming, Attributes, Objects (holding Make Live, Replace Objects and Convert), Paint Tool, Asset) |
 | Modify > Align, Naming, Attributes, Objects, Asset | SCN | Align Tool and Snap Align place objects; Naming renames nodes; Attributes adds, edits and deletes custom attributes; Replace Objects edits the scene graph; Asset is a node container. Make Live (snap target) is VPT |
 | Modify > Rotate Order | ANM | Reorder Rotation keeps animation unchanged while changing the order, so it works on animated channels |
@@ -136,7 +136,7 @@ Documented menus and the family that owns their content. The always-available me
 | Modify > Objects > Convert | MOD (Polygons to Subdiv, Subdiv to Polygons, Smooth Mesh Preview to Polygons, Geometry to Bounding Box), CRV (NURBS to Polygons, NURBS to Subdiv, Subdiv to NURBS, Polygon Edges to Curve, Bezier conversions), DYN (Paint Effects, Fluid, nParticle, XGen Primitives), MAT (Displacement to Polygons, Texture to Geometry; PROVISIONAL), SCN (Instance to Object); MOD items are MOD-020 to 023, the others are in [the pointer table](04-polygon-modeling.md#cross-family-pointer-rows-not-scored-in-mod) | on the page Convert sits inside the Objects group (Make Live, Replace Objects, Convert) |
 | Modify > Paint Tool | SCR (Paint Scripts Tool, paints MEL scripts), RIG (Paint Attributes Tool, an Artisan brush) | PROVISIONAL placement of the Paint Attributes Tool |
 | Display | VPT | HUD items also VPT |
-| Windows | SHL; each editor to the family that owns its content (Outliner SCN, Time Slider ANM, Render View RND) | |
+| Windows | SHL; each editor to the family that owns its content (Outliner SCN, Time Slider ANM, Render View RND); Display Layer Editor (#61), Hypergraph, Node Editor and the other scene-graph editors SHL | |
 | Mesh, Edit Mesh, Mesh Tools, Mesh Display (Modeling) | MOD | [Modeling menu set](https://help.autodesk.com/cloudhelp/2027/ENU/Maya-Modeling/files/GUID-A0E08BF2-0206-4518-8431-DC4E15AD4558.htm) |
 | Curves, Surfaces (Modeling) | CRV | same page |
 | UV (Modeling) | UVE | same page |
