@@ -73,6 +73,7 @@ impl Editor {
         };
         let status = match *operation {
             Operation::Select { .. }
+            | Operation::DeselectAll
             | Operation::SelectFace { .. }
             | Operation::SelectVertex { .. }
             | Operation::SelectEdge { .. }
@@ -332,6 +333,7 @@ impl Editor {
                     | Operation::UpdateManipulation { .. }
                     | Operation::FinishMove { .. }
                     | Operation::Select { .. }
+                    | Operation::DeselectAll
                     | Operation::SetSelectionMode(_)
                     | Operation::SelectFace { .. }
                     | Operation::SelectVertex { .. }
@@ -626,6 +628,27 @@ impl Editor {
                     self.select_component_owner(target.transform, &target.path)?;
                 }
                 self.remembered_edge = target;
+                return Ok(if changed {
+                    OperationReply::Changed
+                } else {
+                    OperationReply::Unchanged
+                });
+            }
+            Operation::DeselectAll => {
+                // Maya's SelectNone runs changeSelectMode -component, then -object, then
+                // select -cl, so it also leaves component and hierarchy modes.
+                let (selected, current_path) = self.selection_presentation();
+                let changed = selected.is_some()
+                    || !current_path.is_empty()
+                    || self.selection_mode != SelectionMode::Object
+                    || self.remembered_face.is_some()
+                    || self.remembered_vertex.is_some()
+                    || self.remembered_edge.is_some();
+                self.clear_remembered_components();
+                self.selection_mode = SelectionMode::Object;
+                self.selected = None;
+                self.selected_path.clear();
+                self.sync_fields();
                 return Ok(if changed {
                     OperationReply::Changed
                 } else {
