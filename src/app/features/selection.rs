@@ -53,6 +53,72 @@ impl Editor {
         }
     }
 
+    /// Replaces the object selection by `rule`. Hierarchy mode (Root submask) only ever holds
+    /// roots, so its rules see only the root transforms. PROVISIONAL, pinned by
+    /// `select_all_in_hierarchy_mode_selects_roots_only` and its Inverse and Hierarchy twins.
+    pub(in crate::app) fn select_by_rule(
+        &mut self,
+        rule: SelectRule,
+    ) -> Result<OperationReply, OperationError> {
+        let scene = self.history.scene();
+        let roots_only = self.selection_mode == SelectionMode::Hierarchy;
+        let mut candidates = scene.transform_paths().map_err(OperationError::Scene)?;
+        if roots_only {
+            candidates.retain(|target| target.path.len() == 1);
+        }
+        let members = match rule {
+            SelectRule::All => candidates,
+            SelectRule::Inverse => {
+                candidates.retain(|target| !self.selection.contains(target));
+                candidates
+            }
+            // Added nodes sit before the lead so it stays the lead. Roots have no descendants
+            // to add in Hierarchy mode.
+            SelectRule::Hierarchy => {
+                let current = self.selection.members();
+                let added = if roots_only {
+                    Vec::new()
+                } else {
+                    scene
+                        .descendant_targets(current)
+                        .map_err(OperationError::Scene)?
+                        .into_iter()
+                        .filter(|target| !self.selection.contains(target))
+                        .collect()
+                };
+                match current.split_last() {
+                    Some((lead, rest)) => rest
+                        .iter()
+                        .cloned()
+                        .chain(added)
+                        .chain(std::iter::once(lead.clone()))
+                        .collect(),
+                    None => Vec::new(),
+                }
+            }
+        };
+        let mut next = self.selection.clone();
+        next.replace_with(members)
+            .map_err(|error| OperationError::InvalidInput(error.to_string()))?;
+        let changed = next != self.selection;
+        if changed {
+            self.selection = next;
+            self.clear_remembered_components();
+            self.sync_fields();
+        }
+        Ok(if changed {
+            OperationReply::Changed
+        } else {
+            OperationReply::Unchanged
+        })
+    }
+
+    /// The Select menu rows and Ctrl/Cmd+Shift+A and +I share this one native caller of
+    /// `SelectByRule`.
+    pub(in crate::app) fn native_select_by_rule(&mut self, rule: SelectRule) {
+        self.native_operation(Operation::SelectByRule(rule));
+    }
+
     /// Select > Deselect All and Alt+D share this one native caller of `DeselectAll`.
     pub(in crate::app) fn deselect_all(&mut self) {
         self.native_operation(Operation::DeselectAll);
@@ -173,6 +239,12 @@ pub(in crate::app) fn only_instance_path(
     }
     Ok(first.path)
 }
+
+#[cfg(test)]
+mod delete_tests;
+
+#[cfg(test)]
+mod rule_tests;
 
 #[cfg(test)]
 mod tests {

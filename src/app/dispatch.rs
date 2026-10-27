@@ -76,6 +76,7 @@ impl Editor {
         let status = match *operation {
             Operation::Select { .. }
             | Operation::ModifySelection { .. }
+            | Operation::SelectByRule(_)
             | Operation::DeselectAll
             | Operation::SelectFace { .. }
             | Operation::SelectVertex { .. }
@@ -268,7 +269,7 @@ impl Editor {
         may_install: &dyn Fn() -> bool,
     ) -> Result<OperationReply, OperationError> {
         if let Some(noun) = self.selection_mode.component_noun()
-            && matches!(operation, Operation::Delete(_))
+            && matches!(operation, Operation::Delete(_) | Operation::DeleteSelection)
         {
             return Err(OperationError::InvalidInput(format!(
                 "{noun} deletion is unsupported; switch to Object or Hierarchy selection"
@@ -337,6 +338,7 @@ impl Editor {
                     | Operation::FinishMove { .. }
                     | Operation::Select { .. }
                     | Operation::ModifySelection { .. }
+                    | Operation::SelectByRule(_)
                     | Operation::DeselectAll
                     | Operation::SetSelectionMode(_)
                     | Operation::SelectFace { .. }
@@ -370,6 +372,11 @@ impl Editor {
                     ));
                 }
                 Some(self.selection_path(*node, instance_path.clone())?)
+            }
+            Operation::SelectByRule(_) if self.selection_mode.is_component() => {
+                return Err(OperationError::InvalidInput(
+                    "Selection changes need Object or Hierarchy selection mode".into(),
+                ));
             }
             _ => None,
         };
@@ -609,6 +616,12 @@ impl Editor {
                 }
             }
             Operation::Delete(id) => Command::Remove(id),
+            Operation::DeleteSelection => {
+                if self.selection.is_empty() {
+                    return Err(OperationError::NoSelection);
+                }
+                Command::RemoveMany(self.selection.members().iter().map(|t| t.node).collect())
+            }
             Operation::SetSelectionMode(mode) => {
                 if mode.is_component() && self.selection.len() > 1 {
                     return Err(OperationError::MultipleSelection);
@@ -695,6 +708,7 @@ impl Editor {
                     OperationReply::Unchanged
                 });
             }
+            Operation::SelectByRule(rule) => return self.select_by_rule(rule),
             Operation::ModifySelection { change, node, .. } => {
                 let target = TransformTarget {
                     node,
@@ -762,17 +776,25 @@ impl Editor {
                     .ok_or(OperationError::NoSelection)?
                     .map_err(OperationError::Scene)?;
                 }
-                let path = if component {
+                let paths = if component {
                     None
                 } else {
-                    let (id, path) = self.single_target()?;
-                    Some(self.selection_path(id, (!path.is_empty()).then(|| path.to_vec()))?)
+                    if self.selection.is_empty() {
+                        return Err(OperationError::NoSelection);
+                    }
+                    let mut paths = Vec::with_capacity(self.selection.len());
+                    for member in self.selection.members() {
+                        let path = (!member.path.is_empty()).then(|| member.path.clone());
+                        paths.push(self.selection_path(member.node, path)?);
+                    }
+                    Some(paths)
                 };
                 let view = ViewScene::from_native(self.history.scene(), 256 * 1024 * 1024)
                     .map_err(|error| OperationError::View(error.to_string()))?;
                 let before = self.camera.clone();
-                if let Some(path) = path {
-                    self.camera.frame_view(&view, Some(&path), self.aspect)
+                if let Some(paths) = paths {
+                    let prefixes: Vec<&[NativeId]> = paths.iter().map(Vec::as_slice).collect();
+                    self.camera.frame_view_many(&view, &prefixes, self.aspect)
                 } else {
                     match self.selection_mode {
                         SelectionMode::Face => self

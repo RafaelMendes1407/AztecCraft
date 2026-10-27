@@ -1,6 +1,6 @@
 use crate::editor_operations::{
-    ActiveTool, AttributeEditorTab, Operation, OperationError, OperationReply, SelectionChange,
-    SelectionMode, ShadingMode, SidebarPanel,
+    ActiveTool, AttributeEditorTab, Operation, OperationError, OperationReply, SelectRule,
+    SelectionChange, SelectionMode, ShadingMode, SidebarPanel,
 };
 #[cfg(any(test, feature = "mcp"))]
 use crate::editor_operations::{
@@ -188,9 +188,6 @@ impl Editor {
     fn delete_disabled_hover(&self, read_only: Option<&str>, menu: bool) -> String {
         if let Some(reason) = read_only {
             return reason.to_owned();
-        }
-        if self.selection.len() > 1 {
-            return OperationError::MultipleSelection.to_string();
         }
         match self.selection_mode.component_noun() {
             Some(noun) if menu => format!(

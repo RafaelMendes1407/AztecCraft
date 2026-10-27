@@ -116,6 +116,7 @@ mod official_client {
     mod attribute_editor;
     mod camera;
     mod cylinder_cone;
+    mod delete_selected;
     mod deselect_all;
     mod extrude;
     mod files;
@@ -127,6 +128,7 @@ mod official_client {
     mod node_edit;
     mod pointer_hit;
     mod primitive_options;
+    mod select_by_rule;
     mod selection;
     mod session;
     mod session_material;

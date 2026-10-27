@@ -34,6 +34,17 @@ pub enum AttributeEditorTab {
     Material(NativeId),
 }
 
+/// Which objects `Operation::SelectByRule` selects, after Maya's Select menu rows. All selects
+/// every transform instance, Hierarchy adds the descendants of the selection (the lead stays the
+/// lead) and Inverse swaps selected and unselected. In Hierarchy selection mode All and Inverse
+/// see only the roots and Hierarchy changes nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SelectRule {
+    All,
+    Hierarchy,
+    Inverse,
+}
+
 /// How `Operation::ModifySelection` changes the object selection. Add appends an absent instance
 /// as the lead, or moves a present one to the end; Toggle flips membership; Remove drops a member
 /// and leaves an absent instance alone. Removing the lead promotes the previous member.
@@ -261,6 +272,8 @@ pub enum Operation {
         node: NodeId,
         instance_path: Option<Vec<NativeId>>,
     },
+    /// Replaces the object selection by a rule (Select > All, Hierarchy, Inverse). Object and Hierarchy modes only.
+    SelectByRule(SelectRule),
     SetSelectionMode(SelectionMode),
     /// Maya's Select > Deselect All (`SelectNone`, Alt+D): clears the object and component
     /// selection and returns to Object selection mode.
@@ -310,7 +323,13 @@ pub enum Operation {
         target: FaceTarget,
         distance: f64,
     },
+    /// Deletes one node by id; only MCP `delete_node` and tests build it, the UI deletes through
+    /// `DeleteSelection`.
+    #[cfg_attr(not(any(test, feature = "mcp")), allow(dead_code))]
     Delete(NodeId),
+    /// Edit > Delete on the whole object selection: every selected node is removed as one undo
+    /// step, or none is. Object and Hierarchy modes only.
+    DeleteSelection,
     Undo,
     Redo,
     FrameSelected,

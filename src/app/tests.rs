@@ -2301,44 +2301,80 @@ fn alt_d_deselects_all_and_other_d_chords_do_not() {
 }
 
 #[test]
-fn ctrl_shift_a_reports_that_select_all_is_not_implemented_325() {
+fn ctrl_shift_a_selects_all_and_ctrl_shift_i_inverts() {
     let mut editor = Editor::default();
-    editor.create(Primitive::Cube);
-    let selected = editor.selection_presentation().0;
+    let ids: Vec<_> = (0..3)
+        .map(|_| {
+            editor.create(Primitive::Cube);
+            editor.selection_presentation().0.unwrap()
+        })
+        .collect();
+    editor.select(Some(ids[0]));
     let chord = egui::Modifiers::COMMAND | egui::Modifiers::SHIFT;
     shortcuts_events(&mut editor, chord, vec![key_event(Key::A, chord, false)]);
-    assert_eq!(editor.status, super::menus::SELECT_ALL_STATUS);
-    for text in [
-        super::menus::SELECT_ALL_STATUS,
-        super::menus::MULTI_SELECTION_REASON,
-    ] {
-        assert!(text.contains("#325") && !text.contains("#166"), "{text}");
-    }
+    assert_eq!(editor.selection.len(), 3);
+    assert_eq!(editor.selection_presentation().0, Some(ids[2]));
     assert!(!editor.error);
-    assert_eq!(editor.selection_presentation().0, selected);
+    editor.select(Some(ids[0]));
+    shortcuts_events(&mut editor, chord, vec![key_event(Key::I, chord, false)]);
+    let selected: Vec<_> = editor.selection.members().iter().map(|t| t.node).collect();
+    assert_eq!(selected, [ids[1], ids[2]]);
+    for held in [egui::Modifiers::SHIFT, egui::Modifiers::COMMAND] {
+        shortcuts_events(&mut editor, held, vec![key_event(Key::I, held, false)]);
+        shortcuts_events(&mut editor, held, vec![key_event(Key::A, held, false)]);
+    }
+    assert_eq!(editor.selection.len(), 2);
 }
 
 #[test]
-fn select_menu_rows_follow_maya_order_and_only_deselect_all_acts() {
+fn select_shortcuts_do_nothing_while_a_dialog_is_open() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    editor.create(Primitive::Cube);
+    let before = editor.selection.clone();
+    editor.new_document().unwrap();
+    assert!(editor.files.is_modal());
+    let chord = egui::Modifiers::COMMAND | egui::Modifiers::SHIFT;
+    for key in [Key::A, Key::I] {
+        shortcuts_events(&mut editor, chord, vec![key_event(key, chord, false)]);
+        assert_eq!(editor.selection, before, "{key:?}");
+    }
+}
+
+#[test]
+fn select_shortcuts_are_refused_in_a_component_mode_with_the_status_error() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    set_mode(&mut editor, SelectionMode::Vertex);
+    let chord = egui::Modifiers::COMMAND | egui::Modifiers::SHIFT;
+    shortcuts_events(&mut editor, chord, vec![key_event(Key::A, chord, false)]);
+    assert!(editor.error);
+    assert_eq!(editor.status, super::menus::SELECT_RULE_COMPONENT_REASON);
+    assert_eq!(editor.selection.len(), 1);
+}
+
+const SELECT_ALL_ROW: &str = "All   Ctrl/Cmd Shift A";
+const SELECT_INVERSE_ROW: &str = "Inverse   Ctrl/Cmd Shift I";
+
+fn open_select_menu(editor: &mut Editor, ctx: &egui::Context) -> egui::FullOutput {
+    let output = frame(editor, ctx, vec![]);
+    let menu = face_text_position(&output, "Select");
+    face_pointer_click(editor, ctx, menu, egui::Modifiers::NONE, vec![])
+}
+
+#[test]
+fn select_menu_rows_follow_maya_order_and_only_all_by_type_is_unsupported() {
     let mut editor = Editor::default();
     editor.create(Primitive::Cube);
     let ctx = egui::Context::default();
     ctx.enable_accesskit();
-    let output = frame(&mut editor, &ctx, vec![]);
-    let menu = face_text_position(&output, "Select");
-    let mut output = face_pointer_click(&mut editor, &ctx, menu, egui::Modifiers::NONE, vec![]);
-    let menu_is_open = |output: &egui::FullOutput| {
-        output.shapes.iter().any(|shape| {
-            matches!(&shape.shape, egui::Shape::Text(text)
-                if text.galley.job.text == "Deselect All   Alt D")
-        })
-    };
+    let output = open_select_menu(&mut editor, &ctx);
     let rows = [
-        "All   Ctrl/Cmd Shift A",
+        SELECT_ALL_ROW,
         "All by Type",
         "Deselect All   Alt D",
         "Hierarchy",
-        "Inverse   Ctrl/Cmd Shift I",
+        SELECT_INVERSE_ROW,
         "Object / Component   F8",
     ];
     let ys: Vec<f32> = rows
@@ -2349,39 +2385,57 @@ fn select_menu_rows_follow_maya_order_and_only_deselect_all_acts() {
         ys.windows(2).all(|pair| pair[0] < pair[1]),
         "rows out of order: {ys:?}"
     );
-    for label in [
-        "All   Ctrl/Cmd Shift A",
-        "All by Type",
-        "Hierarchy",
-        "Inverse   Ctrl/Cmd Shift I",
-    ] {
+    assert!(button_disabled(&output, "All by Type"));
+    for label in [SELECT_ALL_ROW, "Hierarchy", SELECT_INVERSE_ROW] {
+        assert!(!button_disabled(&output, label), "{label} must be enabled");
+    }
+    assert!(
+        super::menus::ALL_BY_TYPE_REASON.contains("#325")
+            && !super::menus::ALL_BY_TYPE_REASON.contains("#166")
+    );
+}
+
+#[test]
+fn select_rule_rows_are_disabled_in_a_component_mode_and_deselect_all_is_not() {
+    let mut editor = Editor::default();
+    editor.create(Primitive::Cube);
+    set_mode(&mut editor, SelectionMode::Face);
+    let ctx = egui::Context::default();
+    ctx.enable_accesskit();
+    let output = open_select_menu(&mut editor, &ctx);
+    for label in [SELECT_ALL_ROW, "Hierarchy", SELECT_INVERSE_ROW] {
         assert!(button_disabled(&output, label), "{label} must be disabled");
     }
-    for label in [
-        "All   Ctrl/Cmd Shift A",
-        "All by Type",
-        "Hierarchy",
-        "Inverse   Ctrl/Cmd Shift I",
-    ] {
-        if !menu_is_open(&output) {
-            let menu = face_text_position(&output, "Select");
-            output = face_pointer_click(&mut editor, &ctx, menu, egui::Modifiers::NONE, vec![]);
-        }
-        output = face_pointer_click(
-            &mut editor,
-            &ctx,
-            face_text_position(&output, label),
-            egui::Modifiers::NONE,
-            vec![],
-        );
-        assert!(editor.selection_presentation().0.is_some(), "{label}");
-    }
-    if !menu_is_open(&output) {
-        let menu = face_text_position(&output, "Select");
-        output = face_pointer_click(&mut editor, &ctx, menu, egui::Modifiers::NONE, vec![]);
-    }
-    let deselect = face_text_position(&output, "Deselect All   Alt D");
-    face_pointer_click(&mut editor, &ctx, deselect, egui::Modifiers::NONE, vec![]);
+    assert!(!button_disabled(&output, "Deselect All   Alt D"));
+}
+
+#[test]
+fn select_menu_rows_act_on_the_selection() {
+    let mut editor = Editor::default();
+    let ids: Vec<_> = (0..3)
+        .map(|_| {
+            editor.create(Primitive::Cube);
+            editor.selection_presentation().0.unwrap()
+        })
+        .collect();
+    editor.select(Some(ids[0]));
+    let ctx = egui::Context::default();
+    ctx.enable_accesskit();
+    let selected =
+        |editor: &Editor| -> Vec<_> { editor.selection.members().iter().map(|t| t.node).collect() };
+    let click_row = |editor: &mut Editor, label: &str| {
+        let output = open_select_menu(editor, &ctx);
+        let at = face_text_position(&output, label);
+        face_pointer_click(editor, &ctx, at, egui::Modifiers::NONE, vec![]);
+    };
+    click_row(&mut editor, SELECT_ALL_ROW);
+    assert_eq!(selected(&editor), ids);
+    click_row(&mut editor, SELECT_INVERSE_ROW);
+    assert!(selected(&editor).is_empty());
+    editor.select(Some(ids[0]));
+    click_row(&mut editor, "Hierarchy");
+    assert_eq!(selected(&editor), [ids[0]]);
+    click_row(&mut editor, "Deselect All   Alt D");
     assert_eq!(editor.selection_presentation().0, None);
 }
 
@@ -6371,7 +6425,7 @@ fn group_editor() -> Editor {
 }
 
 /// Like `group_editor()` but with the transform chain group > mid > child above the shape.
-fn deep_group_editor() -> Editor {
+pub(in crate::app) fn deep_group_editor() -> Editor {
     nested_group_editor(&[b"mid", b"child"])
 }
 
@@ -9507,15 +9561,11 @@ fn several_selected_objects_refuse_single_target_and_present_the_lead() {
 }
 
 #[test]
-fn frame_and_move_refuse_several_selected_objects_and_keep_state() {
-    let mut editor = two_cube_editor();
+fn move_and_rotate_refuse_several_selected_objects_and_keep_state() {
+    let editor = two_cube_editor();
     let camera = editor.camera.clone();
     let scene = editor.history.scene().clone();
     let selection = editor.selection.clone();
-    assert!(matches!(
-        remote(&mut editor, Operation::FrameSelected),
-        Err(OperationError::MultipleSelection)
-    ));
     assert!(matches!(
         editor.selected_move_target(),
         Err(OperationError::MultipleSelection)
@@ -9684,7 +9734,7 @@ fn component_modes_refuse_several_selected_objects_and_object_modes_do_not() {
 }
 
 #[test]
-fn f8_and_the_delete_key_report_the_refusal_with_several_selected() {
+fn f8_reports_the_refusal_with_several_selected() {
     let mut editor = two_cube_editor();
     let ctx = egui::Context::default();
     frame(&mut editor, &ctx, vec![]);
@@ -9693,12 +9743,19 @@ fn f8_and_the_delete_key_report_the_refusal_with_several_selected() {
     assert!(editor.error, "{}", editor.status);
     assert!(editor.status.contains("Several objects are selected"));
     assert_eq!(multi_baseline(&editor), baseline);
-    editor.status.clear();
-    editor.error = false;
+}
+
+#[test]
+fn the_delete_key_deletes_every_selected_object_as_one_undo_step() {
+    let mut editor = two_cube_editor();
+    let ctx = egui::Context::default();
+    frame(&mut editor, &ctx, vec![]);
     frame(&mut editor, &ctx, vec![key(Key::Delete)]);
-    assert!(editor.error, "{}", editor.status);
-    assert!(editor.status.contains("Several objects are selected"));
-    assert_eq!(multi_baseline(&editor), baseline);
+    assert!(!editor.error, "{}", editor.status);
+    assert!(editor.history.scene().nodes().is_empty());
+    assert!(editor.selection.is_empty());
+    assert!(editor.history.undo());
+    assert_eq!(editor.history.scene().nodes().len(), 2);
 }
 
 #[test]
@@ -9707,10 +9764,6 @@ fn channel_box_and_attribute_editor_edits_are_refused_with_several_selected() {
     assert_eq!(
         editor.authoring_refusal().as_deref(),
         Some("Several objects are selected; select one object")
-    );
-    assert_eq!(
-        editor.delete_disabled_hover(None, true),
-        "Several objects are selected; select one object"
     );
     let lead = editor.selection.lead().unwrap().clone();
     editor.set_selection_members_for_test(vec![lead]);
@@ -9931,12 +9984,14 @@ fn channel_box_controls_are_disabled_with_the_reason_while_several_are_selected(
         "Diffuse slider"
     );
     assert!(count_text(&output2, SEVERAL_REASON) > 0, "Diffuse reason");
-    assert!(button_disabled(&output, "Delete selected"));
-    assert!(button_disabled(&output, "Frame selected  F"));
-    let at = face_text_position(&output2, "Delete selected");
-    assert!(hover_adds_the_reason(&mut editor, &ctx, at), "Delete");
-    let at = face_text_position(&output2, "Frame selected  F");
-    assert!(hover_adds_the_reason(&mut editor, &ctx, at), "Frame");
+    assert!(
+        !button_disabled(&output, "Delete selected"),
+        "Delete acts on all"
+    );
+    assert!(
+        !button_disabled(&output, "Frame selected  F"),
+        "Frame acts on the union"
+    );
 }
 
 #[test]
@@ -9977,27 +10032,52 @@ fn attribute_editor_controls_are_disabled_with_the_reason_while_several_are_sele
 }
 
 #[test]
-fn edit_menu_delete_is_disabled_with_the_reason_while_several_are_selected() {
+fn edit_menu_delete_removes_every_selected_object() {
     let ctx = editing_ctx();
-    let mut editor = multi_material_editor();
+    let mut editor = two_cube_editor();
     let output = frame(&mut editor, &ctx, vec![]);
     let edit = face_text_position(&output, "Edit");
     let output = face_pointer_click(&mut editor, &ctx, edit, egui::Modifiers::NONE, vec![]);
-    assert!(button_disabled(&output, "Delete"), "edit menu Delete");
+    assert!(!button_disabled(&output, "Delete"), "edit menu Delete");
     let at = face_text_position(&output, "Delete");
-    assert!(hover_adds_the_reason(&mut editor, &ctx, at));
+    face_pointer_click(&mut editor, &ctx, at, egui::Modifiers::NONE, vec![]);
+    assert!(editor.history.scene().nodes().is_empty());
+    assert!(editor.selection.is_empty());
 }
 
 #[test]
-fn the_f_key_reports_the_refusal_with_several_selected() {
+fn the_f_key_frames_the_union_of_several_selected_objects() {
     let mut editor = two_cube_editor();
+    let far = editor.selection.lead().unwrap().node;
+    editor
+        .apply_operation(Operation::SetTransform {
+            id: far,
+            transform: TransformInput {
+                translation: [40.0, 0.0, 0.0],
+                rotation_degrees: [0.0; 3],
+                scale: [1.0; 3],
+            },
+        })
+        .unwrap();
     let ctx = egui::Context::default();
     frame(&mut editor, &ctx, vec![]);
-    let baseline = multi_baseline(&editor);
+    let view = ViewScene::from_native(editor.history.scene(), 256 * 1024 * 1024).unwrap();
+    let paths: Vec<_> = editor
+        .selection
+        .members()
+        .iter()
+        .map(|t| t.path.clone())
+        .collect();
+    let prefixes: Vec<&[NativeId]> = paths.iter().map(Vec::as_slice).collect();
+    let mut expected = editor.camera.clone();
+    expected
+        .frame_view_many(&view, &prefixes, editor.aspect)
+        .unwrap();
+    assert_ne!(expected, editor.camera);
     frame(&mut editor, &ctx, vec![key(Key::F)]);
-    assert!(editor.error, "{}", editor.status);
-    assert!(editor.status.contains(SEVERAL_REASON), "{}", editor.status);
-    assert_eq!(multi_baseline(&editor), baseline);
+    assert!(!editor.error, "{}", editor.status);
+    assert_eq!(editor.camera, expected);
+    assert_eq!(editor.selection.len(), 2);
 }
 
 fn three_cube_editor() -> (Editor, Vec<TransformTarget>) {

@@ -640,6 +640,7 @@ mod tests {
                 "modify_selection" => {
                     json!({"scene_token":token,"change":"toggle","node_id":"1"})
                 }
+                "select_by_rule" => json!({"scene_token":token,"rule":"all"}),
                 "set_selection_mode" => json!({"scene_token":token,"mode":"face"}),
                 "select_face" | "select_vertex" | "select_edge" => {
                     json!({"scene_token":token,"target":null})
@@ -663,6 +664,7 @@ mod tests {
                     json!({"scene_token":token,"node_id":"1","translation":[0,0,0],"rotation_degrees":[0,0,0],"scale":[1,1,1]})
                 }
                 "delete_node" => json!({"scene_token":token,"node_id":"1"}),
+                "delete_selected" => json!({"scene_token":token}),
                 "orbit_camera" => json!({"scene_token":token,"radians":[0,0]}),
                 "pan_camera" => json!({"scene_token":token,"world_units":[0,0]}),
                 "dolly_camera" => json!({"scene_token":token,"factor":1}),

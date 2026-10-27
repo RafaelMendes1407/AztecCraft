@@ -11,8 +11,8 @@
 
 use super::*;
 use crate::editor_operations::{
-    FileDecision, ManipulationSpace, ManipulationValue, MoveDistance, RemoteRequest, ToolHandle,
-    TransformInput,
+    FileDecision, ManipulationSpace, ManipulationValue, MoveDistance, RemoteRequest, SelectRule,
+    ToolHandle, TransformInput,
 };
 use azteccraft::history::Command;
 use azteccraft::history::{ManipulationFinish, ManipulationId};
@@ -586,6 +586,7 @@ fn seeds(t: &Targets) -> Vec<Operation> {
             node: t.node,
             instance_path: Some(t.path.clone()),
         },
+        Operation::SelectByRule(SelectRule::All),
         Operation::SetSelectionMode(SelectionMode::Face),
         Operation::DeselectAll,
         Operation::SelectFace {
@@ -634,6 +635,7 @@ fn seeds(t: &Targets) -> Vec<Operation> {
             distance: 0.5,
         },
         Operation::Delete(t.node),
+        Operation::DeleteSelection,
         Operation::Undo,
         Operation::Redo,
         Operation::FrameSelected,
@@ -1035,6 +1037,32 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
                 },
             ]
         }
+        Operation::SelectByRule(_) => vec![
+            sample("select_all", Operation::SelectByRule(SelectRule::All)),
+            Sample {
+                pre: Pre::FaceMode,
+                ..sample(
+                    "select_all(face_mode)",
+                    Operation::SelectByRule(SelectRule::All),
+                )
+            },
+            sample(
+                "select_hierarchy",
+                Operation::SelectByRule(SelectRule::Hierarchy),
+            ),
+            sample(
+                "select_inverse",
+                Operation::SelectByRule(SelectRule::Inverse),
+            ),
+            Sample {
+                pre: Pre::MultiSelection,
+                only: Some(&[State::Idle]),
+                ..sample(
+                    "select_inverse(multi_selection)",
+                    Operation::SelectByRule(SelectRule::Inverse),
+                )
+            },
+        ],
         Operation::SetSelectionMode(_) => vec![sample(
             "set_selection_mode(face)",
             Operation::SetSelectionMode(SelectionMode::Face),
@@ -1264,6 +1292,29 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
             Sample {
                 pre: Pre::EdgeMode,
                 ..sample("delete(edge_mode)", Operation::Delete(t.node))
+            },
+        ],
+        Operation::DeleteSelection => vec![
+            sample("delete_selection", Operation::DeleteSelection),
+            Sample {
+                pre: Pre::FaceMode,
+                ..sample("delete_selection(face_mode)", Operation::DeleteSelection)
+            },
+            Sample {
+                pre: Pre::VertexMode,
+                ..sample("delete_selection(vertex_mode)", Operation::DeleteSelection)
+            },
+            Sample {
+                pre: Pre::EdgeMode,
+                ..sample("delete_selection(edge_mode)", Operation::DeleteSelection)
+            },
+            Sample {
+                pre: Pre::MultiSelection,
+                only: Some(&[State::Idle]),
+                ..sample(
+                    "delete_selection(multi_selection)",
+                    Operation::DeleteSelection,
+                )
             },
         ],
         Operation::Undo => vec![sample("undo", Operation::Undo)],
