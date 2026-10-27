@@ -816,8 +816,12 @@ currently reach such text. `inspect_scene.status_message` withholds file-error s
 File > Export All and Export Selection (and MCP `export_obj`) write only the
 displayed polygon geometry: world-space positions in centimetres and polygon faces,
 one `o` group per instance. Hidden or non-displayed instances are not exported
-(PROVISIONAL: the Maya docs do not say whether Export All includes them). Normals,
-UVs, materials, smoothing groups, curves and Maya's OBJ Export Options are not
+(PROVISIONAL for Export All: the Maya docs do not say whether hidden instances are
+included). Export Selection also filters to displayed instances, so selecting a hidden
+object can produce nothing to export (PROVISIONAL: Maya's docs do not describe this
+case). In Face, Vertex or Edge selection mode, Export Selection writes the whole
+selected object's geometry (PROVISIONAL: Maya's docs do not state how component
+selection affects OBJ export). Normals, UVs, materials, smoothing groups, curves and Maya's OBJ Export Options are not
 written or offered (the option boxes are disabled), and export never overwrites an
 existing file. The view of the whole scene is built first, so one mesh the viewport
 cannot display (for example a concave n-gon) fails every export, including Export
