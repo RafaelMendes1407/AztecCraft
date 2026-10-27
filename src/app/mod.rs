@@ -30,6 +30,8 @@ mod inspect;
 mod menus;
 mod panels;
 mod shortcuts;
+mod shutdown_signal;
+mod terminate_bridge;
 
 struct MaterialDraft {
     scene_token: Uuid,
@@ -86,6 +88,8 @@ pub struct Editor {
     move_viewport: Option<features::move_tool::MoveViewportFeedback>,
     move_consumed_frame: bool,
     move_suppress_primary: bool,
+    // egui reports lost_focus for two frames, so a pre-focus move suppresses blur commits for two.
+    blur_commit_skip_frames: u8,
     renderer: Option<crate::viewport_renderer::ViewportRenderer>,
     viewport_error: Option<crate::viewport_renderer::ViewportError>,
     name: String,
@@ -94,6 +98,7 @@ pub struct Editor {
     name_intent: bool,
     material_shape: Option<NativeId>,
     material_draft: Option<MaterialDraft>,
+    primitive_options: features::primitive_options::PrimitiveOptionsUi,
     native_input_pending: bool,
     status: String,
     /// Exact `status` text produced from an error whose text can carry a local path. The native
@@ -103,6 +108,8 @@ pub struct Editor {
     error: bool,
     aspect: f32,
     files: files::FileState,
+    terminate: Box<dyn terminate_bridge::TerminateBridge>,
+    shutdown: shutdown_signal::ShutdownSignal,
 }
 
 impl Default for Editor {
@@ -133,6 +140,7 @@ impl Default for Editor {
             move_viewport: None,
             move_consumed_frame: false,
             move_suppress_primary: false,
+            blur_commit_skip_frames: 0,
             renderer: None,
             viewport_error: None,
             name: String::new(),
@@ -141,12 +149,15 @@ impl Default for Editor {
             name_intent: false,
             material_shape: None,
             material_draft: None,
+            primitive_options: Default::default(),
             native_input_pending: false,
             status: "Ready | Create a cube, plane, sphere, cylinder or cone to start".into(),
             status_withholds_path: None,
             error: false,
             aspect: 1.0,
             files: files::FileState::default(),
+            terminate: terminate_bridge::platform_bridge(),
+            shutdown: Default::default(),
         }
     }
 }
@@ -172,9 +183,13 @@ impl Editor {
                 .collect()
         })
     }
-    /// Hover text for a disabled Delete control: the component refusal in a component mode,
-    /// otherwise the read-only reason, otherwise the missing selection.
+    /// Hover text for a disabled Delete control: the read-only reason (no mode change enables
+    /// Delete), otherwise the component refusal in a component mode, otherwise the missing
+    /// selection.
     fn delete_disabled_hover(&self, read_only: Option<&str>, menu: bool) -> String {
+        if let Some(reason) = read_only {
+            return reason.to_owned();
+        }
         match self.selection_mode.component_noun() {
             Some(noun) if menu => format!(
                 "Object or Hierarchy selection required; {} deletion is unsupported",
@@ -183,7 +198,7 @@ impl Editor {
             Some(noun) => {
                 format!("{noun} deletion is unsupported; switch to Object or Hierarchy selection")
             }
-            None => read_only.map_or_else(|| "Select an object to delete".into(), str::to_owned),
+            None => "Select an object to delete".into(),
         }
     }
     fn clear_remembered_components(&mut self) {
@@ -198,6 +213,12 @@ impl Editor {
     #[cfg(feature = "mcp")]
     pub(crate) fn start_mcp(&mut self, context: &egui::Context) -> std::io::Result<()> {
         self.mcp = Some(crate::mcp::UiBridge::start(context.clone())?);
+        Ok(())
+    }
+    /// Routes SIGTERM into the close guard (#261, PROVISIONAL). Opt-in per process: tests and
+    /// headless editors never register a handler.
+    pub fn install_shutdown_signal(&mut self, ctx: &egui::Context) -> std::io::Result<()> {
+        self.shutdown = shutdown_signal::install(ctx)?;
         Ok(())
     }
     pub fn new(
@@ -287,19 +308,30 @@ impl Editor {
     }
 }
 
-fn unsupported(ui: &mut egui::Ui, label: &str) {
+/// The one reason shown on every disabled control that has no behaviour yet.
+const NOT_IMPLEMENTED_YET: &str = "Not implemented yet";
+
+fn unsupported(ui: &mut egui::Ui, label: &str) -> egui::Response {
     ui.add_enabled(false, egui::Button::new(label))
-        .on_disabled_hover_text("Not implemented in this build");
+        .on_disabled_hover_text(NOT_IMPLEMENTED_YET)
+}
+
+fn text_field_ids() -> impl Iterator<Item = egui::Id> {
+    [
+        name_edit_id(),
+        material_edit_id(),
+        features::manipulation_tool::manipulation_value_id(),
+    ]
+    .into_iter()
+    .chain((0..9).map(channel_edit_id))
+    .chain(features::primitive_options::option_field_ids())
 }
 
 fn text_edit_focused(ctx: &egui::Context) -> bool {
     ctx.memory(|memory| {
-        memory.focused().is_some_and(|id| {
-            id == name_edit_id()
-                || id == material_edit_id()
-                || id == features::manipulation_tool::manipulation_value_id()
-                || (0..9).any(|index| id == channel_edit_id(index))
-        })
+        memory
+            .focused()
+            .is_some_and(|id| text_field_ids().any(|field| field == id))
     })
 }
 
@@ -337,3 +369,6 @@ mod mcp_editor_tests;
 #[cfg(test)]
 #[path = "../gpu_viewport_tests.rs"]
 mod gpu_viewport_tests;
+
+#[cfg(test)]
+mod rotated_scale_tests;

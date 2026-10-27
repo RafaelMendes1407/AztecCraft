@@ -2,12 +2,49 @@ use super::*;
 use azteccraft::ui_icons::UiIcon;
 
 impl Editor {
+    /// egui reads a TextEdit's events before its own press focuses it, dropping same-frame Text.
+    /// Focusing the field egui already hit-tested for this press makes that Text land.
+    fn focus_pressed_text_field(&mut self, ctx: &egui::Context) {
+        if self.history.active_manipulation().is_some()
+            || !ctx.input(|input| input.pointer.primary_pressed())
+        {
+            return;
+        }
+        let focused = ctx.memory(|memory| memory.focused());
+        // read_response on the focused field would surrender its focus on a click elsewhere.
+        let Some(target) = text_field_ids()
+            .filter(|id| Some(*id) != focused)
+            .find(|id| {
+                ctx.read_response(*id).is_some_and(|response| {
+                    response.is_pointer_button_down_on() || response.clicked()
+                })
+            })
+        else {
+            return;
+        };
+        // Commit the previous field's draft first so the typed text lands on committed values.
+        let leaving_draft_field = text_edit_focused(ctx)
+            && focused != Some(features::manipulation_tool::manipulation_value_id());
+        if leaving_draft_field {
+            // A blur commit would otherwise also commit the target's just-typed text.
+            self.blur_commit_skip_frames = 2;
+            if self.has_draft() {
+                self.commit_pending();
+            }
+        }
+        ctx.memory_mut(|memory| memory.request_focus(target));
+    }
+
     pub(super) fn render(&mut self, ui: &mut egui::Ui) {
         let frame_token = self.scene_token;
         self.sidebar_panel_request = None;
         self.attribute_editor_tab_request = None;
         let frame_admitted = !self.files.is_modal() && !self.files.is_closing();
         let keyboard_admitted = frame_admitted && !egui::Popup::is_any_open(ui.ctx());
+        self.blur_commit_skip_frames = self.blur_commit_skip_frames.saturating_sub(1);
+        if keyboard_admitted {
+            self.focus_pressed_text_field(ui.ctx());
+        }
         let (face, vertex, edge, toggle, delete) = ui.input(|input| {
             let pressed = |key| {
                 input.events.iter().any(|event| {
@@ -42,7 +79,10 @@ impl Editor {
         self.handle_close(ui.ctx());
         // Same gate as shortcuts(): Escape that closes a menu must not also cancel an edit. The
         // popup is still open here; egui closes it later in this pass, when the menus are shown.
-        if !self.files.is_modal() && !egui::Popup::is_any_open(ui.ctx()) {
+        if !self.files.is_modal()
+            && !egui::Popup::is_any_open(ui.ctx())
+            && !self.escape_closes_primitive_options(ui.ctx())
+        {
             self.cancel_on_escape(ui.ctx());
         }
         let tool_intent = self.shortcuts(ui.ctx());
@@ -66,6 +106,8 @@ impl Editor {
                 },
                 &self.status,
             );
+            ui.separator();
+            self.help_line(ui);
         });
         egui::Panel::left("toolbox")
             .exact_size(crate::tool_icons::toolbox_width(ui))
@@ -182,6 +224,7 @@ impl Editor {
     ) {
         let mut grid_requested = false;
         let mut shading_requested = None;
+        let mut default_view_requested = false;
         let mut frame_all_requested = false;
         ui.horizontal(|ui| {
             ui.label("persp");
@@ -203,8 +246,14 @@ impl Editor {
             let shading_enabled = !self.files.is_modal() && !self.files.is_closing();
             ui.add_enabled_ui(shading_enabled, |ui| {
                 // Frame All hotkey A is from the Maya 2026 docs; the panel View > Frame All
-                // menu path is from the Maya 2014 page (PROVISIONAL for 2026).
+                // menu path is from the Maya 2014 page (PROVISIONAL for 2026). Default View and
+                // Alt+Home are from the Maya 2027 "Return to the default view" page; the
+                // default pose itself is an AztecCraft choice (Maya's persp pose is undocumented).
                 ui.menu_button("View", |ui| {
+                    if ui.button("Default View (Alt+Home)").clicked() {
+                        default_view_requested = true;
+                        ui.close();
+                    }
                     if ui.button("Frame All (A)").clicked() {
                         frame_all_requested = true;
                         ui.close();
@@ -250,12 +299,16 @@ impl Editor {
         }
         let admitted = frame_admitted && !self.files.is_modal() && !self.files.is_closing();
         self.file_modal(ui.ctx());
+        self.primitive_options_window(ui.ctx());
         let sidebar_request = self.sidebar_panel_request.take();
         let tab_request = self.attribute_editor_tab_request.take();
         if grid_requested && self.scene_token == frame_token {
             self.native_operation(Operation::SetGridVisible {
                 visible: !self.grid_visible,
             });
+        }
+        if default_view_requested && self.scene_token == frame_token {
+            self.default_view();
         }
         if frame_all_requested && self.scene_token == frame_token {
             self.frame_all();
@@ -305,7 +358,18 @@ impl Editor {
             let clickable = input.click_ndc().filter(|_| can_select && !consumed);
             let selection_intent = selection_intent.filter(|_| can_select);
             let delete_intent = delete_intent && can_select;
-            let selection_refusal = input.unsupported_selection().filter(|_| can_select);
+            // Mirrors the press-time mode refusal in move_tool.rs, which is more specific.
+            let mode_refused = features::manipulation_tool::is_manipulation_tool(self.active_tool)
+                && features::manipulation_tool::mode_refusal(
+                    features::manipulation_tool::tool_name(self.active_tool),
+                    self.selection_mode,
+                )
+                .is_some();
+            let selection_refusal = input.unsupported_selection().filter(|refusal| {
+                can_select
+                    && (*refusal != crate::viewport_ui::SelectionRefusal::Marquee
+                        || !(consumed || mode_refused))
+            });
             let navigation = if current_document && !consumed {
                 navigation
             } else {
@@ -357,8 +421,17 @@ impl Editor {
             if delete_intent && let Some((id, _)) = self.single_target().ok() {
                 self.native_operation(Operation::Delete(id));
             }
-            if let Some(refusal) = selection_refusal {
-                return Err(OperationError::InvalidInput(refusal.message().into()));
+            match selection_refusal {
+                Some(crate::viewport_ui::SelectionRefusal::Marquee) => {
+                    self.status = crate::viewport_ui::SelectionRefusal::Marquee
+                        .message()
+                        .into();
+                    self.error = false;
+                }
+                Some(refusal) => {
+                    return Err(OperationError::InvalidInput(refusal.message().into()));
+                }
+                None => {}
             }
             let view =
                 ViewScene::from_native(self.history.scene(), 256 * 1024 * 1024).map_err(|e| {

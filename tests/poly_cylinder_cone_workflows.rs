@@ -3,6 +3,7 @@ use azteccraft::{
     native_scene::{
         FaceTarget, NativeError, NativeId, NativeMesh, NativeScene, NativeTransform, ascii, binary,
     },
+    primitive_options::SINGLE_QUAD_PLANE,
     scene::{NodeId, Primitive, Scene, SceneError},
     view_scene::ViewScene,
     viewport::Camera,
@@ -325,6 +326,7 @@ fn undo_redo_restores_the_exact_mesh_and_move_edit_stays_valid() {
         let outcome = history
             .execute(Command::Create {
                 primitive,
+                options: None,
                 name: name.into(),
             })
             .unwrap();
@@ -391,7 +393,10 @@ fn id_exhaustion_is_unchanged_for_cylinders_and_cones() {
 fn new_builders_leave_cube_plane_and_sphere_unchanged() {
     let mut scene = NativeScene::default();
     let cube = scene.create(Primitive::Cube, "c").unwrap();
-    let plane = scene.create(Primitive::Plane, "p").unwrap();
+    // The single-quad plane: the default plane is 10x10 since #176.
+    let plane = scene
+        .create_with_options(Primitive::Plane, &SINGLE_QUAD_PLANE, "p")
+        .unwrap();
     let sphere = scene.create(Primitive::Sphere, "s").unwrap();
     scene.create(Primitive::Cylinder, "y").unwrap();
     scene.create(Primitive::Cone, "n").unwrap();

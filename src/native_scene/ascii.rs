@@ -2,6 +2,7 @@ use super::{
     DagEdge, GeometryViewFacts, NativeCurveShape, NativeError, NativeId, NativeScene,
     NativeTransform, NativeTransformNode, Scalar, TransformExtras, Units,
     admission::Budget,
+    authored::BUILTINS,
     curve::CurveSource,
     source::{SourceFormat, SourceRetention},
 };
@@ -63,23 +64,6 @@ fn literal_equal(a: &[u8], b: &[u8], work: &mut Work) -> Result<bool, AsciiError
         }
     }
 }
-
-const BUILTINS: [&str; 14] = [
-    "time1",
-    "hardwareRenderingGlobals",
-    "renderPartition",
-    "defaultShaderList1",
-    "postProcessList1",
-    "ikSystem",
-    "renderGlobalsList1",
-    "defaultRenderingList1",
-    "initialShadingGroup",
-    "initialParticleSE",
-    "defaultRenderGlobals",
-    "defaultResolution",
-    "hardwareRenderGlobals",
-    "defaultLightSet",
-];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
@@ -1083,6 +1067,7 @@ pub fn decode(source: Arc<[u8]>) -> Result<NativeScene, AsciiError> {
     let dag = add(transforms, curves)?;
     let records = add(statements.len(), usize::from(!trailing.is_empty()))?;
     let mut retention = SourceRetention {
+        sites: Vec::new(),
         bytes: source.clone(),
         format: SourceFormat::Ascii,
         records: budget.vector(records).map_err(|_| resource())?,
