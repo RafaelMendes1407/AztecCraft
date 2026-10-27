@@ -1920,8 +1920,8 @@ fn remote_successes_report_on_the_status_line_like_native_ones() {
     let steps: Vec<fn(&Editor) -> Operation> = vec![
         |_| Operation::Create {
             primitive: Primitive::Cube,
-            options: None,
             name: None,
+            options: None,
         },
         |editor| Operation::Rename {
             id: editor.selected.unwrap(),
@@ -5152,6 +5152,7 @@ fn real_channel_text_keeps_f64_precision_and_untouched_slots_in_one_undo() {
                 translation: [0.0, 1.0000000000000004, 0.0],
                 ..Default::default()
             },
+            label: None,
         })
         .unwrap();
     editor.sync_fields();

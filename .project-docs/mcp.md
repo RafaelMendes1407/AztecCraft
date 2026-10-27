@@ -496,8 +496,7 @@ Status values: `supported` means a registered tool or an `inspect_scene` field e
 | Tools | Manipulator size (+ and - keys on Move, Rotate and Scale) | supported | `set_manipulator_size` | `manipulation.manipulator_size` | Session-only; step, key repeat and the length floor are PROVISIONAL (rows 15 to 19 of the [policy constants table](development.md#application-policy-constants)) |
 | Tools | Gimbal, Parent, Normal, Custom and Component spaces; Move orientation modes other than World (listed disabled in the native Move row) | unsupported | | | |
 | Tools | Lasso, Paint Selection, Last Used buttons | unsupported | | | |
-| History | Undo and Redo | supported | `undo`, `redo` | `can_undo`, `can_redo` | |
-| History | Undo and Redo command names (Edit menu hover) | missing | | | #188 |
+| History | Undo and Redo | supported | `undo`, `redo` | `can_undo`, `undo_label`, `can_redo`, `redo_label` | |
 | Materials | Phong diffuse edit (Channel Box, Attribute Editor) | supported | `set_material_diffuse` | `shapes` | |
 | Materials | Session materials (create, assign, colour; MCP and `inspect_scene` only, no native UI) | supported | `create_session_material`, `assign_session_material`, `set_session_material_color` | `session_materials` | |
 | Materials | Material rendering, shading networks, textures | unsupported | | | |
