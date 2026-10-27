@@ -48,8 +48,10 @@ impl Editor {
             OperationError::Scene(azteccraft::native_scene::NativeError::ResourceLimit)
         })?;
         path.extend_from_slice(owner);
-        self.selected = Some(transform);
-        self.selected_path = path;
+        self.selection.replace(TransformTarget {
+            node: transform,
+            path,
+        });
         self.sync_fields();
         Ok(())
     }
@@ -73,6 +75,7 @@ impl Editor {
         };
         let status = match *operation {
             Operation::Select { .. }
+            | Operation::ModifySelection { .. }
             | Operation::DeselectAll
             | Operation::SelectFace { .. }
             | Operation::SelectVertex { .. }
@@ -333,6 +336,7 @@ impl Editor {
                     | Operation::UpdateManipulation { .. }
                     | Operation::FinishMove { .. }
                     | Operation::Select { .. }
+                    | Operation::ModifySelection { .. }
                     | Operation::DeselectAll
                     | Operation::SetSelectionMode(_)
                     | Operation::SelectFace { .. }
@@ -354,6 +358,18 @@ impl Editor {
                 return Err(OperationError::InvalidInput(
                     "Clearing selection cannot include an instance path".into(),
                 ));
+            }
+            Operation::ModifySelection {
+                node,
+                instance_path,
+                ..
+            } => {
+                if self.selection_mode.is_component() {
+                    return Err(OperationError::InvalidInput(
+                        "Selection changes need Object or Hierarchy selection mode".into(),
+                    ));
+                }
+                Some(self.selection_path(*node, instance_path.clone())?)
             }
             _ => None,
         };
@@ -612,6 +628,9 @@ impl Editor {
             }
             Operation::Delete(id) => Command::Remove(id),
             Operation::SetSelectionMode(mode) => {
+                if mode.is_component() && self.selection.len() > 1 {
+                    return Err(OperationError::MultipleSelection);
+                }
                 let changed = self.selection_mode != mode;
                 self.selection_mode = mode;
                 return Ok(if changed {
@@ -668,8 +687,7 @@ impl Editor {
                     || self.remembered_edge.is_some();
                 self.clear_remembered_components();
                 self.selection_mode = SelectionMode::Object;
-                self.selected = None;
-                self.selected_path.clear();
+                self.selection.clear();
                 self.sync_fields();
                 return Ok(if changed {
                     OperationReply::Changed
@@ -680,13 +698,45 @@ impl Editor {
             Operation::Select { node, .. } => {
                 let path = selected_path.unwrap_or_default();
                 let (selected, current_path) = self.selection_presentation();
-                let changed = selected != node || current_path != path;
+                let changed = selected != node || current_path != path || self.selection.len() > 1;
                 if changed {
                     self.clear_remembered_components();
                 }
-                self.selected = node;
-                self.selected_path = path;
+                match node {
+                    Some(node) => self.selection.replace(TransformTarget { node, path }),
+                    None => self.selection.clear(),
+                }
                 self.sync_fields();
+                return Ok(if changed {
+                    OperationReply::Changed
+                } else {
+                    OperationReply::Unchanged
+                });
+            }
+            Operation::ModifySelection { change, node, .. } => {
+                let target = TransformTarget {
+                    node,
+                    path: selected_path.unwrap_or_default(),
+                };
+                let full = |error: azteccraft::selection::SelectionFull| {
+                    OperationError::InvalidInput(error.to_string())
+                };
+                let changed = match change {
+                    SelectionChange::Add => {
+                        let leads = self.selection.lead() == Some(&target);
+                        self.selection.add(target).map_err(full)?;
+                        !leads
+                    }
+                    SelectionChange::Toggle => {
+                        self.selection.toggle(target).map_err(full)?;
+                        true
+                    }
+                    SelectionChange::Remove => self.selection.remove(&target),
+                };
+                if changed {
+                    self.clear_remembered_components();
+                    self.sync_fields();
+                }
                 return Ok(if changed {
                     OperationReply::Changed
                 } else {
@@ -700,17 +750,6 @@ impl Editor {
                     self.history.undo()
                 };
                 self.sync_fields();
-                if let Some((id, path)) = self.single_target().ok()
-                    && self
-                        .history
-                        .scene()
-                        .resolve_transform_path(id, path)
-                        .is_err()
-                {
-                    self.selected = None;
-                    self.selected_path.clear();
-                    self.sync_fields();
-                }
                 return Ok(if changed {
                     OperationReply::Changed
                 } else {
@@ -858,14 +897,16 @@ impl Editor {
         })?;
         if let EditOutcome::Created(id) = outcome {
             self.clear_remembered_components();
-            self.selected = Some(id);
-            self.selected_path = vec![
-                self.history
-                    .scene()
-                    .node(id)
-                    .map_err(OperationError::Scene)?
-                    .transform_id(),
-            ];
+            let transform = self
+                .history
+                .scene()
+                .node(id)
+                .map_err(OperationError::Scene)?
+                .transform_id();
+            self.selection.replace(TransformTarget {
+                node: id,
+                path: vec![transform],
+            });
         }
         self.sync_fields();
         Ok(match outcome {
@@ -961,7 +1002,7 @@ impl Editor {
                 }
             };
         }
-        let Some((id, _)) = self.single_target().ok() else {
+        let Some((id, _)) = self.lead_target().ok() else {
             return true;
         };
         if !self.has_draft() {

@@ -239,7 +239,7 @@ original RGB values. In Vertex and Edge modes component
 feedback replaces Object feedback, so the selected object's faces are not tinted and
 selected curves are not highlighted.
 
-Test limits for this slice: the `sync_fields` owner-path test fakes `selected_path`
+Test limits for this slice: the `sync_fields` owner-path test fakes the selected path through `set_selection_for_test`
 because no real instanced scene can be built from the bin crate, so it proves the
 clearing rule, not a live instance. The `remembered_face` term in the MCP test
 `baseline()` (`src/mcp_tests/official_client/vertex_edge.rs`) is defensive; no SDK test
@@ -296,7 +296,7 @@ and every edge through surfaces. When that check is over budget `vertex_markers_
 `ViewInstance` edge; the bin crate has no loose-edge fixture, so the face-less case is
 covered by the carried edge list and the picker tests, not pixels.
 
-## Select menu: Deselect All works, All, Hierarchy and Inverse wait for multi-selection (#167)
+## Select menu: Deselect All works, All, Hierarchy and Inverse are not implemented (#325)
 
 The Select menu follows Maya 2025.1's order (`buildSelectMenu.mel`): All (Ctrl+Shift+A), All by
 Type, Deselect All (Alt+D), Hierarchy and Inverse, with labels from the `SelectAll`, `SelectNone`,
@@ -305,7 +305,7 @@ Deselect All is the typed `DeselectAll` operation shared by the menu, Alt+D and 
 `deselect_all`; like Maya's `SelectNone` (`changeSelectMode -component; changeSelectMode
 -object; select -cl`) it also clears remembered components and returns to Object mode from Face,
 Vertex, Edge or Hierarchy. All, All by Type, Hierarchy and Inverse select several objects, so they stay disabled
-rows with a reason until multi-selection (#166), and Ctrl/Cmd+Shift+A reports the same on the
+rows with a reason until they are built (#325), and Ctrl/Cmd+Shift+A reports the same on the
 status line. Similar, Grow, Shrink and the rest of Maya's Select menu are absent. Option+D on
 macOS relies on egui-winit's physical-key fallback (PROVISIONAL). Maya 2026 and the 2027.2
 documentation pin are unverified.
@@ -930,3 +930,45 @@ paints nothing. This contradicts the "mirrors the painted highlight" wording in
 `.project-docs/mcp.md` (the pointer fields paragraph). The tests
 `a_scene_frame_refusal_is_reported_for_the_whole_tool_at_any_pixel` and
 `sdk_pointer_refusal_reports_a_scene_frame_refusal` rely on the surviving capture.
+
+## Multi-object selection colours and group descendants are PROVISIONAL
+
+With several objects selected, the lead and the other members are drawn in our own colours
+(`.project-docs/development.md` row 33); Maya's page says only "a different colour". The
+renderer matches by instance-path prefix, so an object below the lead's path is drawn in the lead
+colour and an object below another member in the member colour, whichever member is listed
+first. Whether Maya draws descendants of a selected group that way is unconfirmed. Pinned by
+`descendants_take_the_colour_of_the_selected_ancestor_they_sit_below`.
+
+Slice 1 of #166 gives an ordered selection with a lead (Shift, Ctrl and Shift+Ctrl viewport clicks
+in Object and Hierarchy modes, Shift and Ctrl Outliner clicks, MCP `modify_selection`). It does
+not act on several objects: Move, Rotate, Scale, the native Delete (menu, Channel Box and key), Frame Selected
+and Channel Box edits refuse with `multiple_selection` until #325 (the by-id MCP tools `delete_node`,
+`rename_node`, `set_transform` and `edit_node` still act on the node they name), and Select All, Hierarchy, Inverse and marquee
+(#30) are absent. These choices are PROVISIONAL because the Maya pages are ambiguous: a viewport
+Shift click toggles the clicked instance (the page says "the last selection"); a Ctrl click on
+an unselected object does nothing in the viewport but selects it in the Outliner, where the page
+pairs Shift with adding and Ctrl with toggling; Shift wins over Ctrl in the Outliner; a Ctrl
+click that macOS delivers as a secondary click is ignored, and Command counts as Ctrl; a lone
+selection keeps the old colour; the Outliner lead row is bold. Native visual QA of all of this is
+pending. Multi-selection is not an undo entry, and a Create, Select, New or Open replaces the
+whole set.
+
+## Ambiguous selection is unreachable today
+
+`OperationError::AmbiguousSelection` (an object with several instance paths selected without a
+path) cannot occur in a running editor: no decoder or runtime operation gives a transform two
+parents, so every node has one path. Only the unit test
+`an_object_with_two_instance_paths_needs_an_explicit_path`, which fabricates the targets,
+covers `only_instance_path`; there is no end-to-end test through a loaded scene.
+
+## Inspection refuses very large selections
+
+The selection set is charged against the inspection size budget like the node paths, so with
+every object selected `inspect_scene` reports `too_large` from about 1450 objects, where it
+managed about 2900 before the selection list existed. Slice 1 has no Select All (#325), so a
+selection that large needs that many `modify_selection` calls. A client holding the document token
+recovers with `deselect_all`; a client that connects fresh while such a selection exists cannot get a
+token (`inspect_scene` is the only tokenless tool), so the selection has to be cleared in the native UI
+(a plain click on empty space, or Alt+D). The limit is by design and pinned
+by `inspection_refuses_a_selection_that_exceeds_the_budget`.

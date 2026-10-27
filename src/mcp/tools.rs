@@ -82,6 +82,7 @@ fn tool_reply(reply: Result<OperationReply, OperationError>) -> CallToolResult {
                     _ => "scene_error",
                 },
                 OperationError::NoSelection => "no_selection",
+                OperationError::MultipleSelection => "multiple_selection",
                 OperationError::NothingToFrame => "nothing_to_frame",
                 OperationError::InvalidInput(_) => "invalid_input",
                 OperationError::Scene(NativeError::AbsentChannelLeaf { .. }) => {
@@ -636,6 +637,9 @@ mod tests {
                 }
                 "create_primitive" => json!({"scene_token":token,"primitive":"cube"}),
                 "select_node" => json!({"scene_token":token,"node_id":null}),
+                "modify_selection" => {
+                    json!({"scene_token":token,"change":"toggle","node_id":"1"})
+                }
                 "set_selection_mode" => json!({"scene_token":token,"mode":"face"}),
                 "select_face" | "select_vertex" | "select_edge" => {
                     json!({"scene_token":token,"target":null})

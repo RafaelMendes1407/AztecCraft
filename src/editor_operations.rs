@@ -34,6 +34,16 @@ pub enum AttributeEditorTab {
     Material(NativeId),
 }
 
+/// How `Operation::ModifySelection` changes the object selection. Add appends an absent instance
+/// as the lead, or moves a present one to the end; Toggle flips membership; Remove drops a member
+/// and leaves an absent instance alone. Removing the lead promotes the previous member.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SelectionChange {
+    Add,
+    Toggle,
+    Remove,
+}
+
 #[derive(Clone, Copy, Debug, Serialize)]
 #[cfg(any(test, feature = "mcp"))]
 pub struct TransformInput {
@@ -244,9 +254,16 @@ pub enum Operation {
         node: Option<NodeId>,
         instance_path: Option<Vec<NativeId>>,
     },
+    /// Adds, toggles or removes one object instance in the ordered object selection; the last
+    /// member is the lead. Object and Hierarchy modes only.
+    ModifySelection {
+        change: SelectionChange,
+        node: NodeId,
+        instance_path: Option<Vec<NativeId>>,
+    },
     SetSelectionMode(SelectionMode),
     /// Maya's Select > Deselect All (`SelectNone`, Alt+D): clears the object and component
-    /// selection and returns to Object selection mode (#167).
+    /// selection and returns to Object selection mode.
     DeselectAll,
     SelectFace {
         target: Option<FaceTarget>,
@@ -415,8 +432,12 @@ pub struct SceneInspection {
     pub appearance_incomplete: bool,
     pub source_appearance: azteccraft::native_scene::AppearanceSummary,
     pub pending_action: Option<PendingInspection>,
+    /// The lead of the ordered object selection (`selection`'s last member), if any.
     pub selected_node: Option<String>,
     pub selected_instance_path: Vec<String>,
+    /// Selected object instances in selection order; the last is the lead.
+    pub selection: Vec<SelectionMemberInspection>,
+    pub selection_count: usize,
     pub selection_mode: SelectionMode,
     pub remembered_face: Option<FaceSelectionTarget>,
     pub remembered_vertex: Option<VertexSelectionTarget>,
@@ -570,6 +591,13 @@ pub struct MoveAxisInspection {
 
 #[derive(Debug, Serialize)]
 #[cfg(any(test, feature = "mcp"))]
+pub struct SelectionMemberInspection {
+    pub node: String,
+    pub instance_path: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg(any(test, feature = "mcp"))]
 pub struct NodeInspection {
     pub id: String,
     pub name: String,
@@ -701,6 +729,8 @@ pub enum OperationError {
     #[cfg(any(test, feature = "mcp"))]
     SessionMaterial(NativeError),
     NoSelection,
+    /// An action that needs exactly one object ran while several were selected.
+    MultipleSelection,
     /// Frame All on a scene without any mesh or curve instance.
     NothingToFrame,
     InvalidInput(String),
@@ -744,6 +774,7 @@ impl fmt::Display for OperationError {
             #[cfg(any(test, feature = "mcp"))]
             Self::SessionMaterial(error) => error.fmt(f),
             Self::NoSelection => f.write_str("Select an object or face before framing"),
+            Self::MultipleSelection => f.write_str("Several objects are selected; select one object"),
             Self::NothingToFrame => f.write_str("The scene has no objects to frame"),
             Self::InvalidInput(message) => f.write_str(message),
             Self::Scene(error) => error.fmt(f),
