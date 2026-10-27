@@ -1887,4 +1887,578 @@ fn a_plain_ascii_source_reports_the_rotate_ring_although_move_refuses() {
             .all(|axis| axis.unavailable_reason.is_some())
     );
     assert_eq!(viewport.pointer_hit, Some("y"));
+    // The refusal is the text native hover shows after the handle's label.
+    let reason = "Maya ASCII scenes are read-only in this version";
+    assert_eq!(viewport.pointer_refusal.as_deref(), Some(reason));
+    assert_eq!(editor.status, format!("Object Y Rotate: {reason}"));
+}
+
+// An editor on a decoded Maya ASCII scene (read-only), with the node `select` selected and `tool`
+// active, and the viewport rect taken from an idle frame.
+fn ascii_editor(nodes: &str, select: &str, tool: ActiveTool) -> (Editor, egui::Context, View) {
+    let source = format!(
+        "//Maya ASCII 2016 scene\nrequires maya \"2016\"; \
+         currentUnit -l centimeter -a degree -t film;\n{nodes}"
+    );
+    let scene = azteccraft::native_scene::ascii::decode(source.into_bytes().into()).unwrap();
+    let mut editor = Editor {
+        history: azteccraft::history::History::new(scene),
+        renderer: Some(crate::viewport_renderer::tests::renderer_handle()),
+        camera: oblique(),
+        ..Editor::default()
+    };
+    let node = editor
+        .history
+        .scene()
+        .nodes()
+        .iter()
+        .find(|node| node.name() == select)
+        .unwrap()
+        .id();
+    editor.select(Some(node));
+    editor.native_operation(Operation::SetActiveTool(tool));
+    let context = egui::Context::default();
+    let view = View {
+        camera: editor.camera.clone(),
+        aspect: editor.aspect,
+        rect: viewport(&idle(&mut editor, &context, 1.0)),
+        scale: 1.0,
+    };
+    (editor, context, view)
+}
+
+fn segment_gap(point: glam::DVec2, segment: &azteccraft::move_handles::ScreenSegment) -> f64 {
+    let along = segment.end - segment.start;
+    let t = if along.length_squared() == 0.0 {
+        0.0
+    } else {
+        ((point - segment.start).dot(along) / along.length_squared()).clamp(0.0, 1.0)
+    };
+    (point - (segment.start + along * t)).length()
+}
+
+// Scale handles for a frame the test builds from known numbers, never from the editor.
+fn scale_handles_at(editor: &Editor, origin: DVec3, axes: [DVec3; 3]) -> ScaleHandles {
+    let capture = editor.move_viewport.as_ref().unwrap().capture.clone();
+    ScaleHandles::new(&capture, &HandleFrame::new(origin, axes).unwrap()).unwrap()
+}
+
+// The distance from `pixel` to the nearest drawn segment of the handles (axis geometry and the
+// centre box).
+fn clearance(handles: &ScaleHandles, pixel: glam::DVec2) -> f64 {
+    handles
+        .axes()
+        .iter()
+        .filter_map(|axis| axis.geometry())
+        .flat_map(|geometry| geometry.segments())
+        .chain(handles.center())
+        .map(|segment| segment_gap(pixel, segment))
+        .fold(f64::INFINITY, f64::min)
+}
+
+fn logical(rect: egui::Rect, pixel: glam::DVec2) -> Pos2 {
+    rect.min + egui::vec2(pixel.x as f32, pixel.y as f32)
+}
+
+// The point on shaft `index` farthest from every wrong frame's handles.
+fn shaft_probe(
+    editor: &Editor,
+    origin: DVec3,
+    handles: &ScaleHandles,
+    index: usize,
+    wrong: &[(DVec3, [DVec3; 3])],
+) -> glam::DVec2 {
+    let shaft = handles.axes()[index]
+        .geometry()
+        .unwrap()
+        .segments()
+        .next()
+        .unwrap();
+    let wrong: Vec<_> = wrong
+        .iter()
+        .filter(|(other, _)| other.distance(origin) > 1e-9)
+        .map(|(origin, axes)| scale_handles_at(editor, *origin, *axes))
+        .collect();
+    (1..20)
+        .map(|step| shaft.start + (shaft.end - shaft.start) * (f64::from(step) / 20.0))
+        .max_by(|a, b| {
+            let worst = |p: &glam::DVec2| {
+                wrong
+                    .iter()
+                    .map(|handles| clearance(handles, *p))
+                    .fold(f64::INFINITY, f64::min)
+            };
+            worst(a).total_cmp(&worst(b))
+        })
+        .unwrap()
+}
+
+// Every frame the Scale tool could wrongly use is a different (origin, axes) pair; the probe
+// pixel must be more than the pick radius from the handles of each wrong frame with another
+// origin and must pick something else under each wrong frame.
+fn assert_probe_discriminates(
+    editor: &Editor,
+    expected_origin: DVec3,
+    pixel: glam::DVec2,
+    expected: Pick<ScaleHandle>,
+    wrong: &[(DVec3, [DVec3; 3])],
+) {
+    for (origin, axes) in wrong {
+        let alternative = scale_handles_at(editor, *origin, *axes);
+        // A frame at the same origin shares the centre box and, in Object space, the arm
+        // directions, so it is told apart by the pick alone.
+        if origin.distance(expected_origin) > 1e-9 {
+            assert!(
+                clearance(&alternative, pixel) > 8.0,
+                "{origin:?} {axes:?} reaches the probe {pixel:?}"
+            );
+        }
+        assert_ne!(alternative.pick(pixel), Some(expected));
+    }
+}
+
+const WORLD_AXES: [DVec3; 3] = [DVec3::X, DVec3::Y, DVec3::Z];
+// Rz(90): object X is world Y, object Y is world -X.
+const ROTATED_AXES: [DVec3; 3] = [DVec3::Y, DVec3::NEG_X, DVec3::Z];
+const ROTATE_ORIGIN: DVec3 = DVec3::new(1.0, 0.0, 0.0);
+const SCALE_ORIGIN: DVec3 = DVec3::new(1.0, 2.0, 0.0);
+
+// T=(1,0,0), Rz(90), scalePivotTranslate=(2,0,0): the Rotate origin is (1,0,0) and the Scale
+// origin (1,2,0).
+fn offset_pivot_scene() -> (Editor, egui::Context, View) {
+    ascii_editor(
+        concat!(
+            "createNode transform -n \"a\";\n",
+            "setAttr \".t\" -type \"double3\" 1 0 0;\n",
+            "setAttr \".r\" -type \"double3\" 0 0 90;\n",
+            "setAttr \".spt\" -type \"double3\" 2 0 0;\n"
+        ),
+        "a",
+        ActiveTool::Scale,
+    )
+}
+
+#[test]
+fn scale_hover_and_inspection_use_the_scale_frame_not_the_rotate_frame() {
+    for (space, axes, (index, handle, name, id), wrong) in [
+        (
+            ManipulationSpace::World,
+            WORLD_AXES,
+            (0, ScaleHandle::X, "X", "x"),
+            [
+                (ROTATE_ORIGIN, WORLD_AXES),
+                (SCALE_ORIGIN, ROTATED_AXES),
+                (ROTATE_ORIGIN, ROTATED_AXES),
+            ],
+        ),
+        (
+            ManipulationSpace::Object,
+            ROTATED_AXES,
+            (0, ScaleHandle::X, "X", "x"),
+            [
+                (ROTATE_ORIGIN, ROTATED_AXES),
+                (SCALE_ORIGIN, WORLD_AXES),
+                (ROTATE_ORIGIN, WORLD_AXES),
+            ],
+        ),
+    ] {
+        let (mut editor, context, view) = offset_pivot_scene();
+        editor.set_tool_space(ActiveTool::Scale, space).unwrap();
+        // Short handles keep the wrong frames' arms away from the probes.
+        editor
+            .apply_operation(Operation::SetManipulatorSize(size(0.5)))
+            .unwrap();
+        idle(&mut editor, &context, 1.0);
+        // The fixture really has the frames the test names.
+        assert!(
+            editor
+                .manipulation_frame(ActiveTool::Scale)
+                .unwrap()
+                .1
+                .origin()
+                .distance(SCALE_ORIGIN)
+                < 1e-9
+        );
+        assert!(
+            editor
+                .manipulation_frame(ActiveTool::Rotate)
+                .unwrap()
+                .1
+                .origin()
+                .distance(ROTATE_ORIGIN)
+                < 1e-9
+        );
+        let expected = scale_handles_at(&editor, SCALE_ORIGIN, axes);
+        let space_name = if space == ManipulationSpace::World {
+            "World"
+        } else {
+            "Object"
+        };
+
+        let shaft = shaft_probe(&editor, SCALE_ORIGIN, &expected, index, &wrong);
+        assert_eq!(expected.pick(shaft), Some(Pick::Handle(handle)));
+        assert_probe_discriminates(&editor, SCALE_ORIGIN, shaft, Pick::Handle(handle), &wrong);
+        moved(&mut editor, &context, 1.0, logical(view.rect, shaft));
+        assert_eq!(pointer_pick(&editor), (Some(id), None), "{space_name}");
+        assert!(
+            editor
+                .status
+                .starts_with(&format!("{space_name} {name} Scale: ")),
+            "{}",
+            editor.status
+        );
+        assert!(editor.error && !editor.status.ends_with("drag to scale"));
+
+        // The centre box sits on the Scale origin; only the frames with another origin differ.
+        let centre = scale_handles_at(&editor, SCALE_ORIGIN, axes);
+        let origin_pixel = centre
+            .center()
+            .fold(glam::DVec2::ZERO, |sum, s| sum + (s.start + s.end) * 0.5)
+            * 0.25;
+        assert_eq!(
+            centre.pick(origin_pixel),
+            Some(Pick::Handle(ScaleHandle::Uniform))
+        );
+        let other_origin: Vec<_> = wrong
+            .iter()
+            .copied()
+            .filter(|(origin, _)| *origin != SCALE_ORIGIN)
+            .collect();
+        assert_eq!(other_origin.len(), 2);
+        assert_probe_discriminates(
+            &editor,
+            SCALE_ORIGIN,
+            origin_pixel,
+            Pick::Handle(ScaleHandle::Uniform),
+            &other_origin,
+        );
+        moved(&mut editor, &context, 1.0, logical(view.rect, origin_pixel));
+        assert_eq!(
+            pointer_pick(&editor),
+            (Some("uniform"), None),
+            "{space_name}"
+        );
+        assert!(
+            editor
+                .status
+                .starts_with(&format!("{space_name} Uniform Scale: ")),
+            "{}",
+            editor.status
+        );
+    }
+}
+
+#[test]
+fn a_scale_press_uses_the_scale_frame_space_not_the_rotate_space() {
+    // A cube turned 90 degrees about Z: Rotate defaults to Object axes, Scale to World axes.
+    let (mut editor, context, view) = setup(Key::R, 1.0);
+    let id = editor.selected.unwrap();
+    editor
+        .apply_operation(Operation::SetTransform {
+            id,
+            transform: crate::editor_operations::TransformInput {
+                translation: [0.0; 3],
+                rotation_degrees: [0.0, 0.0, 90.0],
+                scale: [1.0; 3],
+            },
+        })
+        .unwrap();
+    idle(&mut editor, &context, 1.0);
+    let expected = scale_handles_at(&editor, DVec3::ZERO, WORLD_AXES);
+    let shaft = shaft_probe(
+        &editor,
+        DVec3::ZERO,
+        &expected,
+        0,
+        &[(DVec3::ZERO, ROTATED_AXES)],
+    );
+    assert_probe_discriminates(
+        &editor,
+        DVec3::ZERO,
+        shaft,
+        Pick::Handle(ScaleHandle::X),
+        &[(DVec3::ZERO, ROTATED_AXES)],
+    );
+    press(&mut editor, &context, 1.0, logical(view.rect, shaft));
+    assert_eq!(
+        editor.history.active_manipulation().unwrap().kind,
+        ManipulationKindState::Scale {
+            handle: ScaleHandle::X,
+            space: azteccraft::native_scene::ScaleSpace::World
+        }
+    );
+    assert_eq!(editor.status, "World X Scale");
+}
+
+// A writable cube turned `degrees` about Z at the origin with the Scale tool active.
+fn rotated_cube_scale_editor(degrees: f64) -> (Editor, egui::Context, View) {
+    let (mut editor, context, view) = setup(Key::R, 1.0);
+    let id = editor.selected.unwrap();
+    editor
+        .apply_operation(Operation::SetTransform {
+            id,
+            transform: crate::editor_operations::TransformInput {
+                translation: [0.0; 3],
+                rotation_degrees: [0.0, 0.0, degrees],
+                scale: [1.0; 3],
+            },
+        })
+        .unwrap();
+    idle(&mut editor, &context, 1.0);
+    (editor, context, view)
+}
+
+#[test]
+fn scale_hover_states_the_refusal_of_the_handle_under_the_pointer() {
+    // World X and Y of a node turned 30 degrees about Z are not local axes; World Z is.
+    let (mut editor, context, view) = rotated_cube_scale_editor(30.0);
+    let handles = scale_handles_at(&editor, DVec3::ZERO, WORLD_AXES);
+    let refusal = NativeError::UnsupportedScale(ScaleUnsupported::NotAxisAligned).to_string();
+    for (index, handle, name, refused) in [
+        (0, ScaleHandle::X, "X", true),
+        (2, ScaleHandle::Z, "Z", false),
+    ] {
+        let pixel = shaft_probe(&editor, DVec3::ZERO, &handles, index, &[]);
+        assert_eq!(handles.pick(pixel), Some(Pick::Handle(handle)));
+        moved(&mut editor, &context, 1.0, logical(view.rect, pixel));
+        let expected = if refused {
+            format!("World {name} Scale: {refusal}")
+        } else {
+            format!("World {name} Scale: drag to scale")
+        };
+        assert_eq!(editor.status, expected);
+        assert_eq!(editor.error, refused);
+    }
+}
+
+fn pointer_refusal(editor: &Editor) -> Option<String> {
+    editor
+        .inspect_manipulation()
+        .unwrap()
+        .viewport
+        .unwrap()
+        .pointer_refusal
+}
+
+#[test]
+fn pointer_refusal_is_per_handle_and_matches_the_native_hover_text() {
+    // World X of a node turned 30 degrees about Z is refused, World Z and Uniform are not.
+    let (mut editor, context, view) = rotated_cube_scale_editor(30.0);
+    let handles = scale_handles_at(&editor, DVec3::ZERO, WORLD_AXES);
+    let reason = NativeError::UnsupportedScale(ScaleUnsupported::NotAxisAligned).to_string();
+    let centre = handles
+        .center()
+        .fold(glam::DVec2::ZERO, |sum, s| sum + (s.start + s.end) * 0.5)
+        * 0.25;
+    for (pixel, hit, expected) in [
+        (
+            shaft_probe(&editor, DVec3::ZERO, &handles, 0, &[]),
+            "x",
+            Some(reason.as_str()),
+        ),
+        (
+            shaft_probe(&editor, DVec3::ZERO, &handles, 2, &[]),
+            "z",
+            None,
+        ),
+        (centre, "uniform", None),
+    ] {
+        moved(&mut editor, &context, 1.0, logical(view.rect, pixel));
+        assert_eq!(pointer_pick(&editor), (Some(hit), None), "{hit}");
+        assert_eq!(pointer_refusal(&editor).as_deref(), expected, "{hit}");
+        if let Some(reason) = expected {
+            assert!(editor.status.ends_with(reason), "{}", editor.status);
+        }
+    }
+}
+
+#[test]
+fn pointer_refusal_is_cleared_during_a_manipulation_and_for_disabled_picks() {
+    let (mut editor, context, view) = rotated_cube_scale_editor(30.0);
+    let handles = scale_handles_at(&editor, DVec3::ZERO, WORLD_AXES);
+    let refused = logical(
+        view.rect,
+        shaft_probe(&editor, DVec3::ZERO, &handles, 0, &[]),
+    );
+    moved(&mut editor, &context, 1.0, refused);
+    assert!(pointer_refusal(&editor).is_some());
+    // An accepted handle starts a drag; the pointer then rests over the refused one.
+    let accepted = logical(
+        view.rect,
+        shaft_probe(&editor, DVec3::ZERO, &handles, 2, &[]),
+    );
+    press(&mut editor, &context, 1.0, accepted);
+    assert!(editor.history.active_manipulation().is_some());
+    moved(&mut editor, &context, 1.0, refused);
+    let inspected = editor.inspect_manipulation().unwrap().viewport.unwrap();
+    assert!(inspected.pointer_available);
+    assert_eq!(
+        (
+            inspected.pointer_hit,
+            inspected.pointer_disabled,
+            inspected.pointer_refusal
+        ),
+        (None, None, None)
+    );
+    // A disabled pick in a read-only scene: the kind is the reason, so no refusal is added.
+    let (mut editor, context, view) =
+        ascii_editor("createNode transform -n \"a\";\n", "a", ActiveTool::Rotate);
+    moved(
+        &mut editor,
+        &context,
+        1.0,
+        view.screen(Vec3::ZERO) + egui::vec2(72.0 * 1.2, 0.0),
+    );
+    assert_eq!(pointer_pick(&editor), (None, Some("view_ring")));
+    assert_eq!(pointer_refusal(&editor), None);
+}
+
+#[test]
+fn pointer_refusal_stays_null_for_move_even_when_its_frame_refuses() {
+    let mirrored = concat!(
+        "createNode transform -n \"p\"; setAttr \".s\" -type \"double3\" -1 1 1;\n",
+        "createNode transform -n \"c\" -p \"p\";\n"
+    );
+    for (nodes, node) in [("createNode transform -n \"a\";\n", "a"), (mirrored, "c")] {
+        let (mut editor, context, view) = ascii_editor(nodes, node, ActiveTool::Move);
+        moved(&mut editor, &context, 1.0, view.screen(Vec3::ZERO));
+        let inspected = editor.inspect_manipulation().unwrap();
+        assert!(!inspected.kinds[0].available, "{node}");
+        let viewport = inspected.viewport.unwrap();
+        assert!(viewport.pointer_available);
+        assert_eq!(viewport.pointer_refusal, None, "{node}");
+    }
+}
+
+#[test]
+fn a_mirrored_frame_is_reported_for_the_whole_tool_at_any_pixel() {
+    let nodes = concat!(
+        "createNode transform -n \"privateParent\"; setAttr \".s\" -type \"double3\" -1 1 1;\n",
+        "createNode transform -n \"privateChild\" -p \"privateParent\";\n"
+    );
+    for (tool, name) in [(ActiveTool::Rotate, "Rotate"), (ActiveTool::Scale, "Scale")] {
+        let (mut editor, context, view) = ascii_editor(nodes, "privateChild", tool);
+        // World axes are never mirrored; Scale defaults to World.
+        editor
+            .set_tool_space(tool, ManipulationSpace::Object)
+            .unwrap();
+        idle(&mut editor, &context, 1.0);
+        // No pointer yet: nothing to report.
+        assert_eq!(pointer_refusal(&editor), None, "{name}");
+        for at in [view.rect.center(), view.rect.min + egui::vec2(40.0, 40.0)] {
+            moved(&mut editor, &context, 1.0, at);
+            let viewport = editor.inspect_manipulation().unwrap().viewport.unwrap();
+            assert!(viewport.pointer_available);
+            assert_eq!(viewport.pointer_hit, None);
+            let reason = viewport.pointer_refusal.expect("the frame refusal");
+            assert!(reason.contains("Handle axes are mirrored"), "{reason}");
+            assert_eq!(
+                editor.status,
+                format!("{name} unavailable: {reason}"),
+                "native shows the same suffix"
+            );
+            assert!(!reason.contains("private"), "{reason}");
+        }
+    }
+}
+
+#[test]
+fn pointer_refusals_carry_no_node_name_or_path() {
+    let (mut editor, context, view) = ascii_editor(
+        "createNode transform -n \"privateNodeName\";\n",
+        "privateNodeName",
+        ActiveTool::Rotate,
+    );
+    moved(&mut editor, &context, 1.0, view.ring(Vec3::Y, 0.0));
+    let reason = pointer_refusal(&editor).expect("read-only refusal");
+    for secret in ["privateNodeName", "/", "\\"] {
+        assert!(!reason.contains(secret), "{reason}");
+    }
+}
+
+#[test]
+fn a_refused_hit_with_the_longest_reason_stays_within_the_reserved_budget() {
+    let (mut editor, context, view) =
+        ascii_editor("createNode transform -n \"a\";\n", "a", ActiveTool::Rotate);
+    moved(&mut editor, &context, 1.0, view.ring(Vec3::Y, 0.0));
+    let mut inspected = editor.inspect_manipulation().unwrap();
+    let viewport = inspected.viewport.as_mut().unwrap();
+    assert!(viewport.pointer_hit.is_some() && viewport.pointer_refusal.is_some());
+    // The longest reason a handle refusal can carry.
+    let longest = NativeError::AbsentChannelLeaf {
+        channel: azteccraft::native_scene::ChannelLeaf::Translate,
+        component: 0,
+    }
+    .to_string();
+    assert!(longest.len() < 128, "{}", longest.len());
+    viewport.pointer_refusal = Some(longest);
+    let bytes = serde_json::to_vec(&inspected).unwrap().len();
+    assert!(
+        bytes <= crate::editor_operations::MOVE_INSPECTION_MAX_BYTES,
+        "{bytes}"
+    );
+}
+
+// The Y ring hovered on the Rotate tool: status "Object Y Rotate: drag to turn".
+fn hovering_the_y_ring() -> (Editor, egui::Context, Pos2) {
+    let (mut editor, context, view) = setup(Key::E, 1.0);
+    let at = view.ring(Vec3::Y, 0.0);
+    moved(&mut editor, &context, 1.0, at);
+    assert_eq!(editor.status, "Object Y Rotate: drag to turn");
+    assert_eq!(pointer_pick(&editor), (Some("y"), None));
+    (editor, context, at)
+}
+
+// Pinned, not gated: `pointer_hit` mirrors the painted highlight, which native paints whatever the
+// focus, popup or modal state; only the status text is gated by the hover admission.
+#[test]
+fn inspection_reports_the_pick_while_native_hover_status_is_suppressed() {
+    // The window loses focus: the status reverts, the pick stays.
+    let (mut editor, context, at) = hovering_the_y_ring();
+    let mut input = raw(SIZE, Pos2::ZERO, 1.0, vec![Event::PointerMoved(at)]);
+    input.focused = false;
+    frame(&mut editor, &context, input);
+    assert_eq!(editor.status, editor.tool_help());
+    assert_eq!(pointer_pick(&editor), (Some("y"), None));
+
+    // A close modal is up: the pick stays.
+    let (mut editor, context, at) = hovering_the_y_ring();
+    editor.request_close();
+    assert!(editor.files.is_modal());
+    moved(&mut editor, &context, 1.0, at);
+    assert_ne!(editor.status, "Object Y Rotate: drag to turn");
+    assert_eq!(pointer_pick(&editor), (Some("y"), None));
+
+    // The pointer leaves the window: nothing is available and nothing is picked.
+    let (mut editor, context, _) = hovering_the_y_ring();
+    frame(
+        &mut editor,
+        &context,
+        raw(SIZE, Pos2::ZERO, 1.0, vec![Event::PointerGone]),
+    );
+    let viewport = editor.inspect_manipulation().unwrap().viewport.unwrap();
+    assert!(!viewport.pointer_available);
+    assert_eq!(
+        (
+            viewport.pointer_hit,
+            viewport.pointer_disabled,
+            viewport.pointer_refusal
+        ),
+        (None, None, None)
+    );
+
+    // A hidden window has no viewport capture at all.
+    let (mut editor, context, _) = hovering_the_y_ring();
+    let mut input = raw(SIZE, Pos2::ZERO, 1.0, vec![]);
+    input
+        .viewports
+        .get_mut(&egui::ViewportId::ROOT)
+        .unwrap()
+        .minimized = Some(true);
+    eframe::App::raw_input_hook(&mut editor, &context, &mut input);
+    let mut native_frame = eframe::Frame::_new_kittest();
+    let _ = context.run_logic(&input, |ctx| {
+        eframe::App::logic(&mut editor, ctx, &mut native_frame)
+    });
+    assert!(editor.inspect_manipulation().unwrap().viewport.is_none());
 }
