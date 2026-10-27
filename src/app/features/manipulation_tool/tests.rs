@@ -1,21 +1,18 @@
 use super::*;
-use crate::app::features::move_tool::tests::{button, frame, key, raw, viewport};
+use crate::app::features::move_tool::tests::{
+    View, button, frame, key, oblique, raw, scale_plane_point, viewport,
+};
 use azteccraft::{
     manipulator_handles::{DisabledKind, HandleFrame, RotateHandles},
     move_handles::ManipulatorSize,
     native_scene::{NativeError, ScaleUnsupported},
     scene::Primitive,
-    viewport::Camera,
 };
-use eframe::egui::{self, Event, Key, Modifiers, Pos2, Rect, Shape};
+use eframe::egui::{self, Event, Key, Modifiers, Pos2, Shape};
 use glam::Vec3;
 use uuid::Uuid;
 
 const SIZE: egui::Vec2 = egui::vec2(1440.0, 900.0);
-
-fn oblique() -> Camera {
-    Camera::new(Vec3::ZERO, 0.6, 0.4, 10.0, 90_f32.to_radians(), 0.01, 100.0).unwrap()
-}
 
 fn key_up(key: Key) -> Event {
     Event::Key {
@@ -67,43 +64,6 @@ fn setup(tool_key: Key, scale: f32) -> (Editor, egui::Context, View) {
         scale,
     };
     (editor, context, view)
-}
-
-#[derive(Clone)]
-struct View {
-    camera: Camera,
-    aspect: f32,
-    rect: Rect,
-    scale: f32,
-}
-
-impl View {
-    fn screen(&self, world: Vec3) -> Pos2 {
-        let ndc = self.camera.project(world, self.aspect).unwrap().unwrap();
-        Pos2::new(
-            self.rect.left() + (ndc.x + 1.0) * self.rect.width() * 0.5,
-            self.rect.top() + (1.0 - ndc.y) * self.rect.height() * 0.5,
-        )
-    }
-
-    // World length of a 72 px handle at the origin: the 90 degree view spans 10 units up and down.
-    fn radius(&self) -> f32 {
-        72.0 / self.scale * 10.0 / (self.rect.height() * 0.5)
-    }
-
-    // The point of the ring about `axis` at `degrees` from the ring point nearest the eye.
-    fn ring(&self, axis: Vec3, degrees: f32) -> Pos2 {
-        self.ring_sized(axis, degrees, 1.0)
-    }
-
-    // The same point on a ring whose radius is `factor` times the default one.
-    fn ring_sized(&self, axis: Vec3, degrees: f32, factor: f32) -> Pos2 {
-        let eye = self.camera.eye();
-        let u = (eye - axis * eye.dot(axis)).normalize();
-        let v = axis.cross(u);
-        let angle = degrees.to_radians();
-        self.screen((u * angle.cos() + v * angle.sin()) * self.radius() * factor)
-    }
 }
 
 fn channels(editor: &Editor) -> [f64; 9] {
@@ -1794,4 +1754,137 @@ fn a_worst_case_manipulation_inspection_stays_within_the_reserved_budget() {
         bytes <= crate::editor_operations::MOVE_INSPECTION_MAX_BYTES,
         "{bytes}"
     );
+}
+
+fn pointer_pick(editor: &Editor) -> (Option<&'static str>, Option<&'static str>) {
+    let viewport = editor.inspect_manipulation().unwrap().viewport.unwrap();
+    (viewport.pointer_hit, viewport.pointer_disabled)
+}
+
+// A point `offset` px from `on` on the normal of the segment direction `along`.
+fn beside(on: Pos2, along: egui::Vec2, offset: f32) -> Pos2 {
+    let along = along.normalized();
+    on + egui::vec2(-along.y, along.x) * offset
+}
+
+#[test]
+fn inspection_reports_the_rotate_ring_under_the_pointer() {
+    // Rotate must not report the (undrawn) Move arrow; 7 px picks the Y ring, 9 px nothing.
+    for (offset, expected) in [(7.0_f32, Some("y")), (9.0, None)] {
+        let (mut editor, context, view) = setup(Key::E, 1.0);
+        let along = view.ring(Vec3::Y, 1.0) - view.ring(Vec3::Y, -1.0);
+        moved(
+            &mut editor,
+            &context,
+            1.0,
+            beside(view.ring(Vec3::Y, 0.0), along, offset),
+        );
+        assert_eq!(pointer_pick(&editor), (expected, None), "{offset}");
+    }
+    let (mut editor, context, view) = setup(Key::E, 1.0);
+    let origin = view.screen(Vec3::ZERO);
+    moved(
+        &mut editor,
+        &context,
+        1.0,
+        origin + egui::vec2(72.0 * 1.2, 0.0),
+    );
+    assert_eq!(pointer_pick(&editor), (None, Some("view_ring")));
+    moved(&mut editor, &context, 1.0, origin);
+    assert_eq!(pointer_pick(&editor), (None, None));
+}
+
+#[test]
+fn inspection_reports_the_scale_handle_under_the_pointer() {
+    for (offset, expected) in [(7.0_f32, Some("x")), (9.0, None)] {
+        let (mut editor, context, view) = setup(Key::R, 1.0);
+        let origin = view.screen(Vec3::ZERO);
+        let tip = view.screen(Vec3::X * view.radius());
+        let on = origin + (tip - origin) * 0.6;
+        moved(&mut editor, &context, 1.0, beside(on, tip - origin, offset));
+        assert_eq!(pointer_pick(&editor), (expected, None), "{offset}");
+    }
+    let (mut editor, context, view) = setup(Key::R, 1.0);
+    moved(&mut editor, &context, 1.0, view.screen(Vec3::ZERO));
+    assert_eq!(pointer_pick(&editor), (Some("uniform"), None));
+    // A Scale plane outline at a small size, where no shaft is within the pick radius.
+    editor
+        .apply_operation(Operation::SetManipulatorSize(size(0.1)))
+        .unwrap();
+    idle(&mut editor, &context, 1.0);
+    let plane = scale_plane_point(&editor, view.rect);
+    moved(&mut editor, &context, 1.0, plane);
+    assert_eq!(pointer_pick(&editor), (None, Some("scale_plane")));
+}
+
+#[test]
+fn inspection_reports_no_handle_for_select_or_during_a_manipulation() {
+    let (mut editor, context, view) = setup(Key::W, 1.0);
+    let on_arrow = view.screen(Vec3::X * view.radius() * 0.5);
+    moved(&mut editor, &context, 1.0, on_arrow);
+    assert_eq!(pointer_pick(&editor), (Some("x"), None));
+    editor.native_operation(Operation::SetActiveTool(ActiveTool::Select));
+    assert_eq!(pointer_pick(&editor), (None, None));
+    // An active manipulation suppresses the pick like native hover, while the pointer stays known.
+    for (tool, point) in [
+        (Key::W, on_arrow),
+        (Key::E, view.ring(Vec3::Y, 0.0)),
+        (Key::R, view.screen(Vec3::X * view.radius() * 0.6)),
+    ] {
+        let (mut editor, context, _) = setup(tool, 1.0);
+        press(&mut editor, &context, 1.0, point);
+        assert!(editor.history.active_manipulation().is_some(), "{tool:?}");
+        let viewport = editor.inspect_manipulation().unwrap().viewport.unwrap();
+        assert_eq!(
+            (viewport.pointer_hit, viewport.pointer_disabled),
+            (None, None)
+        );
+        assert!(viewport.pointer_available, "{tool:?}");
+    }
+}
+
+#[test]
+fn a_plain_ascii_source_reports_the_rotate_ring_although_move_refuses() {
+    let scene = azteccraft::native_scene::ascii::decode(
+        concat!(
+            "//Maya ASCII 2016 scene\nrequires maya \"2016\"; ",
+            "currentUnit -l centimeter -a degree -t film;\n",
+            "createNode transform -n \"a\";\n"
+        )
+        .as_bytes()
+        .to_vec()
+        .into(),
+    )
+    .unwrap();
+    let mut editor = Editor {
+        history: azteccraft::history::History::new(scene),
+        renderer: Some(crate::viewport_renderer::tests::renderer_handle()),
+        camera: oblique(),
+        ..Editor::default()
+    };
+    let node = editor.history.scene().nodes()[0].id();
+    editor.select(Some(node));
+    editor.native_operation(Operation::SetActiveTool(ActiveTool::Rotate));
+    let context = egui::Context::default();
+    let view = View {
+        camera: editor.camera.clone(),
+        aspect: editor.aspect,
+        rect: viewport(&idle(&mut editor, &context, 1.0)),
+        scale: 1.0,
+    };
+    moved(&mut editor, &context, 1.0, view.ring(Vec3::Y, 0.0));
+    let inspected = editor.inspect_manipulation().unwrap();
+    assert!(
+        !inspected.kinds[0].available,
+        "Move must refuse this source"
+    );
+    let viewport = inspected.viewport.unwrap();
+    // The Move frame's error is carried by the axes, while the Rotate pick still works.
+    assert!(
+        viewport
+            .axes
+            .iter()
+            .all(|axis| axis.unavailable_reason.is_some())
+    );
+    assert_eq!(viewport.pointer_hit, Some("y"));
 }

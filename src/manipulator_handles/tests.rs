@@ -512,6 +512,48 @@ fn identical_ring_segments_tie_to_x_then_y_then_z() {
     );
 }
 
+fn horizontal_disabled(kind: DisabledKind, y: f64) -> DisabledHandle {
+    DisabledHandle {
+        kind,
+        segments: vec![ScreenSegment {
+            start: DVec2::new(0.0, y),
+            end: DVec2::new(100.0, y),
+        }],
+    }
+}
+
+#[test]
+fn disabled_ties_go_to_the_earlier_handle() {
+    // Both segments are exactly 3 px from the probe, so the squared distances are equal.
+    let pixel = DVec2::new(50.0, 0.0);
+    let handles = [
+        horizontal_disabled(DisabledKind::ViewRing, -3.0),
+        horizontal_disabled(DisabledKind::FreeRotate, 3.0),
+    ];
+    assert_eq!(
+        nearest_disabled(&handles, pixel),
+        Some(DisabledKind::ViewRing)
+    );
+    let reversed = [
+        horizontal_disabled(DisabledKind::FreeRotate, 3.0),
+        horizontal_disabled(DisabledKind::ViewRing, -3.0),
+    ];
+    assert_eq!(
+        nearest_disabled(&reversed, pixel),
+        Some(DisabledKind::FreeRotate)
+    );
+}
+
+#[test]
+fn a_disabled_segment_at_exactly_the_pick_radius_is_still_returned() {
+    let handles = [horizontal_disabled(DisabledKind::ScalePlane, 8.0)];
+    assert_eq!(
+        nearest_disabled(&handles, DVec2::new(50.0, 0.0)),
+        Some(DisabledKind::ScalePlane)
+    );
+    assert_eq!(nearest_disabled(&handles, DVec2::new(50.0, -0.5)), None);
+}
+
 #[test]
 fn identical_scale_boxes_tie_to_x_then_y_then_z() {
     let mut handles = world_scale(&front_camera());
@@ -1003,12 +1045,19 @@ fn scale_picks_x_on_the_diagonal_and_the_dead_zone_corner_stays_empty() {
     // The front camera has no Z axis, so the X and Y shafts are the only candidates.
     let handles = world_scale(&front_camera());
     let origin = DVec2::new(400.0, 300.0);
-    // 7.5 px from the X shaft (10.6 px from the upward Y shaft): X wins. Fails at 6 px.
+    // Y points up, so (+7.5, -7.5) is exactly 7.5 px from the X shaft (y = 0) and from the Y shaft
+    // (x = 0), outside the 7 px centre box: a true tie that goes to X. Fails at 6 px.
+    assert_eq!(
+        handles.hit_test(origin + DVec2::new(7.5, -7.5)),
+        Some(ScaleHandle::X)
+    );
+    // Below the origin only the X shaft is near (10.6 px from the upward Y shaft): X wins.
     assert_eq!(
         handles.hit_test(origin + DVec2::new(7.5, 7.5)),
         Some(ScaleHandle::X)
     );
-    // 8.5 px from the X shaft is outside the radius. Passes at 6 px too (not red).
+    // 8.5 px from both shafts is outside the radius. Passes at 6 px too (not red).
+    assert_eq!(handles.hit_test(origin + DVec2::new(8.5, -8.5)), None);
     assert_eq!(handles.hit_test(origin + DVec2::new(8.5, 8.5)), None);
     // Just past the centre box and on the shaft. Passes at 6 px too (not red).
     assert_eq!(
@@ -1077,4 +1126,51 @@ fn handle_geometry_constants_are_pinned_exactly() {
     assert_eq!(PLANE_FAR, 0.5);
     assert_eq!(VIEW_RING_FACTOR, 1.2);
     assert_eq!(EDGE_ON_LIMIT, 1e-3);
+}
+
+#[test]
+fn pick_layers_an_enabled_handle_over_a_disabled_one() {
+    let rotate = world_rings(&oblique_camera());
+    let origin = rotate.origin();
+    let (mut enabled, mut disabled) = (0, 0);
+    for degrees in 0..360 {
+        let angle = f64::from(degrees).to_radians();
+        for radius in [40.0, 79.0, 86.4, 100.0] {
+            let pixel = origin + DVec2::new(angle.cos(), angle.sin()) * radius;
+            let expected = match (rotate.hit_test(pixel), rotate.hit_disabled(pixel)) {
+                (Some(axis), None) => Some(Pick::Handle(axis)),
+                (None, Some(kind)) => Some(Pick::Disabled(kind)),
+                (None, None) => None,
+                both => panic!("hit_disabled must be empty under an enabled hit: {both:?}"),
+            };
+            enabled += i32::from(matches!(expected, Some(Pick::Handle(_))));
+            disabled += i32::from(matches!(expected, Some(Pick::Disabled(_))));
+            assert_eq!(rotate.pick(pixel), expected, "{pixel}");
+        }
+    }
+    assert!(enabled > 0 && disabled > 0, "{enabled} {disabled}");
+    assert_eq!(rotate.pick(DVec2::NAN), None);
+
+    let scale = ScaleHandles::new(&sized(&oblique_camera(), 0.1), &world_frame()).unwrap();
+    let corners: Vec<_> = scale
+        .disabled()
+        .iter()
+        .flat_map(|handle| handle.segments().iter().map(|segment| segment.start))
+        .collect();
+    let (mut enabled, mut disabled) = (0, 0);
+    for corner in corners {
+        let expected = match scale.hit_test(corner) {
+            Some(handle) => {
+                enabled += 1;
+                Some(Pick::Handle(handle))
+            }
+            None => scale.hit_disabled(corner).map(|kind| {
+                disabled += 1;
+                Pick::Disabled(kind)
+            }),
+        };
+        assert_eq!(scale.pick(corner), expected, "{corner}");
+    }
+    assert!(enabled > 0 && disabled > 0, "{enabled} {disabled}");
+    assert_eq!(scale.pick(DVec2::NAN), None);
 }
