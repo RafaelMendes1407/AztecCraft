@@ -546,7 +546,7 @@ impl Editor {
                 }
                 Command::EditNode { id, name, channels }
             }
-            
+
             #[cfg(any(test, feature = "mcp"))]
             Operation::SetTransform { id, transform } => {
                 let rotation = match self.history.scene().units().angular {

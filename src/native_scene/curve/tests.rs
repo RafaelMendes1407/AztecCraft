@@ -216,7 +216,6 @@ fn all_ascii_authoring_refuses_and_preserves_exact_curve_source() {
             id: node,
             transform: NativeTransform::default(),
             label: None,
-            
         }),
         Err(NativeError::ReadOnlyFormat)
     );
