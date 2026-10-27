@@ -1,6 +1,6 @@
 use super::*;
 use crate::app::features::move_tool::tests::{
-    View, button, frame, key, oblique, raw, scale_plane_point, viewport,
+    View, button, frame, key, oblique, open_file_menu, raw, scale_plane_point, viewport,
 };
 use azteccraft::{
     manipulator_handles::{DisabledKind, HandleFrame, RotateHandles},
@@ -39,9 +39,17 @@ fn idle(editor: &mut Editor, context: &egui::Context, scale: f32) -> egui::FullO
 // A cube at the origin seen obliquely, with the tool of `tool_key` active. The viewport rect is
 // taken after the tool options row has appeared.
 fn setup(tool_key: Key, scale: f32) -> (Editor, egui::Context, View) {
+    setup_with_camera(tool_key, scale, oblique())
+}
+
+fn setup_with_camera(
+    tool_key: Key,
+    scale: f32,
+    camera: azteccraft::viewport::Camera,
+) -> (Editor, egui::Context, View) {
     let mut editor = Editor {
         renderer: Some(crate::viewport_renderer::tests::renderer_handle()),
-        camera: oblique(),
+        camera,
         ..Editor::default()
     };
     editor.create(Primitive::Cube);
@@ -2362,6 +2370,100 @@ fn a_mirrored_frame_is_reported_for_the_whole_tool_at_any_pixel() {
     }
 }
 
+fn ascii_chain(scale: &str) -> String {
+    format!(
+        concat!(
+            "createNode transform -n \"a\"; setAttr \".s\" -type \"double3\" {s} {s} {s};\n",
+            "createNode transform -n \"b\" -p \"a\"; setAttr \".s\" -type \"double3\" {s} {s} {s};\n",
+            "createNode transform -n \"leaf\" -p \"b\";\n"
+        ),
+        s = scale
+    )
+}
+
+// Two ancestors scaled 1e200 each have a finite matrix but no finite product, so the leaf's frame is
+// refused as ParentTransform. A capture taken before the ancestors overflow survives later frames
+// (a view build error does not clear `move_viewport`), so the test swaps the scene in directly after
+// capturing the pointer. Reachable through the MCP set_transform tool on a writable scene (plausible,
+// not exercised here); the scene here is read-only ASCII.
+#[test]
+fn a_scene_frame_refusal_is_reported_for_the_whole_tool_at_any_pixel() {
+    let expected = NativeError::UnsupportedMove(
+        azteccraft::native_scene::WorldMoveUnsupported::ParentTransform,
+    )
+    .to_string();
+    for (tool, name) in [(ActiveTool::Rotate, "Rotate"), (ActiveTool::Scale, "Scale")] {
+        for corner in [false, true] {
+            let (mut editor, context, view) = ascii_editor(&ascii_chain("1"), "leaf", tool);
+            let at = if corner {
+                view.rect.min + egui::vec2(40.0, 40.0)
+            } else {
+                view.rect.center()
+            };
+            moved(&mut editor, &context, 1.0, at);
+            let source = format!(
+                "//Maya ASCII 2016 scene\nrequires maya \"2016\"; \
+                 currentUnit -l centimeter -a degree -t film;\n{}",
+                ascii_chain("1e200")
+            );
+            let scene =
+                azteccraft::native_scene::ascii::decode(source.into_bytes().into()).unwrap();
+            let leaf = scene
+                .nodes()
+                .iter()
+                .find(|node| node.name() == "leaf")
+                .unwrap()
+                .id();
+            editor.history = azteccraft::history::History::new(scene);
+            editor.select(Some(leaf));
+            let viewport = editor
+                .inspect_manipulation()
+                .expect("inspection survives a refused frame")
+                .viewport
+                .unwrap();
+            assert_eq!(viewport.pointer_hit, None, "{name}");
+            assert_eq!(
+                viewport.pointer_refusal.as_deref(),
+                Some(expected.as_str()),
+                "{name}"
+            );
+        }
+    }
+}
+
+// HandleFrame::new refuses an axis whose length overflows. Two ancestors scaled 1e100 give a finite
+// 1e200 world scale the viewport still draws, so the capture is live and the whole tool is refused.
+#[test]
+fn an_unrepresentable_handle_frame_refuses_the_whole_tool_at_any_pixel() {
+    for (tool, name) in [(ActiveTool::Rotate, "Rotate"), (ActiveTool::Scale, "Scale")] {
+        let (mut editor, context, view) = ascii_editor(&ascii_chain("1e100"), "leaf", tool);
+        editor
+            .set_tool_space(tool, ManipulationSpace::Object)
+            .unwrap();
+        idle(&mut editor, &context, 1.0);
+        let expected = format!("{name} handle projection cannot be represented");
+        for at in [view.rect.center(), view.rect.min + egui::vec2(40.0, 40.0)] {
+            moved(&mut editor, &context, 1.0, at);
+            let viewport = editor.inspect_manipulation().unwrap().viewport.unwrap();
+            assert_eq!(viewport.pointer_hit, None, "{name}");
+            assert_eq!(
+                viewport.pointer_refusal.as_deref(),
+                Some(expected.as_str()),
+                "{name}"
+            );
+            assert_eq!(editor.status, format!("{name} unavailable: {expected}"));
+        }
+    }
+}
+
+#[test]
+fn no_selection_has_no_frame_refusal() {
+    let (mut editor, context, view) = setup(Key::E, 1.0);
+    editor.select(None);
+    moved(&mut editor, &context, 1.0, view.rect.center());
+    assert_eq!(pointer_refusal(&editor), None);
+}
+
 #[test]
 fn pointer_refusals_carry_no_node_name_or_path() {
     let (mut editor, context, view) = ascii_editor(
@@ -2407,6 +2509,54 @@ fn hovering_the_y_ring() -> (Editor, egui::Context, Pos2) {
     assert_eq!(editor.status, "Object Y Rotate: drag to turn");
     assert_eq!(pointer_pick(&editor), (Some("y"), None));
     (editor, context, at)
+}
+
+// Pinned: an open egui popup suppresses the hover status text but not the pick (move_tool.rs hover gate).
+#[test]
+fn an_open_popup_suppresses_hover_status_but_inspection_still_picks() {
+    let (mut editor, context, at) = hovering_the_y_ring();
+    open_file_menu(&mut editor, &context, SIZE);
+    moved(&mut editor, &context, 1.0, at);
+    assert!(egui::Popup::is_any_open(&context));
+    assert_eq!(editor.status, editor.tool_help());
+    assert_eq!(pointer_pick(&editor), (Some("y"), None));
+}
+
+// Pinned: an open popup keeps a press on the ring from beginning a rotate (move_tool.rs press gate).
+#[test]
+fn an_open_popup_blocks_a_press_on_the_ring() {
+    let (mut editor, context, at) = hovering_the_y_ring();
+    open_file_menu(&mut editor, &context, SIZE);
+    press(&mut editor, &context, 1.0, at);
+    // A press outside the menu could have closed it before the gate read it, which would be vacuous.
+    assert!(
+        egui::Popup::is_any_open(&context),
+        "popup survives the press"
+    );
+    assert!(editor.history.active_manipulation().is_none());
+    assert_eq!(editor.status, editor.tool_help());
+    assert!(!editor.error);
+}
+
+// Pinned: a popup opening mid-drag cancels the native drag (move_tool.rs drag-cancel gate). A key
+// sequence cannot open a menu mid-drag without changing the drag, so the popup opens through egui memory.
+#[test]
+fn a_popup_opening_mid_drag_cancels_the_native_rotate() {
+    let (mut editor, context, at) = hovering_the_y_ring();
+    press(&mut editor, &context, 1.0, at);
+    assert!(
+        editor.history.active_manipulation().is_some(),
+        "{}",
+        editor.status
+    );
+    egui::Popup::open_id(&context, egui::Id::new("popup_admission_probe"));
+    assert!(egui::Popup::is_any_open(&context));
+    frame(&mut editor, &context, raw(SIZE, Pos2::ZERO, 1.0, vec![]));
+    assert!(editor.history.active_manipulation().is_none());
+    assert_eq!(
+        editor.status,
+        "Rotate cancelled: camera, viewport or native input changed"
+    );
 }
 
 // Pinned, not gated: `pointer_hit` mirrors the painted highlight, which native paints whatever the
@@ -2461,4 +2611,104 @@ fn inspection_reports_the_pick_while_native_hover_status_is_suppressed() {
         eframe::App::logic(&mut editor, ctx, &mut native_frame)
     });
     assert!(editor.inspect_manipulation().unwrap().viewport.is_none());
+}
+
+fn camera_at(yaw: f32, pitch: f32) -> azteccraft::viewport::Camera {
+    azteccraft::viewport::Camera::new(
+        Vec3::ZERO,
+        yaw,
+        pitch,
+        10.0,
+        90_f32.to_radians(),
+        0.01,
+        100.0,
+    )
+    .unwrap()
+}
+
+// Hover suffix, press status and inspection must all say `expected` at `at`.
+fn assert_drag_refusal_everywhere(
+    editor: &mut Editor,
+    context: &egui::Context,
+    at: Pos2,
+    hit: &'static str,
+    label: &str,
+    expected: &str,
+) {
+    moved(editor, context, 1.0, at);
+    let viewport = editor.inspect_manipulation().unwrap().viewport.unwrap();
+    assert_eq!(viewport.pointer_hit, Some(hit), "precondition");
+    assert_eq!(viewport.pointer_refusal.as_deref(), Some(expected));
+    assert_eq!(editor.status, format!("{label}: {expected}"), "hover");
+    assert!(editor.error);
+    press(editor, context, 1.0, at);
+    assert_eq!(editor.status, expected, "press");
+    assert!(editor.error);
+    assert!(editor.history.active_manipulation().is_none());
+}
+
+// Pitch 0 and yaw 0 put the camera in the Y ring's plane, so the ring is edge-on along the
+// horizontal line through the pivot. The drag-begin refusal wins over the read-only scene refusal,
+// as it does on press.
+#[test]
+fn an_edge_on_rotate_ring_reports_the_drag_refusal_before_the_scene_refusal() {
+    let (mut editor, context, view) =
+        ascii_editor("createNode transform -n \"a\";\n", "a", ActiveTool::Rotate);
+    editor.camera = camera_at(0.0, 0.0);
+    let view = View {
+        camera: editor.camera.clone(),
+        rect: viewport(&idle(&mut editor, &context, 1.0)),
+        ..view
+    };
+    // Half the ring radius along the edge-on line.
+    let at = view.ring(Vec3::Y, 30.0);
+    assert_eq!(at.y, view.screen(Vec3::ZERO).y);
+    assert_drag_refusal_everywhere(
+        &mut editor,
+        &context,
+        at,
+        "y",
+        "Object Y Rotate",
+        "Rotate ring is edge-on to the camera",
+    );
+}
+
+// A Z shaft seen almost end-on, grabbed 8 px beside the pivot. The along-axis parameter of the
+// press ray changes sign across a short run of pointers, and the grab is refused wherever it is under
+// 1 px of world length, so the test scans the real drag-begin for that run and takes its middle (the
+// zero crossing) instead of hard-coding a pixel.
+#[test]
+fn a_scale_grab_too_close_to_the_pivot_reports_the_drag_refusal() {
+    let (mut editor, context, view) = setup_with_camera(Key::R, 1.0, camera_at(0.1, 0.0));
+    let capture = editor.move_viewport.as_ref().unwrap().capture.clone();
+    let (_, frame) = editor.manipulation_frame(ActiveTool::Scale).unwrap();
+    let centre = view.screen(Vec3::ZERO);
+    let refused: Vec<f32> = (-400..=400)
+        .map(|step| step as f32 * 0.05)
+        .filter(|dx| {
+            let at = centre + egui::vec2(*dx, 8.0);
+            azteccraft::manipulator_handles::ScaleDrag::begin(
+                capture.clone(),
+                &frame,
+                ScaleHandle::Z,
+                glam::Vec2::new(at.x, at.y),
+            )
+            .err()
+                == Some(azteccraft::move_handles::HandleError::ZeroBeginParameter)
+        })
+        .collect();
+    assert!(
+        !refused.is_empty(),
+        "no pointer 8 px beside the pivot is refused as too close; the camera no longer produces the case"
+    );
+    let dx = (refused[0] + refused[refused.len() - 1]) / 2.0;
+    let at = centre + egui::vec2(dx, 8.0);
+    assert_drag_refusal_everywhere(
+        &mut editor,
+        &context,
+        at,
+        "z",
+        "World Z Scale",
+        "Scale handle was grabbed too close to the pivot",
+    );
 }
