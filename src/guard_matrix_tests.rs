@@ -579,6 +579,7 @@ fn seeds(t: &Targets) -> Vec<Operation> {
             instance_path: Some(t.path.clone()),
         },
         Operation::SetSelectionMode(SelectionMode::Face),
+        Operation::DeselectAll,
         Operation::SelectFace {
             target: Some(t.face()),
         },
@@ -983,6 +984,13 @@ fn expand(seed: Operation, t: &Targets) -> Vec<Sample> {
             "set_selection_mode(face)",
             Operation::SetSelectionMode(SelectionMode::Face),
         )],
+        Operation::DeselectAll => vec![
+            sample("deselect_all", Operation::DeselectAll),
+            Sample {
+                pre: Pre::FaceMode,
+                ..sample("deselect_all(face_mode)", Operation::DeselectAll)
+            },
+        ],
         Operation::SelectFace { .. } => vec![
             sample(
                 "select_face(object_mode)",
