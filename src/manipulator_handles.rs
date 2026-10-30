@@ -454,7 +454,9 @@ impl ScaleHandles {
             capture.axis_screen_vector(frame.origin, clip, axis)
         });
         let axes = [0, 1, 2].map(|index| {
-            let collapsed = directions[index].is_ok_and(|(_, length)| length <= CENTER_BOX_HALF);
+            let collapsed = directions[index].is_ok_and(|(direction, length)| {
+                (direction * length).abs().max_element() <= CENTER_BOX_HALF
+            });
             let geometry = directions[index].map(|(direction, length)| {
                 let tip = origin + direction * length;
                 let shaft_end = origin + direction * (length - BOX_HALF).max(0.0);
