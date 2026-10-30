@@ -117,6 +117,10 @@ unchanged. The dirty state compares the live scene with the saved scene by value
 so dropping old entries cannot make an edited scene read clean. Memory still
 scales with scene size times 50. Autosave and persisting history remain pending.
 
+Undo and Redo entry names are PROVISIONAL: the Maya 2027 documentation names no undo entries. A
+transform edit that changes several value groups reads "Transform"; Channel Box and numeric edits
+read "Edit" whatever channel changed.
+
 Selection, camera, tool and panel changes do not create undo entries in
 AztecCraft (`.project-docs/mcp.md` already says selection does not). Whether Maya
 puts selection changes on its undo queue is not stated by its Undo preferences page; see
@@ -239,7 +243,7 @@ original RGB values. In Vertex and Edge modes component
 feedback replaces Object feedback, so the selected object's faces are not tinted and
 selected curves are not highlighted.
 
-Test limits for this slice: the `sync_fields` owner-path test fakes `selected_path`
+Test limits for this slice: the `sync_fields` owner-path test fakes the selected path through `set_selection_for_test`
 because no real instanced scene can be built from the bin crate, so it proves the
 clearing rule, not a live instance. The `remembered_face` term in the MCP test
 `baseline()` (`src/mcp_tests/official_client/vertex_edge.rs`) is defensive; no SDK test
@@ -296,19 +300,63 @@ and every edge through surfaces. When that check is over budget `vertex_markers_
 `ViewInstance` edge; the bin crate has no loose-edge fixture, so the face-less case is
 covered by the carried edge list and the picker tests, not pixels.
 
-## Select menu: Deselect All works, All, Hierarchy and Inverse wait for multi-selection (#167)
+## Select menu: All by Type is not implemented; the rules are Object and Hierarchy mode only (#325)
 
 The Select menu follows Maya 2025.1's order (`buildSelectMenu.mel`): All (Ctrl+Shift+A), All by
-Type, Deselect All (Alt+D), Hierarchy and Inverse, with labels from the `SelectAll`, `SelectNone`,
-`SelectHierarchy` and `InvertSelection` runtime commands and hotkeys from `hotkeySetup.mel`.
+Type, Deselect All (Alt+D), Hierarchy and Inverse (Ctrl+Shift+I, hint only), with labels from
+the `SelectAll`, `SelectNone`, `SelectHierarchy` and `InvertSelection` runtime commands and
+hotkeys from `hotkeySetup.mel`.
 Deselect All is the typed `DeselectAll` operation shared by the menu, Alt+D and MCP
 `deselect_all`; like Maya's `SelectNone` (`changeSelectMode -component; changeSelectMode
 -object; select -cl`) it also clears remembered components and returns to Object mode from Face,
-Vertex, Edge or Hierarchy. All, All by Type, Hierarchy and Inverse select several objects, so they stay disabled
-rows with a reason until multi-selection (#166), and Ctrl/Cmd+Shift+A reports the same on the
-status line. Similar, Grow, Shrink and the rest of Maya's Select menu are absent. Option+D on
-macOS relies on egui-winit's physical-key fallback (PROVISIONAL). Maya 2026 and the 2027.2
-documentation pin are unverified.
+Vertex, Edge or Hierarchy. All, Hierarchy and Inverse are the typed `SelectByRule` operation shared by the menu,
+Ctrl/Cmd+Shift+A (All) and Ctrl/Cmd+Shift+I (Inverse). They select transform instances, nested ones
+included (PROVISIONAL), and in Hierarchy selection mode All and Inverse select roots only and
+Hierarchy changes nothing. Maya's Hierarchy adds "parent and child" nodes; ours adds descendants
+only (PROVISIONAL). In Face, Vertex or Edge mode Maya selects components, which cannot be
+multi-selected yet (#30), so the rows are disabled and the operation is refused, a documented
+deviation. All by Type stays a disabled row with a reason (#325); the
+[2027 Select menu page](https://help.autodesk.com/cloudhelp/2027/ENU/Maya-Basics/files/GUID-D1BBC051-0EE7-4A91-B4FF-2A369764EC8B.htm)
+confirms these labels, their order, Alt+D, Ctrl+Shift+A and Ctrl+Shift+I and lists All by Type as a
+submenu, drawn here as a plain disabled row. Similar, Grow, Shrink and the rest of Maya's Select
+menu are absent. Option+D on macOS relies on egui-winit's physical-key fallback (PROVISIONAL).
+
+## Select All, Hierarchy and Inverse: PROVISIONAL scope choices (#325)
+
+The Select menu page does not state these, so each is a pinned choice, not Maya parity:
+
+- P1/P2: Select All selects every transform instance, nested children included, in scene order
+  with the last as the lead (`select_all_in_object_mode_selects_nested_instances`). A grouped
+  scene therefore selects parent and children together, and Delete of that selection is refused
+  whole because a parent with children and a child each fail.
+- P3: in Hierarchy selection mode (Root sub-mask) All and Inverse select root transforms only and
+  Hierarchy changes nothing (`select_all_in_hierarchy_mode_selects_roots_only`,
+  `select_inverse_in_hierarchy_mode_swaps_roots_only`,
+  `select_hierarchy_in_hierarchy_mode_is_unchanged`).
+- P4: Hierarchy adds every descendant of the selected objects and no parents, although the page
+  says "parent and child"; the lead stays the lead and added nodes sit before it
+  (`select_hierarchy_adds_descendants_keeps_lead`).
+- P5/P6: Inverse selects the unselected instances in scene order, last as the lead, and an empty
+  selection selects everything (`select_inverse_of_an_empty_selection_selects_everything`).
+- P7: Maya selects components in a component mode; here All, Hierarchy and Inverse are refused in
+  Face, Vertex and Edge mode (components cannot be multi-selected until #30), natively with
+  disabled rows and over MCP with `invalid_input`
+  (`select_rules_in_component_modes_are_refused_and_keep_state`).
+- P17: after Delete of several objects the selection is empty and Undo restores the nodes but
+  not the selection (`undo_of_delete_selection_restores_nodes_but_not_the_selection`).
+
+## Frame Selected with no visible geometry frames the object origin (PROVISIONAL, #335)
+
+F frames parents only and Ctrl+F frames with children, per the [2027 Frame page](https://help.autodesk.com/cloudhelp/2027/ENU/Maya-Basics/files/GUID-C420C235-B8DC-4129-8449-8B7B7911F94B.htm). The page
+is silent on a selection that owns no visible geometry (a plain group, or a parent whose only own
+shape is hidden). F then frames the objects' manipulator origins as a lone point at the near floor;
+the origin is the translate plus rotate-pivot translate, so a rotate pivot point does not move it
+(Maya's choice between pivot and matrix translation is undocumented). Pinned by
+`exclude_frames_a_shapeless_group_at_its_world_origin`, `exclude_origin_ignores_the_rotate_pivot_point` and
+`has_direct_geometry_counts_visible_own_meshes_and_curves_only`. The MCP `frame_selected` tool
+follows the same rules and takes `with_children` for Ctrl+F. F and Ctrl+F with
+nothing selected in Object or Hierarchy mode frame everything (the View page documents this for
+F only; Ctrl+F is PROVISIONAL).
 
 ## Open filter, unsaved-changes prompt and read-only marking follow Maya 2025.1 (PROVISIONAL); Recent Files is missing (#189)
 
@@ -937,15 +985,75 @@ Scale grab whose along-axis component is under 1 px of world length, as the pres
 hover shows the same text. Not fixed: gating the highlight
 changes native behaviour and needs its own issue; the admission is an inline expression that needs the egui context for the popup check.
 
-## Inspection keeps reporting a pick after a view build error
+## A pointer capture can survive a frame that skips the view build
 
 **Severity:** low
 **Area:** viewport manipulators, MCP inspection
-**Issue:** tracked in #310
 
-After a view build error (for example ancestors whose scales overflow), `move_viewport` survives, so
-`inspect_scene` pointer fields still report a pick from the surviving capture although the viewport
-paints nothing. This contradicts the "mirrors the painted highlight" wording in
-`.project-docs/mcp.md` (the pointer fields paragraph). The tests
-`a_scene_frame_refusal_is_reported_for_the_whole_tool_at_any_pixel` and
-`sdk_pointer_refusal_reports_a_scene_frame_refusal` rely on the surviving capture.
+A view build error now clears the pointer capture (`missing_move_viewport`, #310). An earlier error
+in the same frame returns before the view build, so the paint is skipped and the capture survives
+for that one frame: the selection refusal in `src/app/panels.rs` and a `commit_pending` failure.
+View build errors other than `ResourceLimit` leave `viewport_error`
+unchanged, tracked in #342.
+
+## Multi-object selection colours and group descendants are PROVISIONAL
+
+With several objects selected, the lead and the other members are drawn in our own colours
+(`.project-docs/development.md` row 33); Maya's page says only "a different colour". The
+renderer matches by instance-path prefix, so an object below the lead's path is drawn in the lead
+colour and an object below another member in the member colour, whichever member is listed
+first. Whether Maya draws descendants of a selected group that way is unconfirmed. Pinned by
+`descendants_take_the_colour_of_the_selected_ancestor_they_sit_below`.
+
+Slice 1 of #166 gives an ordered selection with a lead (Shift, Ctrl and Shift+Ctrl viewport clicks
+in Object and Hierarchy modes, Shift and Ctrl Outliner clicks, MCP `modify_selection`). It does
+not act on several objects: Move, Rotate, Scale
+and Channel Box edits refuse with `multiple_selection` until #325 (the by-id MCP tools `delete_node`,
+`rename_node`, `set_transform` and `edit_node` still act on the node they name), and marquee
+(#30) is absent. The native Delete (menu, Channel Box and key) acts on all selected objects, all or nothing, and Frame Selected frames their union (Select All, Hierarchy and Inverse exist as native UI rows and MCP `select_by_rule`). These choices are PROVISIONAL because the Maya pages are ambiguous: a viewport
+Shift click toggles the clicked instance (the page says "the last selection"); a Ctrl click on
+an unselected object does nothing in the viewport but selects it in the Outliner, where the page
+pairs Shift with adding and Ctrl with toggling; Shift wins over Ctrl in the Outliner; a Ctrl
+click that macOS delivers as a secondary click is ignored, and Command counts as Ctrl; a lone
+selection keeps the old colour; the Outliner lead row is bold. Native visual QA of all of this is
+pending. Multi-selection is not an undo entry, and a Create, Select, New or Open replaces the
+whole set.
+
+## Ambiguous selection is unreachable today
+
+`OperationError::AmbiguousSelection` (an object with several instance paths selected without a
+path) cannot occur in a running editor: no decoder or runtime operation gives a transform two
+parents, so every node has one path. Only the unit test
+`an_object_with_two_instance_paths_needs_an_explicit_path`, which fabricates the targets,
+covers `only_instance_path`; there is no end-to-end test through a loaded scene.
+
+## A very large selection lowers the usable inspect_scene node_limit
+
+Every `inspect_scene` page repeats the full `selection` list, about 40 bytes per member. With 4096
+selected default-named cubes a page of 1 node is about 170 KB and 50 nodes about 212 KB, but 250 nodes
+exceed the reply cap, so such a selection needs a small `node_limit` (about 50). Select All (native, and
+MCP `select_by_rule`, #325) builds a whole-scene selection in one call. A client that connects fresh
+inspects with a small `node_limit` first to obtain the token, then clears the selection with
+`deselect_all` if it wants larger pages. Only a selection whose serialized members approach the reply
+cap on their own (for example very deep instance paths) blocks every page; that case has no
+tokenless recovery except clearing the selection in the native UI (a plain click on empty space, or
+Alt+D). Pinned by `a_full_selection_inspects_with_a_small_node_limit` and
+`a_full_selection_is_inspectable_with_a_small_node_limit`.
+
+## Creating N objects costs O(N^3)
+
+Each `NativeScene::create` runs a full `validate()` through `structural_edit`, and `validate_dag` scans
+every identity against every edge (O(N*E)), so one create is O(N^2) and building N cubes one by one is
+O(N^3): 4096 cubes take minutes in a debug build. Tests that need a large scene build it through
+`azteccraft::scene::Scene::create` and `NativeScene::from_legacy` instead. Pre-existing and not
+fixed by the paging work.
+
+## Frame origin for a mixed selection is PROVISIONAL
+
+F (frame without descendants, #338) frames the objects' origins when no selected object owns visible
+geometry. The Maya documentation does not state this, so the choice is provisional and pinned only by
+tests: the origin is the node's translate plus its rotate-pivot translate and ignores the rotate pivot
+point (`exclude_origin_includes_the_rotate_pivot_translate`, `exclude_origin_ignores_the_rotate_pivot_point`),
+and a selection where any one member owns geometry frames the geometry only
+(`exclude_with_one_member_owning_geometry_ignores_origins`). Revisit when the behaviour can be compared
+with Maya 2027.

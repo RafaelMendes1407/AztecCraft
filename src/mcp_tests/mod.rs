@@ -116,11 +116,15 @@ mod official_client {
     mod attribute_editor;
     mod camera;
     mod cylinder_cone;
+    mod delete_selected;
     mod deselect_all;
     mod extrude;
     mod files;
     mod frame_all;
+    mod frame_selected;
     mod grid;
+    mod inspect_budget;
+    mod inspect_paging;
     mod manipulation_mcp_tests;
     mod manipulator_size;
     mod material;
@@ -129,6 +133,7 @@ mod official_client {
 
     mod pointer_hit;
     mod primitive_options;
+    mod select_by_rule;
     mod selection;
     mod session;
     mod session_material;

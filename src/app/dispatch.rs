@@ -48,8 +48,10 @@ impl Editor {
             OperationError::Scene(azteccraft::native_scene::NativeError::ResourceLimit)
         })?;
         path.extend_from_slice(owner);
-        self.selected = Some(transform);
-        self.selected_path = path;
+        self.selection.replace(TransformTarget {
+            node: transform,
+            path,
+        });
         self.sync_fields();
         Ok(())
     }
@@ -73,12 +75,14 @@ impl Editor {
         };
         let status = match *operation {
             Operation::Select { .. }
+            | Operation::ModifySelection { .. }
+            | Operation::SelectByRule(_)
             | Operation::DeselectAll
             | Operation::SelectFace { .. }
             | Operation::SelectVertex { .. }
             | Operation::SelectEdge { .. }
             | Operation::SetSelectionMode(_)
-            | Operation::FrameSelected
+            | Operation::FrameSelected { .. }
             | Operation::FrameAll
             | Operation::SetActiveTool(_)
             | Operation::SetToolSpace { .. }
@@ -197,9 +201,9 @@ impl Editor {
         may_install: &dyn Fn() -> bool,
     ) -> Result<OperationReply, OperationError> {
         let focused = text_edit_focused(ctx);
-        if matches!(request.operation, Operation::Inspect) {
+        if let Operation::Inspect { page } = &request.operation {
             return Ok(OperationReply::Scene {
-                inspection: Box::new(self.inspect(focused)?),
+                inspection: Box::new(self.inspect_page(focused, page.as_ref())?),
             });
         }
         if request.expected_scene_token != Some(self.scene_token) {
@@ -276,7 +280,7 @@ impl Editor {
         may_install: &dyn Fn() -> bool,
     ) -> Result<OperationReply, OperationError> {
         if let Some(noun) = self.selection_mode.component_noun()
-            && matches!(operation, Operation::Delete(_))
+            && matches!(operation, Operation::Delete(_) | Operation::DeleteSelection)
         {
             return Err(OperationError::InvalidInput(format!(
                 "{noun} deletion is unsupported; switch to Object or Hierarchy selection"
@@ -347,6 +351,8 @@ impl Editor {
                     | Operation::UpdateManipulation { .. }
                     | Operation::FinishMove { .. }
                     | Operation::Select { .. }
+                    | Operation::ModifySelection { .. }
+                    | Operation::SelectByRule(_)
                     | Operation::DeselectAll
                     | Operation::SetSelectionMode(_)
                     | Operation::SelectFace { .. }
@@ -367,6 +373,23 @@ impl Editor {
             } => {
                 return Err(OperationError::InvalidInput(
                     "Clearing selection cannot include an instance path".into(),
+                ));
+            }
+            Operation::ModifySelection {
+                node,
+                instance_path,
+                ..
+            } => {
+                if self.selection_mode.is_component() {
+                    return Err(OperationError::InvalidInput(
+                        "Selection changes need Object or Hierarchy selection mode".into(),
+                    ));
+                }
+                Some(self.selection_path(*node, instance_path.clone())?)
+            }
+            Operation::SelectByRule(_) if self.selection_mode.is_component() => {
+                return Err(OperationError::InvalidInput(
+                    "Selection changes need Object or Hierarchy selection mode".into(),
                 ));
             }
             _ => None,
@@ -581,27 +604,9 @@ impl Editor {
                     scale: transform.scale,
                 };
 
-                let current = self
-                    .history
-                    .scene()
-                    .node(id)
-                    .map(|n| n.transform())
-                    .unwrap_or_default();
-
-                let label = if new_transform.translation != current.translation {
-                    Some("Move".to_string())
-                } else if new_transform.rotation != current.rotation {
-                    Some("Rotate".to_string())
-                } else if new_transform.scale != current.scale {
-                    Some("Scale".to_string())
-                } else {
-                    None
-                };
-
                 Command::SetTransform {
                     id,
                     transform: new_transform,
-                    label,
                 }
             }
             #[cfg(any(test, feature = "mcp"))]
@@ -625,7 +630,16 @@ impl Editor {
                 }
             }
             Operation::Delete(id) => Command::Remove(id),
+            Operation::DeleteSelection => {
+                if self.selection.is_empty() {
+                    return Err(OperationError::NoSelection);
+                }
+                Command::RemoveMany(self.selection.members().iter().map(|t| t.node).collect())
+            }
             Operation::SetSelectionMode(mode) => {
+                if mode.is_component() && self.selection.len() > 1 {
+                    return Err(OperationError::MultipleSelection);
+                }
                 let changed = self.selection_mode != mode;
                 self.selection_mode = mode;
                 return Ok(if changed {
@@ -682,8 +696,7 @@ impl Editor {
                     || self.remembered_edge.is_some();
                 self.clear_remembered_components();
                 self.selection_mode = SelectionMode::Object;
-                self.selected = None;
-                self.selected_path.clear();
+                self.selection.clear();
                 self.sync_fields();
                 return Ok(if changed {
                     OperationReply::Changed
@@ -694,13 +707,46 @@ impl Editor {
             Operation::Select { node, .. } => {
                 let path = selected_path.unwrap_or_default();
                 let (selected, current_path) = self.selection_presentation();
-                let changed = selected != node || current_path != path;
+                let changed = selected != node || current_path != path || self.selection.len() > 1;
                 if changed {
                     self.clear_remembered_components();
                 }
-                self.selected = node;
-                self.selected_path = path;
+                match node {
+                    Some(node) => self.selection.replace(TransformTarget { node, path }),
+                    None => self.selection.clear(),
+                }
                 self.sync_fields();
+                return Ok(if changed {
+                    OperationReply::Changed
+                } else {
+                    OperationReply::Unchanged
+                });
+            }
+            Operation::SelectByRule(rule) => return self.select_by_rule(rule),
+            Operation::ModifySelection { change, node, .. } => {
+                let target = TransformTarget {
+                    node,
+                    path: selected_path.unwrap_or_default(),
+                };
+                let full = |error: azteccraft::selection::SelectionFull| {
+                    OperationError::InvalidInput(error.to_string())
+                };
+                let changed = match change {
+                    SelectionChange::Add => {
+                        let leads = self.selection.lead() == Some(&target);
+                        self.selection.add(target).map_err(full)?;
+                        !leads
+                    }
+                    SelectionChange::Toggle => {
+                        self.selection.toggle(target).map_err(full)?;
+                        true
+                    }
+                    SelectionChange::Remove => self.selection.remove(&target),
+                };
+                if changed {
+                    self.clear_remembered_components();
+                    self.sync_fields();
+                }
                 return Ok(if changed {
                     OperationReply::Changed
                 } else {
@@ -714,24 +760,13 @@ impl Editor {
                     self.history.undo()
                 };
                 self.sync_fields();
-                if let Some((id, path)) = self.single_target().ok()
-                    && self
-                        .history
-                        .scene()
-                        .resolve_transform_path(id, path)
-                        .is_err()
-                {
-                    self.selected = None;
-                    self.selected_path.clear();
-                    self.sync_fields();
-                }
                 return Ok(if changed {
                     OperationReply::Changed
                 } else {
                     OperationReply::Unchanged
                 });
             }
-            Operation::FrameSelected => {
+            Operation::FrameSelected { with_children } => {
                 let component = matches!(
                     self.selection_mode,
                     SelectionMode::Face | SelectionMode::Vertex | SelectionMode::Edge
@@ -755,34 +790,41 @@ impl Editor {
                     .ok_or(OperationError::NoSelection)?
                     .map_err(OperationError::Scene)?;
                 }
-                let path = if component {
-                    None
-                } else {
-                    let (id, path) = self.single_target()?;
-                    Some(self.selection_path(id, (!path.is_empty()).then(|| path.to_vec()))?)
-                };
+                if !component && self.selection.is_empty() {
+                    // The 2027 View page: Frame Selection with nothing selected acts like Frame All.
+                    return self.frame_everything();
+                }
+                if !component {
+                    let before = self.camera.clone();
+                    self.frame_members(if with_children {
+                        FrameChildren::Include
+                    } else {
+                        FrameChildren::Exclude
+                    })?;
+                    return Ok(if self.camera == before {
+                        OperationReply::Unchanged
+                    } else {
+                        OperationReply::Changed
+                    });
+                }
                 let view = ViewScene::from_native(self.history.scene(), 256 * 1024 * 1024)
                     .map_err(|error| OperationError::View(error.to_string()))?;
                 let before = self.camera.clone();
-                if let Some(path) = path {
-                    self.camera.frame_view(&view, Some(&path), self.aspect)
-                } else {
-                    match self.selection_mode {
-                        SelectionMode::Face => self
-                            .remembered_face
-                            .as_ref()
-                            .map(|target| self.camera.frame_face(&view, target, self.aspect)),
-                        SelectionMode::Vertex => self
-                            .remembered_vertex
-                            .as_ref()
-                            .map(|target| self.camera.frame_vertex(&view, target, self.aspect)),
-                        _ => self
-                            .remembered_edge
-                            .as_ref()
-                            .map(|target| self.camera.frame_edge(&view, target, self.aspect)),
-                    }
-                    .ok_or(OperationError::NoSelection)?
+                match self.selection_mode {
+                    SelectionMode::Face => self
+                        .remembered_face
+                        .as_ref()
+                        .map(|target| self.camera.frame_face(&view, target, self.aspect)),
+                    SelectionMode::Vertex => self
+                        .remembered_vertex
+                        .as_ref()
+                        .map(|target| self.camera.frame_vertex(&view, target, self.aspect)),
+                    _ => self
+                        .remembered_edge
+                        .as_ref()
+                        .map(|target| self.camera.frame_edge(&view, target, self.aspect)),
                 }
+                .ok_or(OperationError::NoSelection)?
                 .map_err(OperationError::Camera)?;
                 return Ok(if self.camera == before {
                     OperationReply::Unchanged
@@ -811,22 +853,7 @@ impl Editor {
                     OperationReply::Changed
                 });
             }
-            Operation::FrameAll => {
-                let view = ViewScene::from_native(self.history.scene(), 256 * 1024 * 1024)
-                    .map_err(|error| OperationError::View(error.to_string()))?;
-                if view.instances().is_empty() && view.curve_instances().is_empty() {
-                    return Err(OperationError::NothingToFrame);
-                }
-                let before = self.camera.clone();
-                self.camera
-                    .frame_view(&view, None, self.aspect)
-                    .map_err(OperationError::Camera)?;
-                return Ok(if self.camera == before {
-                    OperationReply::Unchanged
-                } else {
-                    OperationReply::Changed
-                });
-            }
+            Operation::FrameAll => return self.frame_everything(),
             Operation::Orbit { .. } | Operation::Pan { .. } | Operation::Dolly { .. } => {
                 let before = self.camera.clone();
                 match operation {
@@ -843,9 +870,9 @@ impl Editor {
                 });
             }
             #[cfg(any(test, feature = "mcp"))]
-            Operation::Inspect => {
+            Operation::Inspect { page } => {
                 return Ok(OperationReply::Scene {
-                    inspection: Box::new(self.inspect(false)?),
+                    inspection: Box::new(self.inspect_page(false, page.as_ref())?),
                 });
             }
             Operation::OpenScene { .. }
@@ -877,14 +904,16 @@ impl Editor {
         })?;
         if let EditOutcome::Created(id) = outcome {
             self.clear_remembered_components();
-            self.selected = Some(id);
-            self.selected_path = vec![
-                self.history
-                    .scene()
-                    .node(id)
-                    .map_err(OperationError::Scene)?
-                    .transform_id(),
-            ];
+            let transform = self
+                .history
+                .scene()
+                .node(id)
+                .map_err(OperationError::Scene)?
+                .transform_id();
+            self.selection.replace(TransformTarget {
+                node: id,
+                path: vec![transform],
+            });
         }
         self.sync_fields();
         Ok(match outcome {
@@ -980,7 +1009,7 @@ impl Editor {
                 }
             };
         }
-        let Some((id, _)) = self.single_target().ok() else {
+        let Some((id, _)) = self.lead_target().ok() else {
             return true;
         };
         if !self.has_draft() {

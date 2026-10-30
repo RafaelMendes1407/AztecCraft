@@ -75,7 +75,7 @@ fn setup_with_camera(
 }
 
 fn channels(editor: &Editor) -> [f64; 9] {
-    let node = editor.selected.unwrap();
+    let node = editor.selected().unwrap();
     editor
         .history
         .scene()
@@ -436,7 +436,7 @@ fn pressing_an_unsupported_handle_is_refused_and_consumed_without_selecting() {
     assert!(editor.error);
     assert!(editor.history.active_manipulation().is_none());
     release(&mut editor, &context, 1.0, on_view_ring);
-    assert!(editor.selected.is_some(), "the click must not deselect");
+    assert!(editor.selected().is_some(), "the click must not deselect");
     assert_eq!(editor.history.scene(), &before);
 }
 
@@ -471,7 +471,7 @@ fn a_z_ring_drag_turns_about_z_only_and_is_one_rotate_history_entry() {
         release(&mut editor, &context, scale, view.ring(z, -20.0));
         assert!(editor.history.active_manipulation().is_none());
         assert_eq!(editor.status, "Rotate committed");
-        assert_eq!(editor.history.undo_label().as_deref(), Some("Rotate"));
+        assert_eq!(editor.history.undo_label(), Some("Rotate".to_string()));
         editor.native_operation(Operation::Undo);
         assert_eq!(channels(&editor)[5], 0.0);
     }
@@ -517,7 +517,7 @@ fn a_y_scale_handle_drag_scales_y_only_in_one_scale_history_entry() {
             view.screen(Vec3::Y * radius * 0.5),
         );
         assert_eq!(editor.status, "Scale committed");
-        assert_eq!(editor.history.undo_label().as_deref(), Some("Scale"));
+        assert_eq!(editor.history.undo_label(), Some("Scale".to_string()));
         editor.native_operation(Operation::Undo);
         assert_eq!(channels(&editor)[7], 1.0);
     }
@@ -543,7 +543,7 @@ fn press_a_disabled_handle(
     assert!(editor.error);
     assert!(editor.history.active_manipulation().is_none());
     release(editor, context, 1.0, at);
-    assert!(editor.selected.is_some(), "the click must not deselect");
+    assert!(editor.selected().is_some(), "the click must not deselect");
     assert_eq!(editor.history.scene(), &before);
     assert_eq!(undo_depth(editor), depth);
 }
@@ -1057,8 +1057,8 @@ fn rotate_and_scale_target_reads_keep_exact_ownership_errors_and_mode_precedence
             (
                 editor.history.scene().clone(),
                 editor.selection_mode,
-                editor.selected,
-                editor.selected_path.clone(),
+                editor.selected(),
+                editor.selected_path().to_vec(),
                 editor.remembered_face.clone(),
                 editor.remembered_vertex.clone(),
                 editor.remembered_edge.clone(),
@@ -2304,7 +2304,7 @@ fn scale_hover_and_inspection_use_the_scale_frame_not_the_rotate_frame() {
 fn a_scale_press_uses_the_scale_frame_space_not_the_rotate_space() {
     // A cube turned 90 degrees about Z: Rotate defaults to Object axes, Scale to World axes.
     let (mut editor, context, view) = setup(Key::R, 1.0);
-    let id = editor.selected.unwrap();
+    let id = editor.selected().unwrap();
     editor
         .apply_operation(Operation::SetTransform {
             id,
@@ -2345,7 +2345,7 @@ fn a_scale_press_uses_the_scale_frame_space_not_the_rotate_space() {
 // A writable cube turned `degrees` about Z at the origin with the Scale tool active.
 fn rotated_cube_scale_editor(degrees: f64) -> (Editor, egui::Context, View) {
     let (mut editor, context, view) = setup(Key::R, 1.0);
-    let id = editor.selected.unwrap();
+    let id = editor.selected().unwrap();
     editor
         .apply_operation(Operation::SetTransform {
             id,
@@ -2526,10 +2526,10 @@ fn ascii_chain(scale: &str) -> String {
 }
 
 // Two ancestors scaled 1e200 each have a finite matrix but no finite product, so the leaf's frame is
-// refused as ParentTransform. A capture taken before the ancestors overflow survives later frames
-// (a view build error does not clear `move_viewport`), so the test swaps the scene in directly after
-// capturing the pointer. Reachable through the MCP set_transform tool on a writable scene (plausible,
-// not exercised here); the scene here is read-only ASCII.
+// refused as ParentTransform. That product is non-finite world geometry, which also fails the view
+// build, and a frame then clears the capture. The state between the edit and the next frame is the
+// only one that reports this refusal, so the test swaps the scene in directly and inspects without a
+// frame. After a frame it is no longer observable through MCP (the fields are null).
 #[test]
 fn a_scene_frame_refusal_is_reported_for_the_whole_tool_at_any_pixel() {
     let expected = NativeError::UnsupportedMove(
@@ -2570,6 +2570,88 @@ fn a_scene_frame_refusal_is_reported_for_the_whole_tool_at_any_pixel() {
                 viewport.pointer_refusal.as_deref(),
                 Some(expected.as_str()),
                 "{name}"
+            );
+        }
+    }
+}
+
+#[allow(dead_code)]
+mod binary_fixture {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/support/maya_binary.rs"
+    ));
+}
+
+// A binary scene whose one face is a pentagram: the view build refuses it as UnsupportedPolygon.
+fn pentagram_scene() -> std::sync::Arc<[u8]> {
+    use binary_fixture::{chunk, creation, group, mesh_payload_from, scene};
+    let mut positions = Vec::new();
+    for k in 0..5 {
+        let angle = std::f32::consts::TAU * k as f32 / 5.0;
+        positions.extend([angle.sin().to_bits(), angle.cos().to_bits(), 0]);
+    }
+    let mesh = mesh_payload_from(
+        &positions,
+        &[0x8000_0000, 2, 2, 4, 4, 1, 1, 3, 3, 0],
+        &[0, 1, 2, 3, 0x6000_0004],
+        &[0, 0, 1f32.to_bits(), 0, 0, 1f32.to_bits()],
+        &[0, 1, 2, 0, 1],
+    );
+    scene(
+        &[
+            group(b"XFRM", &creation(b"star", None), 4),
+            group(
+                b"DMSH",
+                &[
+                    creation(b"starShape", Some(b"star")),
+                    chunk(b"MESH", &mesh, 8),
+                ]
+                .concat(),
+                4,
+            ),
+        ]
+        .concat(),
+    )
+}
+
+// Every view build error paints no handles, so none may leave the pointer capture behind.
+#[test]
+fn a_view_build_error_clears_the_move_capture_for_every_tool() {
+    for (tool_key, name) in [(Key::W, "Move"), (Key::E, "Rotate"), (Key::R, "Scale")] {
+        for polygon in [false, true] {
+            let (mut editor, context, view) = setup(tool_key, 1.0);
+            moved(&mut editor, &context, 1.0, view.rect.center());
+            assert!(editor.move_viewport.is_some(), "{name}: captured before");
+            assert!(editor.inspect_manipulation().unwrap().viewport.is_some());
+            if polygon {
+                let scene = azteccraft::native_scene::binary::decode(pentagram_scene()).unwrap();
+                assert_eq!(
+                    azteccraft::view_scene::ViewScene::from_native(&scene, 1 << 20).unwrap_err(),
+                    azteccraft::view_scene::ViewError::UnsupportedPolygon
+                );
+                editor.history = azteccraft::history::History::new(scene);
+            } else {
+                let id = editor.selected().unwrap();
+                editor
+                    .apply_operation(Operation::SetTransform {
+                        id,
+                        transform: crate::editor_operations::TransformInput {
+                            translation: [0.0; 3],
+                            rotation_degrees: [0.0; 3],
+                            scale: [1e300; 3],
+                        },
+                    })
+                    .unwrap();
+            }
+            idle(&mut editor, &context, 1.0);
+            assert!(
+                editor.move_viewport.is_none(),
+                "{name} polygon={polygon}: capture survived a view build error"
+            );
+            assert!(
+                editor.inspect_manipulation().unwrap().viewport.is_none(),
+                "{name} polygon={polygon}"
             );
         }
     }

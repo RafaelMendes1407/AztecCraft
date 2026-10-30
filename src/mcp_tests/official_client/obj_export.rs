@@ -31,7 +31,7 @@ async fn sdk_export_obj_writes_new_files_and_never_changes_the_scene() {
 
     editor.create(Primitive::Cube);
     editor.create(Primitive::Plane);
-    let plane = editor.selected.unwrap();
+    let plane = editor.selected().unwrap();
     frame(&mut editor, &context, vec![]);
     let token = editor.scene_token.to_string();
     let scene = editor.history.scene().clone();
@@ -61,7 +61,7 @@ async fn sdk_export_obj_writes_new_files_and_never_changes_the_scene() {
     assert_eq!(editor.history.scene(), &scene);
     assert_eq!(editor.history.can_undo(), can_undo);
     assert_eq!(editor.scene_token.to_string(), token);
-    assert_eq!(editor.selected, Some(plane));
+    assert_eq!(editor.selected(), Some(plane));
 
     let again = export(
         &mut editor,
