@@ -2184,7 +2184,7 @@
         },
         "selection_only": {
           "default": false,
-          "description": "Export only the selected object and its descendants (Export Selection); default false\nexports every displayed polygon instance (Export All).",
+          "description": "Export only every selected object and its descendants (Export Selection); default false\nexports every displayed polygon instance (Export All).",
           "type": "boolean"
         }
       },

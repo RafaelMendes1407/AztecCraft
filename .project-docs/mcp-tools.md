@@ -2,7 +2,7 @@
 
 Generated from the tool registry in `src/mcp/registry.rs`; do not edit by hand. Regenerate with `UPDATE_DOCS=1 cargo test --features mcp registry::tests::tool_doc`. Argument schemas are served by `tools/list`; see [mcp.md](mcp.md) for behaviour and limits.
 
-45 tools.
+46 tools.
 
 | Tool | Access | Idempotent | Description |
 |---|---|---|---|

@@ -27,7 +27,7 @@ struct ExportArgs {
     /// New .obj destination; an existing file is never replaced.
     #[schemars(length(min = 1, max = 4096))]
     path: String,
-    /// Export only the selected object and its descendants (Export Selection); default false
+    /// Export only every selected object and its descendants (Export Selection); default false
     /// exports every displayed polygon instance (Export All).
     #[serde(default)]
     selection_only: bool,

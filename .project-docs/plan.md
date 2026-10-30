@@ -43,10 +43,13 @@ Maya 2026 research (cited and summarised, not copied):
   nodes' parents; File Type Specific Options change with the format.
 - [Supported data export formats](https://help.autodesk.com/cloudhelp/2026/ENU/Maya-ManagingScenes/files/GUID-864BD203-C437-4481-8BFC-3A6C1D2C824C.htm):
   OBJ export comes from the objExport plug-in, extension `.obj`.
+- [Export All/Selection Options, 2027](https://help.autodesk.com/cloudhelp/2027/ENU/Maya-Basics/files/GUID-A1E550E4-1510-4D45-A811-5E424A8D3924.htm)
+  (the pinned release): repeats that Include Children defaults on and that the parents of selected
+  nodes are exported, and states no object order. Parent meshes are unmet (`known-issues.md`).
 
 Slice: both File menu items write world-space polygon geometry of the authoritative NativeScene
 to a new `.obj` file (never overwrite), through `Operation::ExportObj`, shared with MCP
-`export_obj`. Export Selection includes the selected object's descendants (Include Children on).
+`export_obj`. Export Selection covers every selected object and its descendants (Include Children on).
 The option boxes are shown disabled. PROVISIONAL or unmet: the OBJ option defaults (groups,
 point groups, materials, smoothing, normals) are not stated in the pages above; hidden or
 non-displayed instances are skipped, while the docs do not say whether Maya's Export All includes
