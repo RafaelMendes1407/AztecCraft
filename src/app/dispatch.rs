@@ -10,6 +10,36 @@ struct StatusFeedback {
     fixed: bool,
 }
 
+/// Radians for a rotation request in degrees. A request equal to the stored angle in degrees keeps
+/// the stored radians, because `to_degrees` then `to_radians` can land 1 ulp away.
+#[cfg(any(test, feature = "mcp"))]
+fn radians_keeping_stored(stored: f64, degrees: f64) -> f64 {
+    if stored.to_degrees() == degrees {
+        stored
+    } else {
+        degrees.to_radians()
+    }
+}
+
+#[test]
+fn radians_keeping_stored_never_perturbs_an_unchanged_rotation() {
+    let mut state = 0x9E37_79B9_7F4A_7C15_u64;
+    let mut drifted = 0;
+    for _ in 0..100_000 {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        let stored = (state as f64 / u64::MAX as f64 - 0.5) * 20.0;
+        drifted += usize::from(stored.to_degrees().to_radians() != stored);
+        assert_eq!(
+            radians_keeping_stored(stored, stored.to_degrees()).to_bits(),
+            stored.to_bits()
+        );
+        assert_eq!(radians_keeping_stored(stored, 12.5), 12.5_f64.to_radians());
+    }
+    assert!(drifted > 0, "the sample no longer exercises the drift");
+}
+
 impl Editor {
     /// Rejects component selection outside its mode, and unbounded target paths, before any mutation.
     fn require_component_selection(
@@ -230,6 +260,13 @@ impl Editor {
             self.record_feedback(feedback, &result);
         }
         result
+    }
+    #[cfg(any(test, feature = "mcp"))]
+    fn rotation_radians(&self, id: NodeId, axis: usize, degrees: f64) -> f64 {
+        match self.history.scene().node(id) {
+            Ok(node) => radians_keeping_stored(node.transform().rotation[axis], degrees),
+            Err(_) => degrees.to_radians(),
+        }
     }
     #[cfg(any(test, feature = "mcp"))]
     pub(super) fn transform_input(
@@ -554,7 +591,7 @@ impl Editor {
                     if let Some(value) = value {
                         let value = match self.history.scene().units().angular {
                             AngularUnit::Degree => value,
-                            AngularUnit::Radian => value.to_radians(),
+                            AngularUnit::Radian => self.rotation_radians(id, index, value),
                             AngularUnit::Unsupported(_) => {
                                 return Err(OperationError::InvalidInput(
                                     "Declared angular unit is unsupported".into(),
@@ -576,7 +613,9 @@ impl Editor {
             Operation::SetTransform { id, transform } => {
                 let rotation = match self.history.scene().units().angular {
                     AngularUnit::Degree => transform.rotation_degrees,
-                    AngularUnit::Radian => transform.rotation_degrees.map(f64::to_radians),
+                    AngularUnit::Radian => std::array::from_fn(|axis| {
+                        self.rotation_radians(id, axis, transform.rotation_degrees[axis])
+                    }),
                     AngularUnit::Unsupported(_) => {
                         return Err(OperationError::InvalidInput(
                             "Declared angular unit is unsupported".into(),
