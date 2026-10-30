@@ -1103,6 +1103,74 @@ async fn sdk_a_rotation_request_keeping_the_stored_word_leaves_a_move_label() {
     server.await.unwrap();
 }
 
+/// This word's degrees need exact float parsing to reach the Editor unchanged through JSON.
+#[tokio::test]
+async fn sdk_an_inspected_rotation_sent_back_keeps_the_stored_radians_through_json() {
+    let word = 1.8017933438838418_f64;
+    let source = unit_scene(b"cm", b"rad", [word, 0.0, 0.0], [1.0, 1.0, 1.0]);
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("radian-scene.mb");
+    std::fs::write(&path, &source).unwrap();
+    let context = egui::Context::default();
+    let (mut editor, client, server) = start(&context).await;
+    let token = editor.scene_token.to_string();
+    let opened = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "open_scene",
+        json!({"scene_token": token, "path": path}),
+    )
+    .await;
+    let token = opened.structured_content.unwrap()["scene_token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let id = editor.history.scene().nodes()[0].id();
+    let inspected = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "inspect_scene",
+        json!({}),
+    )
+    .await
+    .structured_content
+    .unwrap();
+    let rotation = inspected["inspection"]["nodes"][0]["transform"]["rotation_degrees"].clone();
+
+    let result = call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "set_transform",
+        json!({
+            "scene_token": token,
+            "node_id": id.to_decimal(),
+            "translation": [3.0, 0.0, 0.0],
+            "rotation_degrees": rotation,
+            "scale": [1.0, 1.0, 1.0],
+        }),
+    )
+    .await;
+
+    assert_eq!(result.is_error, Some(false));
+    assert_eq!(
+        editor
+            .history
+            .scene()
+            .internal_transform(id)
+            .unwrap()
+            .rotation_radians[0]
+            .to_bits(),
+        word.to_bits()
+    );
+    assert_eq!(editor.history.undo_label().as_deref(), Some("Move"));
+    client.cancel().await.unwrap();
+    drop(editor);
+    server.await.unwrap();
+}
+
 fn unit_scene(
     linear: &[u8],
     angular: &[u8],
