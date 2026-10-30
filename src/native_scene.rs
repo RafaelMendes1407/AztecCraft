@@ -1272,8 +1272,8 @@ impl NativeScene {
         self.remove_validated(id)
     }
     /// Removes every listed node, in order, after one preflight and one validation; a repeated id
-    /// is removed once. The first refusal is returned unchanged and earlier removals stay applied,
-    /// so callers run it on a candidate clone, as `History::execute` does.
+    /// is removed once. The first refusal names its node when several are listed, and earlier
+    /// removals stay applied, so callers run it on a candidate clone, as `History::execute` does.
     pub fn remove_many(&mut self, ids: &[NodeId]) -> Result<(), NativeError> {
         self.authoring_preflight()?;
         self.validate()?;
@@ -1283,7 +1283,7 @@ impl NativeScene {
             if let Err(reason) = self.remove_validated(*id) {
                 return Err(match self.node(*id) {
                     Ok(node) if distinct.len() > 1 => NativeError::DeleteMemberRefused {
-                        node: node.name().to_string(),
+                        node: refusal_name(node.name()),
                         reason: Box::new(reason),
                     },
                     _ => reason,
@@ -1669,6 +1669,21 @@ impl fmt::Display for DeleteUnsupported {
             Self::IsChild => "Deleting a node that has a parent is not supported yet",
         })
     }
+}
+
+const MAX_REFUSAL_NAME_BYTES: usize = 256;
+
+/// A node name for one line of refusal text. Opened names are unbounded, so it drops control
+/// characters and stops at `MAX_REFUSAL_NAME_BYTES`, on a character boundary.
+fn refusal_name(name: &str) -> String {
+    let mut bounded = String::new();
+    for character in name.chars().filter(|character| !character.is_control()) {
+        if bounded.len() + character.len_utf8() > MAX_REFUSAL_NAME_BYTES {
+            break;
+        }
+        bounded.push(character);
+    }
+    bounded
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

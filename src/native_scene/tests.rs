@@ -26,6 +26,17 @@ fn a_refused_multi_delete_names_the_refusing_node() {
 }
 
 #[test]
+fn a_refusal_name_is_bounded_on_a_character_boundary_without_control_characters() {
+    let plain = "a".repeat(MAX_REFUSAL_NAME_BYTES);
+    assert_eq!(refusal_name(&plain), plain);
+    assert_eq!(refusal_name(&format!("{plain}a")), plain);
+    let wide = format!("{}é", "a".repeat(MAX_REFUSAL_NAME_BYTES - 1));
+    assert_eq!(refusal_name(&wide), "a".repeat(MAX_REFUSAL_NAME_BYTES - 1));
+    assert_eq!(refusal_name("a\nb\u{7}c"), "abc");
+    assert_eq!(refusal_name(""), "");
+}
+
+#[test]
 fn a_refused_delete_of_one_distinct_node_keeps_the_plain_error() {
     let (mut scene, parent, _) = test_fixtures::group_with_own_shape_and_child();
     assert_eq!(
