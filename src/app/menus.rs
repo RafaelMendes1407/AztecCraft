@@ -292,7 +292,7 @@ impl Editor {
                     ui.horizontal(|ui| {
                         let enabled = idle && (!selection_only || !self.selection.is_empty());
                         let hover = if selection_only {
-                            "Write the selected object's polygon geometry to a new OBJ file"
+                            "Write the selected objects' polygon geometry to a new OBJ file"
                         } else {
                             "Write displayed polygon geometry to a new OBJ file"
                         };

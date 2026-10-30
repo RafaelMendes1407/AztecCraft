@@ -32,7 +32,7 @@ pub(in crate::app) fn validate_export_path(path: &Path) -> Result<(), OperationE
 
 impl Editor {
     /// Writes displayed polygon geometry to a new `.obj` file: every instance, or the instances
-    /// under the selected object. Reads the committed scene and changes nothing in it.
+    /// under the selected objects. Reads the committed scene and changes nothing in it.
     pub(in crate::app) fn export_obj(
         &mut self,
         path: &Path,
@@ -42,15 +42,9 @@ impl Editor {
         if self.files.is_modal() {
             return Err(OperationError::BusyEditing);
         }
-        let selected = if selection_only {
-            let (id, path) = self
-                .single_target()
-                .map_err(|_| OperationError::NoSelection)?;
-            let path = path.to_vec();
-            Some(self.selection_path(id, (!path.is_empty()).then_some(path))?)
-        } else {
-            None
-        };
+        let selected = selection_only
+            .then(|| self.selected_member_paths())
+            .transpose()?;
         let scene = self.history.scene();
         let view = ViewScene::from_native(scene, VIEW_BUDGET)
             .map_err(|error| OperationError::View(error.to_string()))?;
@@ -60,7 +54,7 @@ impl Editor {
             .filter(|instance| {
                 selected
                     .as_ref()
-                    .is_none_or(|path| instance.path().starts_with(path))
+                    .is_none_or(|paths| paths.iter().any(|path| instance.path().starts_with(path)))
             })
             .collect();
         let summary = obj::export_native_new(path, scene, &instances).map_err(|error| {
@@ -107,3 +101,7 @@ impl Editor {
         });
     }
 }
+
+#[cfg(test)]
+#[path = "obj_export_tests.rs"]
+mod tests;

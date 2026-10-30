@@ -96,6 +96,25 @@ async fn sdk_export_obj_writes_new_files_and_never_changes_the_scene() {
             .contains(&format!("o {name}\n"))
     );
 
+    let objects = editor.history.scene().transform_paths().unwrap().len();
+    call(
+        &mut editor,
+        &context,
+        client.peer(),
+        "select_by_rule",
+        json!({"scene_token": token, "rule": "all"}),
+    )
+    .await;
+    let every = directory.path().join("every.obj");
+    let selected = export(
+        &mut editor,
+        &context,
+        &client,
+        json!({"scene_token": token, "path": every, "selection_only": true}),
+    )
+    .await;
+    assert_eq!(selected["objects"], objects);
+
     editor
         .apply_operation(Operation::Select {
             node: None,

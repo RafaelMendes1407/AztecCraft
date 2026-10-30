@@ -6442,6 +6442,18 @@ pub(in crate::app) fn deep_group_editor() -> Editor {
 
 /// A group (translate x = 2) holding the chain `names` of transforms; the last owns one triangle mesh.
 fn nested_group_editor(names: &[&[u8]]) -> Editor {
+    nested_group_editor_with_leaf_translate(names, None)
+}
+
+/// `deep_group_editor` with `t` authored on the transform that owns the mesh.
+pub(in crate::app) fn deep_group_editor_with_leaf_translate(translate: [f64; 3]) -> Editor {
+    nested_group_editor_with_leaf_translate(&[b"mid", b"child"], Some(translate))
+}
+
+fn nested_group_editor_with_leaf_translate(
+    names: &[&[u8]],
+    leaf_translate: Option<[f64; 3]>,
+) -> Editor {
     use material_wire as wire;
     let mut parent: &[u8] = b"group";
     let mut chain = wire::group(
@@ -6453,8 +6465,12 @@ fn nested_group_editor(names: &[&[u8]]) -> Editor {
         .concat(),
         4,
     );
-    for name in names {
-        chain.extend(wire::group(b"XFRM", &wire::creation(name, Some(parent)), 4));
+    for (index, name) in names.iter().enumerate() {
+        let mut body = wire::creation(name, Some(parent));
+        if let Some(translate) = leaf_translate.filter(|_| index + 1 == names.len()) {
+            body.extend(wire::triple(b"t", translate));
+        }
+        chain.extend(wire::group(b"XFRM", &body, 4));
         parent = name;
     }
     chain.extend(wire::group(
