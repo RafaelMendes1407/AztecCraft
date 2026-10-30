@@ -1,5 +1,5 @@
 use super::*;
-use crate::app::tests::{deep_group_editor, deep_group_editor_with_leaf_translate};
+use crate::app::tests::{deep_group_editor, deep_group_editor_with_leaf};
 use azteccraft::scene::Primitive;
 
 fn object_lines(path: &Path) -> Vec<String> {
@@ -57,7 +57,11 @@ fn export_selection_writes_every_selected_object_once() {
             faces: 12,
         }
     ));
-    assert_eq!(object_lines(&path).len(), 2);
+    let name = |target: &azteccraft::native_scene::TransformTarget| {
+        let node = editor.history.scene().node(target.node).unwrap();
+        format!("o {}", node.name())
+    };
+    assert_eq!(object_lines(&path), [name(&all[0]), name(&all[2])]);
     assert_eq!(
         before,
         (editor.history.scene().clone(), editor.selection.clone())
@@ -102,7 +106,7 @@ fn export_selection_of_a_parent_includes_its_nested_descendant_in_world_space() 
     assert_eq!(base.len(), 3);
     assert!(base.iter().all(|vertex| vertex[0] >= 2.0), "{base:?}");
 
-    let mut translated = deep_group_editor_with_leaf_translate([0.0, 3.0, 0.0]);
+    let mut translated = deep_group_editor_with_leaf([0.0, 3.0, 0.0], [0.0; 3], [0.0; 3]);
     select_the_root_group(&mut translated);
     let moved = directory.path().join("moved.obj");
     translated.export_obj(&moved, true).unwrap();
@@ -111,6 +115,36 @@ fn export_selection_of_a_parent_includes_its_nested_descendant_in_world_space() 
         .map(|vertex| [vertex[0], vertex[1] + 3.0, vertex[2]])
         .collect();
     assert_eq!(vertices(&moved), expected);
+}
+
+#[test]
+fn a_nested_rotation_about_a_pivot_exports_in_world_space() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut plain = deep_group_editor();
+    select_the_root_group(&mut plain);
+    let base = directory.path().join("base.obj");
+    plain.export_obj(&base, true).unwrap();
+    let mut rotated = deep_group_editor_with_leaf(
+        [0.0; 3],
+        [0.0, 0.0, std::f64::consts::FRAC_PI_2],
+        [1.0, 0.0, 0.0],
+    );
+    select_the_root_group(&mut rotated);
+    let path = directory.path().join("rotated.obj");
+
+    rotated.export_obj(&path, true).unwrap();
+
+    let group_x = 2.0;
+    let pivot_x = 1.0;
+    let written = vertices(&path);
+    for (vertex, source) in written.iter().zip(vertices(&base)) {
+        let (x, y) = (source[0] - group_x - pivot_x, source[1]);
+        let expected = [group_x + pivot_x - y, x, source[2]];
+        for (value, wanted) in vertex.iter().zip(expected) {
+            assert!((value - wanted).abs() < 1e-9, "{vertex:?} vs {expected:?}");
+        }
+    }
+    assert_eq!(written.len(), 3);
 }
 
 #[test]
