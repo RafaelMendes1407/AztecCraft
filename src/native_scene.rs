@@ -1278,9 +1278,16 @@ impl NativeScene {
         self.authoring_preflight()?;
         self.validate()?;
         let mut seen = std::collections::HashSet::new();
-        for id in ids {
-            if seen.insert(*id) {
-                self.remove_validated(*id)?;
+        let distinct: Vec<NodeId> = ids.iter().copied().filter(|id| seen.insert(*id)).collect();
+        for id in &distinct {
+            if let Err(reason) = self.remove_validated(*id) {
+                return Err(match self.node(*id) {
+                    Ok(node) if distinct.len() > 1 => NativeError::DeleteMemberRefused {
+                        node: node.name().to_string(),
+                        reason: Box::new(reason),
+                    },
+                    _ => reason,
+                });
             }
         }
         Ok(())
@@ -1681,6 +1688,11 @@ pub enum NativeError {
     NameCollision,
     UnsupportedEdit,
     UnsupportedDelete(DeleteUnsupported),
+    /// One node of a delete of several refused; `reason` is that node's own error.
+    DeleteMemberRefused {
+        node: String,
+        reason: Box<NativeError>,
+    },
     ReadOnlyFormat,
     UnknownSessionMaterial(SessionMaterialId),
     SessionColorOutOfRange,
@@ -1731,6 +1743,7 @@ impl fmt::Display for NativeError {
                 f.write_str("native ownership or edit effects are unsupported")
             }
             Self::UnsupportedDelete(reason) => write!(f, "{reason}"),
+            Self::DeleteMemberRefused { node, reason } => write!(f, "{node}: {reason}"),
             Self::ReadOnlyFormat => f.write_str("Maya ASCII scenes are read-only in this version"),
             Self::UnknownSessionMaterial(id) => {
                 write!(f, "session material {} does not exist", id.index())
