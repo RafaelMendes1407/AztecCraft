@@ -115,6 +115,17 @@ pub(in crate::app) fn timeline_chord(events: &[egui::Event]) -> Option<TimelineA
     })
 }
 
+/// Marks near the right edge put their label left of the tick, so it is not clipped. The margin
+/// holds the longest frame number at the ruler's font size.
+fn ruler_label_anchor(x: f32, right: f32) -> (f32, egui::Align2) {
+    const LABEL_MARGIN: f32 = 80.0;
+    if right - x < LABEL_MARGIN {
+        (x - 2.0, egui::Align2::RIGHT_TOP)
+    } else {
+        (x + 2.0, egui::Align2::LEFT_TOP)
+    }
+}
+
 /// Distance between ruler marks, in frames: the first 1, 2 or 5 times a power of ten that leaves
 /// room for a label.
 fn ruler_step(span: f32, width: f32) -> i32 {
@@ -437,12 +448,7 @@ impl Editor {
                     rect.top()..=rect.top() + 7.0,
                     egui::Stroke::new(1.0, Color32::GRAY),
                 );
-                // The last marks sit near the edge, so their label goes left of the tick.
-                let (label_x, align) = if rect.right() - x < 64.0 {
-                    (x - 2.0, egui::Align2::RIGHT_TOP)
-                } else {
-                    (x + 2.0, egui::Align2::LEFT_TOP)
-                };
+                let (label_x, align) = ruler_label_anchor(x, rect.right());
                 painter.text(
                     egui::pos2(label_x, rect.top() + 7.0),
                     align,

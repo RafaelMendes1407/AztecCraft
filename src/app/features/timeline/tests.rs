@@ -944,3 +944,13 @@ fn the_ruler_step_keeps_room_for_labels_and_stays_bounded() {
     assert_eq!(ruler_step(2_000_000.0, 1000.0), 100_000);
     assert!(ruler_step(2_000_000.0, 0.001) > 0);
 }
+
+#[test]
+fn ruler_labels_near_the_right_edge_stay_inside_it() {
+    let longest = MAX_FRAME.to_string().len() as f32 * 7.0;
+    let (x, align) = ruler_label_anchor(1000.0 - longest, 1000.0);
+    assert_eq!(align, egui::Align2::RIGHT_TOP);
+    assert!(x < 1000.0);
+    let (x, align) = ruler_label_anchor(100.0, 1000.0);
+    assert_eq!((x, align), (102.0, egui::Align2::LEFT_TOP));
+}
