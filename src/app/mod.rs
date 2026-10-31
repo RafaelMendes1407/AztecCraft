@@ -1,5 +1,5 @@
 use crate::editor_operations::{
-    ActiveTool, AttributeEditorTab, Operation, OperationError, OperationReply, SelectRule,
+    ActiveTool, AttributeEditorTab, MenuSet, Operation, OperationError, OperationReply, SelectRule,
     SelectionChange, SelectionMode, ShadingMode, SidebarPanel,
 };
 #[cfg(any(test, feature = "mcp"))]
@@ -74,6 +74,7 @@ pub struct Editor {
     camera: Camera,
     grid_visible: bool,
     shading: ShadingMode,
+    menu_set: MenuSet,
     /// Last painted frame hid Wireframe face centres (occlusion check over budget).
     face_centres_hidden: bool,
     /// Last painted frame hid Wireframe vertex markers (occlusion check over budget).
@@ -127,6 +128,7 @@ impl Default for Editor {
             camera: Camera::default(),
             grid_visible: true,
             shading: ShadingMode::default(),
+            menu_set: MenuSet::default(),
             face_centres_hidden: false,
             vertex_markers_hidden: false,
             sidebar_dock: Some(SidebarPanel::ChannelBox),
