@@ -132,6 +132,7 @@ The matrix records these asymmetries; treat a change as a behavior change that n
   menu bar; MCP reaches the same operation as `deselect_all`.
 - Human-draft commits (`commit_pending`) are the only history mutation besides operations and
   evaluated time writes; the entry-point test names them.
+- The native timeline hotkeys and row share `run_timeline_action` (`src/app/features/timeline.rs "fn run_timeline_action"`), the one native caller of the key and time operations, except `timeline_controls`, which dispatches `SetPlaybackRange`. A step-key request with no adjacent key dispatches nothing and only sets the status.
 - `History::apply_evaluated` writes keyed channels with no undo entry and has two callers: dispatch
   after Undo and Redo, and `write_time` (`src/app/features/timeline.rs "fn write_time"`), which serves
   `SetCurrentTime`, `Play` and the playback tick. The tick is not an `Operation`, so it passes no
