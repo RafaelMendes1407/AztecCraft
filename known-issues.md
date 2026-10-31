@@ -49,8 +49,8 @@ Alt+Shift+V and keying non-transform attributes.
 
 Playback advances only while the window renders, and a hidden window stops it. Each frame that moves
 a keyed channel changes the revision, so `inspect_scene` and `inspect_keys` cursors go stale during
-playback; stop first to page. The timeline row had one native check on Linux, driven through MCP
-at the default window size; mouse scrubbing, hotkeys and the wrapped row are headless only.
+playback; stop first to page. The timeline row had native checks on Linux with real mouse and key
+input in a private virtual session; other platforms rely on CI, and Delete Key on a keyed frame is headless only.
 
 ## Manipulator size is PROVISIONAL and session-only
 
