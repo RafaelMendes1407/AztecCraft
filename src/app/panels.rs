@@ -479,13 +479,23 @@ impl Editor {
             {
                 match self.selection_mode {
                     SelectionMode::Object | SelectionMode::Hierarchy => {
-                        let hit = self
-                            .camera
-                            .pick_view(&view, ndc, self.aspect)
+                        let joint = input
+                            .pick_joint(&self.camera, &view)
                             .map_err(|e| OperationError::View(e.to_string()))?;
-                        let (node, instance_path) = if let Some(hit) = hit {
-                            let mut prefix = hit.path;
-                            prefix.pop();
+                        // A joint path ends at its transform; a surface hit ends at a shape.
+                        let hit = match joint {
+                            Some(joint) => Some((joint.transform(), joint.path().to_vec())),
+                            None => self
+                                .camera
+                                .pick_view(&view, ndc, self.aspect)
+                                .map_err(|e| OperationError::View(e.to_string()))?
+                                .map(|hit| {
+                                    let mut prefix = hit.path;
+                                    prefix.pop();
+                                    (hit.transform, prefix)
+                                }),
+                        };
+                        let (node, instance_path) = if let Some((transform, mut prefix)) = hit {
                             if self.selection_mode == SelectionMode::Hierarchy {
                                 prefix.truncate(1);
                                 let root = self
@@ -495,7 +505,7 @@ impl Editor {
                                     .map_err(OperationError::Scene)?;
                                 (Some(root), Some(prefix))
                             } else {
-                                (Some(hit.transform), Some(prefix))
+                                (Some(transform), Some(prefix))
                             }
                         } else {
                             (None, None)

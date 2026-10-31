@@ -1004,6 +1004,23 @@ impl NativeScene {
             appearance_incomplete: self.appearance_incomplete(),
         })
     }
+    /// Whether a joint at the full transform `path` draws. A joint has no shape at the path end,
+    /// so `geometry_view_admission` cannot answer for it.
+    pub fn joint_view_admission(&self, path: &[NativeId]) -> Result<bool, NativeError> {
+        let mut visible = true;
+        for id in path {
+            let node = self
+                .nodes
+                .iter()
+                .find(|node| node.transform_id == *id)
+                .ok_or(NativeError::InvalidInstancePath)?;
+            if !node.unsupported_transform.is_empty() {
+                return Err(NativeError::UnsupportedView("unproved transform effects"));
+            }
+            visible &= node.view.visible()?;
+        }
+        Ok(visible)
+    }
     pub fn restore_authoring(&mut self, mut snapshot: Self) {
         snapshot.next_id = snapshot.next_id.max(self.next_id);
         snapshot.next_native_id = snapshot.next_native_id.max(self.next_native_id);

@@ -66,7 +66,9 @@ impl fmt::Display for JointUnsupported {
             Self::SingularParent => {
                 "the parent has zero or unusable scale, so a world position cannot be solved; use a relative position"
             }
-            Self::Radius => "the joint radius must be greater than 0",
+            Self::Radius => {
+                "the joint radius must be greater than 0 and small enough for the viewport to draw"
+            }
         })
     }
 }
@@ -203,7 +205,8 @@ impl NativeScene {
         if request.position.iter().any(|value| !value.is_finite()) || !request.radius.is_finite() {
             return Err(NativeError::NonFinite);
         }
-        if request.radius <= 0.0 {
+        // Its circles are drawn in f32, so a radius past that range would fail every later view.
+        if request.radius <= 0.0 || !(request.radius as f32).is_finite() {
             return Err(NativeError::UnsupportedJoint(JointUnsupported::Radius));
         }
         let name = match &request.name {
