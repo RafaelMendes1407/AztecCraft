@@ -727,6 +727,9 @@ impl Camera {
         viewport_pixels: [u32; 2],
         pixels_per_point: f32,
     ) -> Result<Option<&'a ViewJoint>, ViewError> {
+        if scene.joints().is_empty() {
+            return Ok(None);
+        }
         let frame = self.pick_frame(pointer_points, viewport_pixels, pixels_per_point)?;
         let mut candidates = Vec::new();
         for joint in scene.joints() {

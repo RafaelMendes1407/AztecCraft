@@ -1368,6 +1368,14 @@ mod joints {
 
     const PIXELS: [u32; 2] = [400, 400];
 
+    #[test]
+    fn a_scene_without_joints_has_nothing_to_pick_and_no_new_error() {
+        let view = ViewScene::from_native(&NativeScene::default(), 1 << 28).unwrap();
+        // A pixel size the frame would refuse: without joints it is never computed.
+        let pick = Camera::default().pick_joint(&view, Vec2::ZERO, [0, 0], 1.0);
+        assert!(matches!(pick, Ok(None)));
+    }
+
     fn joint(scene: &mut NativeScene, parent: Option<NodeId>, position: [f64; 3]) -> NodeId {
         scene
             .create_joint(&JointRequest {
