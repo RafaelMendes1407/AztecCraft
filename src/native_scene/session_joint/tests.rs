@@ -593,6 +593,30 @@ fn delete_rules_for_mesh_hierarchies_are_untouched() {
 }
 
 #[test]
+fn a_radius_past_the_safety_bound_is_refused_before_mutation() {
+    let mut scene = NativeScene::default();
+    let before = scene.clone();
+    // f32-finite values that still overflowed the renderer (3.3e38) and framing (1e37).
+    for radius in [3.3e38, 1e37, 1.000001e6] {
+        assert_eq!(
+            scene.create_joint(&JointRequest {
+                radius,
+                ..request(None, [0.0; 3])
+            }),
+            Err(NativeError::UnsupportedJoint(JointUnsupported::Radius)),
+            "{radius}"
+        );
+        assert_eq!(scene, before, "{radius}");
+    }
+    scene
+        .create_joint(&JointRequest {
+            radius: 1e6,
+            ..request(None, [0.0; 3])
+        })
+        .expect("the bound itself is allowed");
+}
+
+#[test]
 fn the_table_participates_in_equality_so_history_sees_a_radius_change() {
     let (scene, nodes) = chain(1);
     let mut changed = scene.clone();
@@ -614,7 +638,7 @@ fn validate_refuses_each_malformed_table() {
     let root = transform_id(&scene, nodes[0]);
     let refused = Err(NativeError::InvalidSessionJoints);
 
-    for radius in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+    for radius in [0.0, -1.0, f64::NAN, f64::INFINITY, 3.3e38] {
         let mut bad = scene.clone();
         bad.session_joints.joints.insert(child, Joint { radius });
         assert_eq!(bad.validate(), refused);

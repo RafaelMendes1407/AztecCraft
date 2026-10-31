@@ -900,7 +900,7 @@ jointOrient, rotate axis, rotate order, IK, skinning or constraint.
 
 PROVISIONAL, because the cited 2027 pages do not settle them: the default name `joint<N>`; the
 display (circle radius 0.5 times the radius, 16 segments, one line per bone, existing object
-colours); default radius 1.0 at creation; an inverse of 1 for a zero or non-finite parent scale;
+colours); default radius 1.0 at creation and the 1e6 cm upper limit on radius; an inverse of 1 for a zero or non-finite parent scale;
 Delete removing descendants; a child rotation of 0 under a rotated parent; the Rigging menu order;
 the undo label Create; the 8 pixel click tolerance on joint centres, with bones not pickable; the
 Radius row in the Channel Box. None of this has been compared with Maya.

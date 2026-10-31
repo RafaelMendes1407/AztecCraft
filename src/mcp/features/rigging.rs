@@ -23,7 +23,7 @@ struct CreateJointArgs {
     /// Measure `position` from the parent. Without a parent it changes nothing. Default false.
     #[serde(default)]
     relative: bool,
-    /// Greater than 0. Default 1.
+    /// Greater than 0 and at most 1000000. Default 1.
     radius: Option<f64>,
     /// Omit it for the lowest free `joint<N>`.
     name: Option<String>,
@@ -45,7 +45,7 @@ fn parse_create_joint(arguments: JsonObject) -> Result<RemoteRequest, ErrorData>
 
 pub(in crate::mcp) const TOOLS: &[ToolSpec] = &[ToolSpec {
     name: "create_joint",
-    description: "Create a session-only joint, the same operation as Skeleton > Create Joints: a bare transform that stays selected, with rotation 0 and scale 1. `parent_id` must name a joint and is the only way to attach it; the selection is not read. A world `position` under a parent is solved through the parent's world matrix and refused when that matrix is singular; `relative` stores the position as given. A joint under a joint keeps segment scale compensation on. A scene holding joints cannot be saved, and joints are not written to any file. Refused on an opened scene, in a component selection mode, for a parent that is not a joint, a radius of 0 or less, an invalid or colliding name and past the hierarchy depth limit. `inspect_scene` reports `joint.radius` on each joint; `delete_node` removes a joint with everything below it, as one undo step",
+    description: "Create a session-only joint, the same operation as Skeleton > Create Joints: a bare transform that stays selected, with rotation 0 and scale 1. `parent_id` must name a joint and is the only way to attach it; the selection is not read. A world `position` under a parent is solved through the parent's world matrix and refused when that matrix is singular; `relative` stores the position as given. A joint under a joint keeps segment scale compensation on. A scene holding joints cannot be saved, and joints are not written to any file. Refused on an opened scene, in a component selection mode, for a parent that is not a joint, a radius of 0 or less or above 1000000, an invalid or colliding name and past the hierarchy depth limit. `inspect_scene` reports `joint.radius` on each joint; `delete_node` removes a joint with everything below it, as one undo step",
     schema: schema::<CreateJointArgs>,
     parse: parse_create_joint,
     idempotent: false,

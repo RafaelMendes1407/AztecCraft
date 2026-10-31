@@ -2470,6 +2470,28 @@ mod joints {
     }
 
     #[test]
+    fn the_extreme_radii_still_submit_and_frame() {
+        for radius in [1e6, 1e-300] {
+            let mut scene = NativeScene::default();
+            scene
+                .create_joint(&JointRequest {
+                    parent: None,
+                    position: [0.0; 3],
+                    relative: false,
+                    radius,
+                    name: None,
+                })
+                .unwrap();
+            let view = ViewScene::from_native(&scene, VIEW_BUDGET).unwrap();
+            submission(&view, SelectionFeedback::Object(None));
+            let mut camera = Camera::default();
+            camera
+                .frame_view(&view, None, 1.0)
+                .unwrap_or_else(|error| panic!("radius {radius}: {error}"));
+        }
+    }
+
+    #[test]
     fn three_circles_per_joint_and_one_line_per_bone_fill_the_preflight_exactly() {
         let (scene, _) = chain();
         let view = ViewScene::from_native(&scene, VIEW_BUDGET).unwrap();

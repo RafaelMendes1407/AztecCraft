@@ -25,7 +25,9 @@ pub use move_translation::{ChannelLeaf, WorldAxis, WorldMoveFrame, WorldMoveUnsu
 pub use rotate_frame::{RotateAxis, RotateFrame, RotateSpace, RotateUnsupported};
 pub use scale_frame::{ScaleFrame, ScaleHandle, ScaleSpace, ScaleUnsupported};
 use session_joint::SessionJoints;
-pub use session_joint::{DEFAULT_JOINT_RADIUS, Joint, JointRequest, JointUnsupported};
+pub use session_joint::{
+    DEFAULT_JOINT_RADIUS, Joint, JointRequest, JointUnsupported, MAX_JOINT_RADIUS_CM,
+};
 use session_material::SessionMaterials;
 pub use session_material::{
     Lambert, MAX_SESSION_MATERIALS, MaterialChoice, SessionMaterialId, ShadingGroup,

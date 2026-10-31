@@ -17,6 +17,9 @@ use std::fmt;
 
 /// The node page's `radius` default; the command page lists none (PROVISIONAL at creation).
 pub const DEFAULT_JOINT_RADIUS: f64 = 1.0;
+/// A safety bound, not a Maya limit (PROVISIONAL, #5): the primitive size limit, which keeps a
+/// joint's circles and framing inside what the renderer and camera accept.
+pub const MAX_JOINT_RADIUS_CM: f64 = crate::primitive_options::MAX_SIZE_CM;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Joint {
@@ -67,10 +70,14 @@ impl fmt::Display for JointUnsupported {
                 "the parent has zero or unusable scale, so a world position cannot be solved; use a relative position"
             }
             Self::Radius => {
-                "the joint radius must be greater than 0 and small enough for the viewport to draw"
+                "the joint radius must be greater than 0 and at most 1000000"
             }
         })
     }
+}
+
+fn valid_radius(radius: f64) -> bool {
+    radius > 0.0 && radius <= MAX_JOINT_RADIUS_CM
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -110,7 +117,7 @@ impl SessionJoints {
             return invalid();
         }
         for joint in self.joints.values() {
-            if !joint.radius.is_finite() || joint.radius <= 0.0 {
+            if !valid_radius(joint.radius) {
                 return invalid();
             }
         }
@@ -205,8 +212,7 @@ impl NativeScene {
         if request.position.iter().any(|value| !value.is_finite()) || !request.radius.is_finite() {
             return Err(NativeError::NonFinite);
         }
-        // Its circles are drawn in f32, so a radius past that range would fail every later view.
-        if request.radius <= 0.0 || !(request.radius as f32).is_finite() {
+        if !valid_radius(request.radius) {
             return Err(NativeError::UnsupportedJoint(JointUnsupported::Radius));
         }
         let name = match &request.name {
