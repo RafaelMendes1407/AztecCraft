@@ -14,6 +14,8 @@ pub(in crate::app) const JOINT_ROW_GLYPH: &str = "◎";
 
 const CREATE_JOINTS: &str = "Create Joints";
 const WINDOW_TITLE: &str = "Create Joints";
+/// Over the viewport, because egui's default corner would cover the Outliner while a chain is built.
+const WINDOW_POSITION: egui::Pos2 = egui::pos2(360.0, 230.0);
 const OPTION_BOX_REASON: &str =
     "Joint Tool settings are not implemented; the Create Joints row opens a numeric window";
 
@@ -209,6 +211,7 @@ impl Editor {
         let (mut create, mut close) = (false, false);
         egui::Window::new(WINDOW_TITLE)
             .id(window_id())
+            .default_pos(WINDOW_POSITION)
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
