@@ -9,6 +9,7 @@ mod mesh;
 mod move_translation;
 mod rotate_frame;
 mod scale_frame;
+mod session_joint;
 mod session_material;
 mod source;
 mod transform_extras;
@@ -23,6 +24,8 @@ pub(crate) use move_translation::ChannelBaseline;
 pub use move_translation::{ChannelLeaf, WorldAxis, WorldMoveFrame, WorldMoveUnsupported};
 pub use rotate_frame::{RotateAxis, RotateFrame, RotateSpace, RotateUnsupported};
 pub use scale_frame::{ScaleFrame, ScaleHandle, ScaleSpace, ScaleUnsupported};
+use session_joint::SessionJoints;
+pub use session_joint::{DEFAULT_JOINT_RADIUS, Joint, JointRequest, JointUnsupported};
 use session_material::SessionMaterials;
 pub use session_material::{
     Lambert, MAX_SESSION_MATERIALS, MaterialChoice, SessionMaterialId, ShadingGroup,
@@ -518,6 +521,7 @@ pub struct NativeScene {
     source: Option<SourceRetention>,
     materials: Vec<appearance::MaterialDiffuse>,
     session_materials: SessionMaterials,
+    session_joints: SessionJoints,
     next_id: u64,
     next_native_id: u64,
 }
@@ -544,6 +548,10 @@ pub struct InternalTransform {
     pub scale_pivot_cm: [f64; 3],
     /// `None` when every extra is default; the matrix then takes the unchanged path.
     pub extras: Option<InternalExtras>,
+    /// The inverse of the parent joint's scale for a joint under a joint: IS in the joint matrix.
+    /// `None` for every other node, whose results are then bit-identical to a plain transform.
+    /// Validation keeps joints on default extras, so the extras path never needs it.
+    pub inverse_parent_scale: Option<[f64; 3]>,
 }
 
 impl InternalTransform {
@@ -567,6 +575,15 @@ impl InternalTransform {
         Some(DMat3::from_mat4(order * extras.rotate_axis_matrix()))
     }
 
+    /// `parent` with this node's inverse parent scale applied: the linear map its rotation sits
+    /// under. T stays above IS, so a position needs only the plain parent map.
+    pub(crate) fn compensated_parent(self, parent: DMat3) -> DMat3 {
+        match self.inverse_parent_scale {
+            Some(inverse) => parent * DMat3::from_diagonal(DVec3::from_array(inverse)),
+            None => parent,
+        }
+    }
+
     pub(crate) fn matrix(self) -> Option<DMat4> {
         if let Some(extras) = self.extras {
             let matrix = extras.matrix(
@@ -582,7 +599,13 @@ impl InternalTransform {
         let rp = DVec3::from_array(self.rotate_pivot_cm);
         let sp = DVec3::from_array(self.scale_pivot_cm);
         let rotation = DVec3::from_array(self.rotation_radians);
-        let matrix = DMat4::from_translation(translate)
+        let positioned = match self.inverse_parent_scale {
+            Some(inverse) => {
+                DMat4::from_translation(translate) * DMat4::from_scale(DVec3::from_array(inverse))
+            }
+            None => DMat4::from_translation(translate),
+        };
+        let matrix = positioned
             * DMat4::from_translation(rp)
             * DMat4::from_rotation_z(rotation.z)
             * DMat4::from_rotation_y(rotation.y)
@@ -605,6 +628,7 @@ impl PartialEq for NativeScene {
             && self.source == other.source
             && self.materials == other.materials
             && self.session_materials == other.session_materials
+            && self.session_joints == other.session_joints
     }
 }
 
@@ -619,6 +643,7 @@ impl Default for NativeScene {
             source: None,
             materials: Vec::new(),
             session_materials: SessionMaterials::default(),
+            session_joints: SessionJoints::default(),
             next_id: 1,
             next_native_id: 1,
         }
@@ -860,6 +885,7 @@ impl NativeScene {
             rotate_pivot_cm: vector(TransformField::RotatePivot)?,
             scale_pivot_cm: vector(TransformField::ScalePivot)?,
             extras: node.extras.internal(&self.units)?,
+            inverse_parent_scale: self.joint_inverse_parent_scale(node)?,
         })
     }
     pub fn shapes(&self) -> &[NativeMeshShape] {
@@ -1269,10 +1295,11 @@ impl NativeScene {
     pub fn remove(&mut self, id: NodeId) -> Result<(), NativeError> {
         self.authoring_preflight()?;
         self.validate()?;
-        self.remove_validated(id)
+        self.remove_validated(id).map(|_| ())
     }
     /// Removes every listed node, in order, after one preflight and one validation; a repeated id
-    /// is removed once. The first refusal is returned unchanged and earlier removals stay applied,
+    /// is removed once, and an id already removed with a joint above it is skipped; an unknown id
+    /// still errors. The first refusal is returned unchanged and earlier removals stay applied,
     /// so callers run it on a candidate clone, as `History::execute` does.
     pub fn remove_many(&mut self, ids: &[NodeId]) -> Result<(), NativeError> {
         self.authoring_preflight()?;
@@ -1280,18 +1307,22 @@ impl NativeScene {
         let mut seen = std::collections::HashSet::new();
         for id in ids {
             if seen.insert(*id) {
-                self.remove_validated(*id)?;
+                seen.extend(self.remove_validated(*id)?);
             }
         }
         Ok(())
     }
-    fn remove_validated(&mut self, id: NodeId) -> Result<(), NativeError> {
+    /// Removes `id` and returns any other nodes removed with it.
+    fn remove_validated(&mut self, id: NodeId) -> Result<Vec<NodeId>, NativeError> {
         let index = self
             .nodes
             .iter()
             .position(|n| n.id == id)
             .ok_or(SceneError::MissingNode(id))?;
         let transform = self.nodes[index].transform_id;
+        if self.session_joints.contains(transform) {
+            return self.remove_joint_subtree(transform);
+        }
         let has_children = self.dag.iter().any(|edge| {
             edge.parent == Some(transform)
                 && self
@@ -1335,7 +1366,7 @@ impl NativeScene {
         self.dag.retain(|edge| {
             edge.child != node.transform_id && edge.parent != Some(node.transform_id)
         });
-        Ok(())
+        Ok(Vec::new())
     }
     pub fn set_transform(
         &mut self,
@@ -1417,6 +1448,9 @@ impl NativeScene {
     pub fn supported_view(&self) -> Result<Scene, NativeError> {
         if !self.curves.is_empty() {
             return Err(NativeError::UnsupportedView("curves in legacy mesh view"));
+        }
+        if self.has_joints() {
+            return Err(NativeError::UnsupportedView("joints in legacy mesh view"));
         }
         let (linear, angular) = self.units.factors()?;
         let mut nodes = Vec::with_capacity(self.nodes.len());
@@ -1509,6 +1543,8 @@ impl NativeScene {
             curve.validate(self.source.as_ref())?;
         }
         self.validate_dag(&native_ids)?;
+        self.session_joints
+            .validate(&self.nodes, &self.dag, self.source.is_some())?;
         if let Some(source) = &self.source {
             source.validate()?;
             if let Some(appearance) = &source.appearance {
@@ -1686,6 +1722,8 @@ pub enum NativeError {
     SessionColorOutOfRange,
     InitialSessionMaterialLocked,
     InvalidSessionMaterials,
+    InvalidSessionJoints,
+    UnsupportedJoint(JointUnsupported),
     UnsupportedMove(WorldMoveUnsupported),
     UnsupportedRotate(RotateUnsupported),
     UnsupportedScale(ScaleUnsupported),
@@ -1744,6 +1782,8 @@ impl fmt::Display for NativeError {
             Self::InvalidSessionMaterials => {
                 f.write_str("invalid session material table references")
             }
+            Self::InvalidSessionJoints => f.write_str("invalid session joint table references"),
+            Self::UnsupportedJoint(reason) => write!(f, "Create joint unsupported: {reason}"),
             Self::AbsentChannelLeaf { channel, component } => write!(
                 f,
                 "{} is absent from the Maya binary source and cannot be edited; leaf insertion is unsupported",
