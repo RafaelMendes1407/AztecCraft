@@ -32,7 +32,6 @@ pub enum SidebarPanel {
 pub enum MenuSet {
     #[default]
     Modeling,
-    #[cfg_attr(not(any(test, feature = "mcp")), allow(dead_code))]
     Rigging,
 }
 
@@ -415,7 +414,6 @@ pub enum Operation {
     /// Skeleton > Create Joints and MCP `create_joint`. The caller passes `parent` explicitly: the
     /// window resolves it from the selection and MCP names it, and `None` starts a new hierarchy.
     /// `radius` and `name` are resolved by the caller as well; the default name is `None`.
-    #[cfg_attr(not(any(test, feature = "mcp")), allow(dead_code))]
     CreateJoint {
         parent: Option<NodeId>,
         position: [f64; 3],
@@ -442,7 +440,6 @@ pub enum Operation {
         visible: bool,
     },
     SetShadingMode(ShadingMode),
-    #[cfg_attr(not(any(test, feature = "mcp")), allow(dead_code))]
     SetMenuSet {
         set: MenuSet,
     },
