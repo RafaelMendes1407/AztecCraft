@@ -797,14 +797,19 @@ pub struct ShapeInspection {
     pub uv_set: Option<&'static str>,
 }
 
-/// Most UV corners in one `inspect_uvs` reply, so it stays inside `MAX_RESULT_BYTES`: a corner
-/// takes at most about 45 bytes of JSON.
+/// Most UV corners in one `inspect_uvs` reply. A corner takes at most about 50 bytes of JSON, so
+/// a page stays inside the tool reply limit of 256 KiB, with room for the envelope and the face
+/// brackets; `a_full_page_of_the_longest_uvs_fits_the_reply_limit` pins it.
 #[cfg(any(test, feature = "mcp"))]
-pub const MAX_UV_CORNERS_PER_PAGE: usize = 8192;
+pub const MAX_UV_CORNERS_PER_PAGE: usize = 4096;
 
 #[derive(Debug, Serialize)]
 #[cfg(any(test, feature = "mcp"))]
 pub struct UvInspection {
+    /// With `revision`, tells a client which document state this read belongs to: the read passes
+    /// no token guard, and ids can recur after New.
+    pub scene_token: String,
+    pub revision: u64,
     pub shape_id: String,
     /// Null when the shape has no UVs or they are not exposed.
     pub uv_set: Option<&'static str>,
@@ -923,7 +928,7 @@ impl fmt::Display for OperationError {
             #[cfg(any(test, feature = "mcp"))]
             Self::StaleScene => f.write_str("Scene token is stale; inspect the current document"),
             #[cfg(any(test, feature = "mcp"))]
-            Self::TooLarge => f.write_str("Scene inspection exceeds the prototype response limit"),
+            Self::TooLarge => f.write_str("The reply exceeds the prototype response limit"),
             #[cfg(any(test, feature = "mcp"))]
             Self::SessionMaterial(error) => error.fmt(f),
             Self::NoSelection => f.write_str("Select an object or face before framing"),

@@ -58,6 +58,8 @@ impl Editor {
             }
         };
         let mut inspection = UvInspection {
+            scene_token: self.scene_token.to_string(),
+            revision: self.history.revision(),
             shape_id: shape.to_decimal(),
             uv_set: None,
             unavailable_reason: None,
@@ -76,7 +78,8 @@ impl Editor {
         };
         let mut end = start;
         let mut corners = 0usize;
-        for face in &set.faces()[start..] {
+        let remaining = set.faces().get(start..).unwrap_or_default();
+        for face in remaining {
             if end > start && corners.saturating_add(face.len()) > MAX_UV_CORNERS_PER_PAGE {
                 break;
             }
@@ -85,7 +88,7 @@ impl Editor {
         }
         inspection.uv_set = Some(azteccraft::native_scene::DEFAULT_UV_SET);
         inspection.face_offset = start;
-        inspection.faces = set.faces()[start..end].to_vec();
+        inspection.faces = remaining[..end - start].to_vec();
         inspection.next_cursor = (end < faces_total).then(|| {
             PageCursor {
                 scene_token: self.scene_token,

@@ -5846,6 +5846,58 @@ mod menu_bar_wire {
         assert_eq!(editor.name, "pending draft");
     }
 
+    /// Radio and check rows, which `controls` leaves out: label, centre and disabled.
+    fn option_rows(output: &egui::FullOutput) -> Vec<(String, egui::Pos2, bool)> {
+        use eframe::egui::accesskit::Role;
+        let update = output.platform_output.accesskit_update.as_ref().unwrap();
+        update
+            .nodes
+            .iter()
+            .filter(|(_, node)| matches!(node.role(), Role::RadioButton | Role::CheckBox))
+            .filter_map(|(_, node)| {
+                let bounds = node.bounds()?;
+                let center = egui::pos2(
+                    ((bounds.x0 + bounds.x1) / 2.0) as f32,
+                    ((bounds.y0 + bounds.y1) / 2.0) as f32,
+                );
+                Some((node.label()?.to_owned(), center, node.is_disabled()))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn planar_options_apply_the_chosen_axis_and_stay_open() {
+        use azteccraft::native_scene::UvProjectAxis;
+        let (mut editor, context) = setup();
+        let shape = editor.uv_target().unwrap();
+        editor.uv.options_open = true;
+        let mut output = frame(&mut editor, &context, vec![]);
+        for _ in 0..3 {
+            output = frame(&mut editor, &context, vec![]);
+        }
+        let rows = option_rows(&output);
+        for disabled in [
+            "Best plane",
+            "Camera",
+            "Keep image width/height ratio",
+            "Insert projection before deformers",
+            "Create new UV Set",
+        ] {
+            let found = rows.iter().find(|row| row.0 == disabled);
+            assert!(found.is_some_and(|row| row.2), "{disabled}");
+        }
+        let z = rows.iter().find(|row| row.0 == "Z axis").unwrap().1;
+        click(&mut editor, &context, z);
+        assert_eq!(editor.uv.axis, UvProjectAxis::Z);
+        let buttons = controls(&frame(&mut editor, &context, vec![]));
+        click(&mut editor, &context, row(&buttons, "Apply").rect.center());
+        let projected = editor.history.scene().uv_set(shape).unwrap().clone();
+        let mut expected = editor.history.scene().clone();
+        expected.project_uv_planar(shape, UvProjectAxis::Z).unwrap();
+        assert_eq!(expected.uv_set(shape), Some(&projected));
+        assert!(editor.uv.options_open);
+    }
+
     #[test]
     fn the_uv_editor_tolerates_its_shape_being_deleted() {
         let (mut editor, context) = setup();

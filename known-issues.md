@@ -1049,5 +1049,5 @@ Bounding box fit only; Best plane, Camera, Keep image ratio, Insert before defor
 Set, the projection manipulator and construction history are missing. The axis-to-(u, v) assignment
 and the Y default are PROVISIONAL. Scenes opened from a file do not expose their UVs, which does not
 mean they have none. The UV Editor is a read-only outline, not drawn with a texture, and the viewport
-does not show UVs. The native menu and windows have automated UI coverage but no reviewed native
+does not show UVs. The native menu and both windows have automated UI tests but no reviewed native
 screenshot yet, and nothing has been compared with Maya (#5).

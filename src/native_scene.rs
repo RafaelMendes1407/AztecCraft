@@ -1765,7 +1765,7 @@ impl fmt::Display for NativeError {
             }
             Self::InvalidSessionUvs => f.write_str("invalid session UV table"),
             Self::DegenerateUvProjection => f.write_str(
-                "the shape has no extent across this projection; pick another Project from axis",
+                "the shape has no usable extent across this projection; pick another Project from axis",
             ),
             Self::UnsupportedUvTopology => f.write_str("UVs on faces with holes are not supported"),
             Self::UvsBlockTopologyEdit => {

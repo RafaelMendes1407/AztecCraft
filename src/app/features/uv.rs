@@ -139,7 +139,10 @@ impl Editor {
                 shape,
                 axis: self.uv.axis,
             }),
-            Err(reason) => self.status = reason.into(),
+            Err(reason) => {
+                self.status = reason.into();
+                self.error = true;
+            }
         }
     }
 
