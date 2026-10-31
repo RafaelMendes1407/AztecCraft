@@ -133,6 +133,11 @@ impl SessionUvs {
 }
 
 impl NativeScene {
+    /// True for a scene read from a file, whose UVs this table does not hold.
+    pub fn has_source(&self) -> bool {
+        self.source.is_some()
+    }
+
     /// This shape's `map1`, or `None` when it has no UVs.
     pub fn uv_set(&self, shape: NativeId) -> Option<&UvSet> {
         self.session_uvs.sets.get(&shape)

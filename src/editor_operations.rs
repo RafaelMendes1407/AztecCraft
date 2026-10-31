@@ -330,9 +330,22 @@ pub enum Operation {
         material: azteccraft::native_scene::SessionMaterialId,
         color: [f64; 3],
     },
+    ProjectUvPlanar {
+        shape: NativeId,
+        axis: azteccraft::native_scene::UvProjectAxis,
+    },
+    DeleteUvs {
+        shape: NativeId,
+    },
     #[cfg(any(test, feature = "mcp"))]
     Inspect {
         page: Option<InspectPage>,
+    },
+    /// A read, like `Inspect`: it passes no guard, so its cursor binds the document and revision.
+    #[cfg(any(test, feature = "mcp"))]
+    InspectUvs {
+        shape: NativeId,
+        cursor: Option<PageCursor>,
     },
     Create {
         primitive: Primitive,
@@ -452,6 +465,10 @@ pub enum OperationReply {
     #[cfg(any(test, feature = "mcp"))]
     Scene {
         inspection: Box<SceneInspection>,
+    },
+    #[cfg(any(test, feature = "mcp"))]
+    Uvs {
+        inspection: Box<UvInspection>,
     },
     Created {
         node_id: String,
@@ -776,6 +793,28 @@ pub struct ShapeInspection {
     pub material: Option<MaterialInspection>,
     /// Session material id every instance of this shape shows; null on sourced scenes.
     pub session_material: Option<String>,
+    /// The session UV set; null without UVs, and on sourced scenes, whose UVs are not exposed.
+    pub uv_set: Option<&'static str>,
+}
+
+/// Most UV corners in one `inspect_uvs` reply, so it stays inside `MAX_RESULT_BYTES`: a corner
+/// takes at most about 45 bytes of JSON.
+#[cfg(any(test, feature = "mcp"))]
+pub const MAX_UV_CORNERS_PER_PAGE: usize = 8192;
+
+#[derive(Debug, Serialize)]
+#[cfg(any(test, feature = "mcp"))]
+pub struct UvInspection {
+    pub shape_id: String,
+    /// Null when the shape has no UVs or they are not exposed.
+    pub uv_set: Option<&'static str>,
+    /// Why UVs cannot be read here; null does not mean the shape has UVs.
+    pub unavailable_reason: Option<&'static str>,
+    pub faces_total: usize,
+    pub face_offset: usize,
+    /// One [u, v] per outer corner, for faces `face_offset` onward.
+    pub faces: Vec<Vec<[f64; 2]>>,
+    pub next_cursor: Option<String>,
 }
 #[derive(Debug, Serialize)]
 #[cfg(any(test, feature = "mcp"))]
@@ -966,7 +1005,7 @@ const MIN_SHAPE: &str = concat!(
     r#""source_appearance":"#,
     min_appearance_summary!(),
     r#","#,
-    r#""material":null,"session_material":"0"}"#
+    r#""material":null,"session_material":"0","uv_set":null}"#
 );
 #[cfg(any(test, feature = "mcp"))]
 const MIN_CURVE: &str = concat!(
@@ -1210,6 +1249,7 @@ mod tests {
             source_appearance: summary,
             material: None,
             session_material: Some("0".into()),
+            uv_set: None,
         };
         assert_eq!(serde_json::to_string(&shape).unwrap(), MIN_SHAPE);
         let curve = CurveInspection {
