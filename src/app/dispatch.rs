@@ -446,6 +446,9 @@ impl Editor {
                 time,
                 channels,
             } => self.check_key_request(nodes.as_deref(), *time, *channels)?,
+            Operation::SetPlaybackRange { start, end } => {
+                self.check_playback_range(*start, *end)?;
+            }
             _ => {}
         }
         // A time change and Play refuse a draft instead of committing it; Stop leaves it alone.

@@ -228,11 +228,12 @@ impl Editor {
         Ok(OperationReply::Changed)
     }
 
-    pub(in crate::app) fn set_playback_range(
-        &mut self,
+    /// The range as whole frames. It runs before a draft commit, so a refusal changes nothing.
+    pub(in crate::app) fn check_playback_range(
+        &self,
         start: f64,
         end: f64,
-    ) -> Result<OperationReply, OperationError> {
+    ) -> Result<(i32, i32), OperationError> {
         self.history
             .scene()
             .check_time_unit()
@@ -242,6 +243,15 @@ impl Editor {
         if start > end {
             return Err(OperationError::Scene(NativeError::InvalidPlaybackRange));
         }
+        Ok((start, end))
+    }
+
+    pub(in crate::app) fn set_playback_range(
+        &mut self,
+        start: f64,
+        end: f64,
+    ) -> Result<OperationReply, OperationError> {
+        let (start, end) = self.check_playback_range(start, end)?;
         let changed = (start, end) != (self.timeline.start, self.timeline.end);
         self.timeline.start = start;
         self.timeline.end = end;
@@ -427,9 +437,15 @@ impl Editor {
                     rect.top()..=rect.top() + 7.0,
                     egui::Stroke::new(1.0, Color32::GRAY),
                 );
+                // The last marks sit near the edge, so their label goes left of the tick.
+                let (label_x, align) = if rect.right() - x < 28.0 {
+                    (x - 2.0, egui::Align2::RIGHT_TOP)
+                } else {
+                    (x + 2.0, egui::Align2::LEFT_TOP)
+                };
                 painter.text(
-                    egui::pos2(x + 2.0, rect.top() + 7.0),
-                    egui::Align2::LEFT_TOP,
+                    egui::pos2(label_x, rect.top() + 7.0),
+                    align,
                     mark,
                     egui::FontId::proportional(11.0),
                     Color32::LIGHT_GRAY,
@@ -472,7 +488,7 @@ impl Editor {
         let mut typed_range = None;
         ui.add_enabled_ui(live, |ui| {
             action = self.time_slider(ui);
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 let (start, end, current) = (
                     self.timeline.start,
                     self.timeline.end,
@@ -604,7 +620,7 @@ impl Editor {
                 "Keys need Object or Hierarchy selection mode".into(),
             )),
             None if self.selection.is_empty() => Err(OperationError::InvalidInput(
-                "Select an object to key".into(),
+                "Select an object first".into(),
             )),
             None => Ok(()),
         }

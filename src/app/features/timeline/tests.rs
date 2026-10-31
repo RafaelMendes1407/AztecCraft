@@ -175,11 +175,34 @@ fn a_refused_key_never_commits_a_draft() {
 }
 
 #[test]
+fn a_refused_playback_range_never_commits_a_draft() {
+    let (mut editor, id) = cube();
+    editor.channels[0] = "3".into();
+    assert!(matches!(
+        editor.apply_operation(Operation::SetPlaybackRange {
+            start: 12.0,
+            end: 2.0
+        }),
+        Err(OperationError::Scene(NativeError::InvalidPlaybackRange))
+    ));
+    assert!(
+        editor
+            .apply_operation(Operation::SetPlaybackRange {
+                start: 1.5,
+                end: 2.0
+            })
+            .is_err()
+    );
+    assert_eq!(tx(&editor, id), 0.0);
+    assert_eq!(editor.channels[0], "3");
+}
+
+#[test]
 fn keying_the_selection_needs_one_and_an_object_mode() {
     let mut editor = Editor::default();
     assert!(matches!(
         key(&mut editor),
-        Err(OperationError::InvalidInput(message)) if message == "Select an object to key"
+        Err(OperationError::InvalidInput(message)) if message == "Select an object first"
     ));
     let (mut editor, _) = cube();
     editor
@@ -660,7 +683,7 @@ fn s_keys_the_selection_and_reports_a_refusal() {
 
     let mut empty = Editor::default();
     tap(&mut empty, &context, Key::S, egui::Modifiers::NONE);
-    assert_eq!(empty.status, "Select an object to key");
+    assert_eq!(empty.status, "Select an object first");
     assert!(empty.error);
 }
 
