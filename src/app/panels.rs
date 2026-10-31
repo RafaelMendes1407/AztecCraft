@@ -81,11 +81,13 @@ impl Editor {
         // popup is still open here; egui closes it later in this pass, when the menus are shown.
         if !self.files.is_modal()
             && !egui::Popup::is_any_open(ui.ctx())
+            && !self.escape_stops_playback(ui.ctx())
             && !self.escape_closes_primitive_options(ui.ctx())
         {
             self.cancel_on_escape(ui.ctx());
         }
         let tool_intent = self.shortcuts(ui.ctx());
+        self.tick_playback(ui.input(|i| i.time), text_edit_focused(ui.ctx()));
         egui::Panel::top("menu_shelf").show(ui, |ui| {
             self.menus(ui, &mut selection_intent, &mut delete_intent)
         });
@@ -212,6 +214,12 @@ impl Editor {
         self.native_input_pending = false;
         #[cfg(feature = "mcp")]
         self.process_mcp(ui.ctx());
+        if self.timeline.playing {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_secs_f64(
+                    1.0 / features::timeline::FRAMES_PER_SECOND,
+                ));
+        }
     }
     pub(super) fn viewport(
         &mut self,
