@@ -30,7 +30,8 @@ PROVISIONAL, because the docs do not state it or the feature behind it is absent
   the Range Slider is absent.
 - A manual edit of a keyed channel holds until the next time change, then snaps back. Undo and Redo
   count as such a change: they re-evaluate at the current time, which they do not restore, so undoing
-  a key can also drop a held edit made before it.
+  a key can also drop a held edit made before it. Redoing such an edit on a keyed channel replies
+  Ok but shows the evaluated value, not the edit, until the channel is edited again.
 - Setting the time to the current frame replies unchanged and keeps a held edit.
 - Step Key does not wrap at the first or last key, and Step Frame ignores the Loop Play Range
   preferences. A held step repeats, and S does not.
