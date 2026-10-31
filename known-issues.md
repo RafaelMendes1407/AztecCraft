@@ -49,8 +49,8 @@ Alt+Shift+V and keying non-transform attributes.
 
 Playback advances only while the window renders, and a hidden window stops it. Each frame that moves
 a keyed channel changes the revision, so `inspect_scene` and `inspect_keys` cursors go stale during
-playback; stop first to page. Native visual QA of the timeline row is pending: it is covered by
-headless egui frames, not by a native screenshot.
+playback; stop first to page. The timeline row had one native check on Linux, driven through MCP
+at the default window size; mouse scrubbing, hotkeys and the wrapped row are headless only.
 
 ## Manipulator size is PROVISIONAL and session-only
 

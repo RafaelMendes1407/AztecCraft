@@ -1500,7 +1500,7 @@
   set_current_time(5) => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
   set_current_time(fractional) => Err(Scene: a time must be a whole frame from -1000000 through 1000000) | no state change
   set_playback_range(2,12) => Err(InvalidInput: new names require the supported ASCII identifier subset) | status: "Scene edited" -> "new names require the supported ASCII identifier subset"; status_is_error: false -> true
-  set_playback_range(inverted) => Err(InvalidInput: new names require the supported ASCII identifier subset) | status: "Scene edited" -> "new names require the supported ASCII identifier subset"; status_is_error: false -> true
+  set_playback_range(inverted) => Err(Scene: the playback start must not be after its end) | no state change
   play => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
   stop => Ok(unchanged) | no state change
   set_keyframe(selection) => Err(InvalidInput: new names require the supported ASCII identifier subset) | status: "Scene edited" -> "new names require the supported ASCII identifier subset"; status_is_error: false -> true
@@ -1741,7 +1741,7 @@
   set_current_time(5) => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
   set_current_time(fractional) => Err(Scene: a time must be a whole frame from -1000000 through 1000000) | no state change
   set_playback_range(2,12) => Ok(changed) | scene changed; status: "Ready | Create a cube, plane, sphere, cylinder or cone to start" -> "Material data edited"; has_draft: true -> false; timeline: time=1 range=1..48 playing=false keys=0 -> time=1 range=2..12 playing=false keys=0; can_undo: false -> true
-  set_playback_range(inverted) => Err(Scene: the playback start must not be after its end) | scene changed; status: "Ready | Create a cube, plane, sphere, cylinder or cone to start" -> "Material data edited"; has_draft: true -> false; can_undo: false -> true
+  set_playback_range(inverted) => Err(Scene: the playback start must not be after its end) | no state change
   play => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
   stop => Ok(unchanged) | no state change
   set_keyframe(selection) => Err(Scene: native ownership or edit effects are unsupported) | scene changed; status: "Ready | Create a cube, plane, sphere, cylinder or cone to start" -> "Material data edited"; has_draft: true -> false; can_undo: false -> true
@@ -1982,7 +1982,7 @@
   set_current_time(5) => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
   set_current_time(fractional) => Err(Scene: a time must be a whole frame from -1000000 through 1000000) | no state change
   set_playback_range(2,12) => Ok(changed) | scene changed; has_draft: true -> false; has_channel_draft: true -> false; timeline: time=1 range=1..48 playing=false keys=0 -> time=1 range=2..12 playing=false keys=0; can_redo: true -> false
-  set_playback_range(inverted) => Err(Scene: the playback start must not be after its end) | scene changed; has_draft: true -> false; has_channel_draft: true -> false; can_redo: true -> false
+  set_playback_range(inverted) => Err(Scene: the playback start must not be after its end) | no state change
   play => Err(BusyEditing: The editor is busy with a text edit, dialog, close or pending input; try again when it finishes) | no state change
   stop => Ok(unchanged) | no state change
   set_keyframe(selection) => Ok(changed) | scene changed; has_draft: true -> false; has_channel_draft: true -> false; timeline: time=1 range=1..48 playing=false keys=0 -> time=1 range=1..48 playing=false keys=9; can_redo: true -> false
