@@ -46,7 +46,7 @@ provenance Native and no token or draft checks. In order:
    effect but stay allowed under a modal (see Observed behavior).
 6. Validation before the draft commit: `selection_path` (also for `ModifySelection`, which additionally needs Object or Hierarchy mode, as does `SelectByRule`, refused in Face, Vertex and Edge mode) and Select-clear-with-path
    (`src/app/dispatch.rs "Clearing selection cannot include an instance path"`), Face mode and face-target resolution for `SelectFace` (`src/app/dispatch.rs "fn require_component_selection"`, `src/app/dispatch.rs "SelectionMode::Face,"`).
-   `SetKeyframe` and `DeleteKeys` run `check_key_request` here (time, channels, and the selection and mode when no nodes are named), so a refused key never commits a draft.
+   `SetKeyframe` and `DeleteKeys` run `check_key_request` here (time, channels, and the selection and mode when no nodes are named), so a refused key never commits a draft. `SetPlaybackRange` runs `check_playback_range` here for the same reason.
 7. `commit_pending` (`src/app/dispatch.rs "fn commit_pending"`) commits a valid human draft first, except for `UpdateMove`,
    `UpdateManipulation`, `FinishMove`, `SetCurrentTime`, `Play` and `Stop` (`src/app/dispatch.rs "&& !self.commit_pending()"`). The two time operations refuse any draft as `BusyEditing` in their handlers, after validating the time; `Stop` ignores it. On failure the operation returns `InvalidInput(status)`
    and the status text and error flag change.

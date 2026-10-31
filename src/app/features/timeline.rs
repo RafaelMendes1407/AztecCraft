@@ -438,7 +438,7 @@ impl Editor {
                     egui::Stroke::new(1.0, Color32::GRAY),
                 );
                 // The last marks sit near the edge, so their label goes left of the tick.
-                let (label_x, align) = if rect.right() - x < 28.0 {
+                let (label_x, align) = if rect.right() - x < 64.0 {
                     (x - 2.0, egui::Align2::RIGHT_TOP)
                 } else {
                     (x + 2.0, egui::Align2::LEFT_TOP)
