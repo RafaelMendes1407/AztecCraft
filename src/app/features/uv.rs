@@ -166,6 +166,7 @@ impl Editor {
         let mut axis = self.uv.axis;
         egui::Window::new("Planar Mapping Options")
             .id(egui::Id::new("planar_options_window"))
+            .default_pos(PLANAR_WINDOW_POSITION)
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
@@ -218,6 +219,7 @@ impl Editor {
         let set = shape.ok().and_then(|shape| scene.uv_set(shape));
         egui::Window::new("UV Editor")
             .id(egui::Id::new("uv_editor_window"))
+            .default_pos(EDITOR_WINDOW_POSITION)
             .open(&mut open)
             .default_size([320.0, 340.0])
             .show(ctx, |ui| match (shape, set) {
@@ -238,6 +240,10 @@ impl Editor {
         self.uv.editor_open = open;
     }
 }
+
+/// Over the viewport, because egui's default corner would cover the menus, Tool Box and Outliner.
+const PLANAR_WINDOW_POSITION: egui::Pos2 = egui::pos2(360.0, 230.0);
+const EDITOR_WINDOW_POSITION: egui::Pos2 = egui::pos2(720.0, 230.0);
 
 /// One outline per face over the 0 to 1 square, with v up as in Maya's UV Editor.
 fn draw_layout(ui: &mut egui::Ui, set: &UvSet) {
