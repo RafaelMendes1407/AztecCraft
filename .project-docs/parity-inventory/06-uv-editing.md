@@ -1,8 +1,11 @@
 # UV editing
 
-Status: not expanded, no evidence. ID prefix `UVE`. Framework and rules: [README.md](README.md).
+Status: not expanded; rows exist only for the first slice (#360). ID prefix `UVE`. Framework and rules: [README.md](README.md).
 
-Owner issues (open feature, epic or verification issues): #53
+Owner issues (open feature, epic or verification issues): #53, #360
 
 | ID | Workflow | Doc | Component | Status | Evidence | MCP | Owner / out-of-scope |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| UVE-001 | UV > Planar: Project from X, Y, Z with Bounding box fit, filling 0 to 1 | [UV menu](https://help.autodesk.com/cloudhelp/2027/ENU/Maya-Modeling/files/GUID-3100AC8D-C82C-4F17-A556-39760FEE91AC.htm), [Planar Mapping options](https://help.autodesk.com/cloudhelp/2027/ENU/Maya-Modeling/files/GUID-E2066AB5-E95E-4276-A1EA-7E6536FD8630.htm) | Maya core | Partial | Interaction: menu row tested, option window not tested by click, native visual QA pending. Semantic output: `each_axis_reads_the_two_other_object_axes`, axis assignment and Y default PROVISIONAL, object-space fit PROVISIONAL, no manipulator or construction history. Persistence: refused, not saved. Undo: `planar_row_projects_the_selected_cube_and_undoes`. Invalid input: `a_projection_with_no_extent_is_refused_and_keeps_the_scene`. Interop: none | `project_uv_planar` | #360 |
+| UVE-002 | UV > Delete UVs on a whole shape | [UV menu](https://help.autodesk.com/cloudhelp/2027/ENU/Maya-Modeling/files/GUID-3100AC8D-C82C-4F17-A556-39760FEE91AC.htm) | Maya core | Partial | Whole shape only, session UVs only. `delete_clears_only_that_shape_and_tolerates_no_uvs`, `uv_sdk_project_inspect_undo_delete`. Native visual QA pending | `delete_uvs` | #360 |
+| UVE-003 | UV > UV Editor | [UV menu](https://help.autodesk.com/cloudhelp/2027/ENU/Maya-Modeling/files/GUID-3100AC8D-C82C-4F17-A556-39760FEE91AC.htm) | Maya core | Partial | Read-only outline of `map1` in a floating window, PROVISIONAL placement. No selection, tools, panel docking or texture. `an_open_uv_editor_leaves_a_human_draft_alone`, `the_uv_editor_tolerates_its_shape_being_deleted`. Native visual QA pending | `inspect_uvs` | #360 |
