@@ -328,6 +328,7 @@ fn text_field_ids() -> impl Iterator<Item = egui::Id> {
     .into_iter()
     .chain((0..9).map(channel_edit_id))
     .chain(features::primitive_options::option_field_ids())
+    .chain(features::timeline::field_ids())
 }
 
 fn text_edit_focused(ctx: &egui::Context) -> bool {

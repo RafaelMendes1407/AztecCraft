@@ -3,7 +3,7 @@
 //! in `render`, not as an `Operation`, so it cannot fill the undo queue.
 
 use crate::app::*;
-use azteccraft::native_scene::{ChannelMask, NativeError, whole_frame};
+use azteccraft::native_scene::{ALL_CHANNELS, ChannelMask, NativeError, whole_frame};
 
 /// PROVISIONAL: the film time unit is 24 fps, and real-time playback is an assumed default.
 pub(in crate::app) const FRAMES_PER_SECOND: f64 = 24.0;
@@ -19,6 +19,116 @@ pub(in crate::app) struct Timeline {
     pub(in crate::app) playing: bool,
     /// The wall-clock second and frame playback counts from; the first tick sets it.
     anchor: Option<(f64, i32)>,
+    time_field: FrameField,
+    start_field: FrameField,
+    end_field: FrameField,
+}
+
+/// A frame text field. It shows the live value until it takes focus, then holds what is typed
+/// until focus leaves. It is not a draft: only leaving it acts, and only on changed text.
+#[derive(Default)]
+struct FrameField {
+    text: String,
+    editing: bool,
+}
+
+impl FrameField {
+    /// The typed text, once, on the frame focus leaves. Esc abandons it.
+    fn show(&mut self, ui: &mut egui::Ui, id: egui::Id, shown: i32, label: &str) -> Option<String> {
+        if !self.editing {
+            self.text = shown.to_string();
+        }
+        ui.label(label);
+        let response = ui.add(
+            egui::TextEdit::singleline(&mut self.text)
+                .id(id)
+                .desired_width(52.0),
+        );
+        if response.has_focus() {
+            self.editing = true;
+            return None;
+        }
+        let left = std::mem::take(&mut self.editing);
+        let abandoned = ui.input(|input| input.key_pressed(Key::Escape));
+        (left && !abandoned && self.text.trim() != shown.to_string())
+            .then(|| self.text.trim().to_owned())
+    }
+}
+
+/// A native timeline request. Hotkeys and controls share `run_timeline_action`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::app) enum TimelineAction {
+    SetKey,
+    DeleteKey,
+    TogglePlay,
+    GoTo(i32),
+    StepFrame(i32),
+    NextKey,
+    PreviousKey,
+}
+
+fn time_field_id() -> egui::Id {
+    egui::Id::new("timeline_current_time")
+}
+
+fn start_field_id() -> egui::Id {
+    egui::Id::new("timeline_playback_start")
+}
+
+fn end_field_id() -> egui::Id {
+    egui::Id::new("timeline_playback_end")
+}
+
+fn time_slider_id() -> egui::Id {
+    egui::Id::new("time_slider")
+}
+
+pub(in crate::app) fn field_ids() -> [egui::Id; 3] {
+    [time_field_id(), start_field_id(), end_field_id()]
+}
+
+/// The Maya 2027 Animation hotkeys page: S sets a key, Alt+V plays or stops, Alt+, and Alt+. step a
+/// frame, comma and period step a key. Modifiers are per event, as in `history_chord`; a held step
+/// repeats (PROVISIONAL, the docs do not say) and S does not. Option on macOS relies on egui-winit's
+/// physical-key fallback, PROVISIONAL.
+pub(in crate::app) fn timeline_chord(events: &[egui::Event]) -> Option<TimelineAction> {
+    events.iter().find_map(|event| match event {
+        egui::Event::Key {
+            key,
+            pressed: true,
+            repeat,
+            modifiers,
+            ..
+        } => {
+            let alt = modifiers.alt && !modifiers.ctrl && !modifiers.shift && !modifiers.command;
+            match key {
+                Key::S if modifiers.is_none() && !repeat => Some(TimelineAction::SetKey),
+                Key::V if alt && !repeat => Some(TimelineAction::TogglePlay),
+                Key::Comma if alt => Some(TimelineAction::StepFrame(-1)),
+                Key::Period if alt => Some(TimelineAction::StepFrame(1)),
+                Key::Comma if modifiers.is_none() => Some(TimelineAction::PreviousKey),
+                Key::Period if modifiers.is_none() => Some(TimelineAction::NextKey),
+                _ => None,
+            }
+        }
+        _ => None,
+    })
+}
+
+/// Distance between ruler marks, in frames: the first 1, 2 or 5 times a power of ten that leaves
+/// room for a label.
+fn ruler_step(span: f32, width: f32) -> i32 {
+    const MIN_GAP: f32 = 40.0;
+    let mut decade = 1;
+    while decade < 10_000_000 {
+        for step in [decade, decade * 2, decade * 5] {
+            if width / span * step as f32 >= MIN_GAP {
+                return step;
+            }
+        }
+        decade *= 10;
+    }
+    decade
 }
 
 impl Default for Timeline {
@@ -29,6 +139,9 @@ impl Default for Timeline {
             end: DEFAULT_END,
             playing: false,
             anchor: None,
+            time_field: FrameField::default(),
+            start_field: FrameField::default(),
+            end_field: FrameField::default(),
         }
     }
 }
@@ -229,6 +342,237 @@ impl Editor {
             self.error = false;
         }
         stops
+    }
+
+    /// The nodes the Time Slider shows keys for: the selected objects.
+    fn selected_key_frames(&self) -> std::collections::BTreeSet<i32> {
+        let nodes: Vec<NodeId> = self.selection.members().iter().map(|t| t.node).collect();
+        self.history.scene().key_frames(&nodes)
+    }
+
+    /// The nearest selected key after or before the current time. It does not wrap (PROVISIONAL).
+    fn adjacent_key(&self, next: bool) -> Option<i32> {
+        let frames = self.selected_key_frames();
+        let current = self.timeline.current;
+        if next {
+            frames.range(current.saturating_add(1)..).next().copied()
+        } else {
+            frames.range(..current).next_back().copied()
+        }
+    }
+
+    /// The one native entry for timeline requests. Every step goes through the shared pipeline.
+    pub(in crate::app) fn run_timeline_action(&mut self, action: TimelineAction) {
+        let current = self.timeline.current;
+        let operation = match action {
+            TimelineAction::SetKey => Operation::SetKeyframe {
+                nodes: None,
+                time: None,
+                channels: ALL_CHANNELS,
+            },
+            TimelineAction::DeleteKey => Operation::DeleteKeys {
+                nodes: None,
+                time: Some(f64::from(current)),
+                channels: ALL_CHANNELS,
+            },
+            TimelineAction::TogglePlay if self.timeline.playing => Operation::Stop,
+            TimelineAction::TogglePlay => Operation::Play,
+            TimelineAction::GoTo(frame) => Operation::SetCurrentTime {
+                time: f64::from(frame),
+            },
+            TimelineAction::StepFrame(delta) => Operation::SetCurrentTime {
+                time: f64::from(current) + f64::from(delta),
+            },
+            TimelineAction::NextKey | TimelineAction::PreviousKey => {
+                let next = action == TimelineAction::NextKey;
+                let Some(frame) = self.adjacent_key(next) else {
+                    self.status = format!(
+                        "No {} key on the selection",
+                        if next { "next" } else { "previous" }
+                    );
+                    self.error = false;
+                    return;
+                };
+                Operation::SetCurrentTime {
+                    time: f64::from(frame),
+                }
+            }
+        };
+        self.native_operation(operation);
+    }
+
+    fn time_slider(&mut self, ui: &mut egui::Ui) -> Option<TimelineAction> {
+        const INSET: f32 = 10.0;
+        let (rect, _) =
+            ui.allocate_exact_size(egui::vec2(ui.available_width(), 30.0), egui::Sense::hover());
+        let sense = if ui.is_enabled() {
+            egui::Sense::click_and_drag()
+        } else {
+            egui::Sense::hover()
+        };
+        let response = ui.interact(rect, time_slider_id(), sense);
+        let (start, end) = (self.timeline.start, self.timeline.end);
+        let span = (end - start).max(1) as f32;
+        let width = (rect.width() - 2.0 * INSET).max(1.0);
+        let x_of = |frame: i32| rect.left() + INSET + (frame - start) as f32 / span * width;
+        let painter = ui.painter_at(rect);
+        painter.rect_filled(rect, 2.0, Color32::from_gray(38));
+        let step = ruler_step(span, width);
+        let mut mark = start.div_euclid(step) * step;
+        while mark <= end {
+            if mark >= start {
+                let x = x_of(mark);
+                painter.vline(
+                    x,
+                    rect.top()..=rect.top() + 7.0,
+                    egui::Stroke::new(1.0, Color32::GRAY),
+                );
+                painter.text(
+                    egui::pos2(x + 2.0, rect.top() + 7.0),
+                    egui::Align2::LEFT_TOP,
+                    mark,
+                    egui::FontId::proportional(11.0),
+                    Color32::LIGHT_GRAY,
+                );
+            }
+            mark += step;
+        }
+        for frame in self.selected_key_frames().range(start..=end) {
+            painter.vline(
+                x_of(*frame),
+                rect.y_range(),
+                egui::Stroke::new(2.0, Color32::from_rgb(214, 74, 64)),
+            );
+        }
+        if (start..=end).contains(&self.timeline.current) {
+            let x = x_of(self.timeline.current);
+            painter.rect_filled(
+                egui::Rect::from_x_y_ranges(x - 2.0..=x + 2.0, rect.y_range()),
+                0.0,
+                Color32::from_rgba_unmultiplied(130, 190, 240, 170),
+            );
+        }
+        // A click or drag scrubs. Each frame the pointer crosses is one time change.
+        if !(response.is_pointer_button_down_on() || response.clicked()) {
+            return None;
+        }
+        let pointer = response.interact_pointer_pos()?;
+        let along = ((pointer.x - rect.left() - INSET) / width).clamp(0.0, 1.0);
+        let frame = start + (along * span).round() as i32;
+        let frame = frame.clamp(start, end);
+        (frame != self.timeline.current).then_some(TimelineAction::GoTo(frame))
+    }
+
+    /// The bottom row: Time Slider, playback range and current time fields, transport and keys.
+    /// Button order follows the Maya 2027 Playback Controls page.
+    pub(in crate::app) fn timeline_controls(&mut self, ui: &mut egui::Ui) {
+        let live = !self.files.is_modal() && !self.files.is_closing();
+        let mut action = None;
+        let mut typed_time = None;
+        let mut typed_range = None;
+        ui.add_enabled_ui(live, |ui| {
+            action = self.time_slider(ui);
+            ui.horizontal(|ui| {
+                let (start, end, current) = (
+                    self.timeline.start,
+                    self.timeline.end,
+                    self.timeline.current,
+                );
+                let typed_start =
+                    self.timeline
+                        .start_field
+                        .show(ui, start_field_id(), start, "Start");
+                let typed_end = self.timeline.end_field.show(ui, end_field_id(), end, "End");
+                if typed_start.is_some() || typed_end.is_some() {
+                    typed_range = Some((
+                        typed_start.unwrap_or_else(|| start.to_string()),
+                        typed_end.unwrap_or_else(|| end.to_string()),
+                    ));
+                }
+                ui.separator();
+                for (label, hover, request) in [
+                    ("|<", "Go To Start", TimelineAction::GoTo(start)),
+                    ("<k", "Step Back Key (,)", TimelineAction::PreviousKey),
+                    (
+                        "<",
+                        "Step Back Frame (Alt+,)",
+                        TimelineAction::StepFrame(-1),
+                    ),
+                ] {
+                    if ui.button(label).on_hover_text(hover).clicked() {
+                        action = Some(request);
+                    }
+                }
+                ui.add_enabled(false, egui::Button::new("<|"))
+                    .on_disabled_hover_text("Play Backwards: not implemented yet");
+                let (label, hover) = if self.timeline.playing {
+                    ("Stop", "Stop (Esc or Alt+V)")
+                } else {
+                    ("Play", "Play Forwards (Alt+V)")
+                };
+                if ui.button(label).on_hover_text(hover).clicked() {
+                    action = Some(TimelineAction::TogglePlay);
+                }
+                for (label, hover, request) in [
+                    (
+                        ">",
+                        "Step Forward Frame (Alt+.)",
+                        TimelineAction::StepFrame(1),
+                    ),
+                    ("k>", "Step Forward Key (.)", TimelineAction::NextKey),
+                    (">|", "Go To End", TimelineAction::GoTo(end)),
+                ] {
+                    if ui.button(label).on_hover_text(hover).clicked() {
+                        action = Some(request);
+                    }
+                }
+                ui.separator();
+                typed_time = self
+                    .timeline
+                    .time_field
+                    .show(ui, time_field_id(), current, "Time");
+                ui.separator();
+                if ui
+                    .button("Set Key (S)")
+                    .on_hover_text("Key the selected objects' transform channels")
+                    .clicked()
+                {
+                    action = Some(TimelineAction::SetKey);
+                }
+                if ui
+                    .button("Delete Key")
+                    .on_hover_text("Delete the selected objects' keys at the current time")
+                    .clicked()
+                {
+                    action = Some(TimelineAction::DeleteKey);
+                }
+                ui.weak("Keys are session-only and block Save");
+            });
+        });
+        if let Some(text) = typed_time {
+            match text.parse::<f64>() {
+                Ok(frame) if frame.fract() == 0.0 && frame.abs() <= 2_147_483_647.0 => {
+                    action = Some(TimelineAction::GoTo(frame as i32));
+                }
+                _ => self.refuse_frame_text(),
+            }
+        }
+        if let Some((start, end)) = typed_range {
+            match (start.parse::<f64>(), end.parse::<f64>()) {
+                (Ok(start), Ok(end)) => {
+                    self.native_operation(Operation::SetPlaybackRange { start, end });
+                }
+                _ => self.refuse_frame_text(),
+            }
+        }
+        if let Some(action) = action {
+            self.run_timeline_action(action);
+        }
+    }
+
+    fn refuse_frame_text(&mut self) {
+        self.status = "Enter a whole frame".into();
+        self.error = true;
     }
 
     /// Refuses a key request before a draft commit. Omitted nodes mean the object selection, which

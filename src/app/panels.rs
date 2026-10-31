@@ -92,13 +92,7 @@ impl Editor {
             self.menus(ui, &mut selection_intent, &mut delete_intent)
         });
         egui::Panel::bottom("timeline_status").show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Time slider");
-                for label in ["|<", "<", "Play", ">", ">|"] {
-                    unsupported(ui, label);
-                }
-                ui.weak("Animation not implemented");
-            });
+            self.timeline_controls(ui);
             ui.separator();
             ui.colored_label(
                 if self.error {

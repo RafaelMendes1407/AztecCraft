@@ -574,3 +574,350 @@ fn a_page_of_keys_ends_on_the_limit_and_its_cursor_binds_the_revision() {
         Err(OperationError::Scene(_))
     ));
 }
+
+fn press(key: Key, modifiers: egui::Modifiers) -> egui::Event {
+    egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers,
+    }
+}
+
+/// A press and its release: egui marks a second press of a held key as a repeat.
+fn tap(editor: &mut Editor, context: &egui::Context, key: Key, modifiers: egui::Modifiers) {
+    let release = egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed: false,
+        repeat: false,
+        modifiers,
+    };
+    run(editor, context, vec![press(key, modifiers), release]);
+}
+
+fn run(editor: &mut Editor, context: &egui::Context, events: Vec<egui::Event>) {
+    crate::app::tests::frame_with(editor, context, egui::vec2(1440.0, 900.0), 1.0, events);
+}
+
+#[test]
+fn the_hotkeys_map_to_the_timeline_actions() {
+    let alt = egui::Modifiers::ALT;
+    let none = egui::Modifiers::NONE;
+    for (event, action) in [
+        (press(Key::S, none), Some(TimelineAction::SetKey)),
+        (press(Key::V, alt), Some(TimelineAction::TogglePlay)),
+        (press(Key::Comma, alt), Some(TimelineAction::StepFrame(-1))),
+        (press(Key::Period, alt), Some(TimelineAction::StepFrame(1))),
+        (press(Key::Comma, none), Some(TimelineAction::PreviousKey)),
+        (press(Key::Period, none), Some(TimelineAction::NextKey)),
+        (press(Key::S, egui::Modifiers::SHIFT), None),
+        (press(Key::S, egui::Modifiers::CTRL), None),
+        (press(Key::V, none), None),
+        (press(Key::V, alt | egui::Modifiers::SHIFT), None),
+        (press(Key::Comma, egui::Modifiers::CTRL), None),
+    ] {
+        assert_eq!(
+            timeline_chord(std::slice::from_ref(&event)),
+            action,
+            "{event:?}"
+        );
+    }
+}
+
+#[test]
+fn s_does_not_repeat_but_a_held_step_does() {
+    let repeated = |key, modifiers| egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat: true,
+        modifiers,
+    };
+    assert_eq!(
+        timeline_chord(&[repeated(Key::S, egui::Modifiers::NONE)]),
+        None
+    );
+    assert_eq!(
+        timeline_chord(&[repeated(Key::V, egui::Modifiers::ALT)]),
+        None
+    );
+    assert_eq!(
+        timeline_chord(&[repeated(Key::Comma, egui::Modifiers::ALT)]),
+        Some(TimelineAction::StepFrame(-1))
+    );
+}
+
+#[test]
+fn s_keys_the_selection_and_reports_a_refusal() {
+    let context = egui::Context::default();
+    let (mut editor, _) = cube();
+    run(&mut editor, &context, Vec::new());
+    tap(&mut editor, &context, Key::S, egui::Modifiers::NONE);
+    assert_eq!(editor.history.scene().session_key_count(), 9);
+    assert_eq!(editor.status, "Key set");
+
+    let mut empty = Editor::default();
+    tap(&mut empty, &context, Key::S, egui::Modifiers::NONE);
+    assert_eq!(empty.status, "Select an object to key");
+    assert!(empty.error);
+}
+
+#[test]
+fn stepping_moves_by_frame_and_by_selected_key() {
+    let context = egui::Context::default();
+    let (mut editor, _) = keyed();
+    run(&mut editor, &context, Vec::new());
+    tap(&mut editor, &context, Key::Period, egui::Modifiers::ALT);
+    assert_eq!(editor.timeline.current, 2);
+    tap(&mut editor, &context, Key::Comma, egui::Modifiers::ALT);
+    assert_eq!(editor.timeline.current, 1);
+    tap(&mut editor, &context, Key::Period, egui::Modifiers::NONE);
+    assert_eq!(editor.timeline.current, 25);
+    tap(&mut editor, &context, Key::Period, egui::Modifiers::NONE);
+    assert_eq!(editor.timeline.current, 25);
+    assert_eq!(editor.status, "No next key on the selection");
+    tap(&mut editor, &context, Key::Comma, egui::Modifiers::NONE);
+    assert_eq!(editor.timeline.current, 1);
+}
+
+#[test]
+fn a_step_key_ignores_keys_of_unselected_objects() {
+    let (mut editor, _) = keyed();
+    editor
+        .apply_operation(Operation::Select {
+            node: None,
+            instance_path: None,
+        })
+        .unwrap();
+    editor.run_timeline_action(TimelineAction::NextKey);
+    assert_eq!(editor.timeline.current, 1);
+    assert_eq!(editor.status, "No next key on the selection");
+}
+
+#[test]
+fn alt_v_toggles_and_esc_stops_playback_before_its_other_meanings() {
+    let context = egui::Context::default();
+    let (mut editor, _) = keyed();
+    run(&mut editor, &context, Vec::new());
+    tap(&mut editor, &context, Key::V, egui::Modifiers::ALT);
+    assert!(editor.timeline.playing);
+    tap(&mut editor, &context, Key::V, egui::Modifiers::ALT);
+    assert!(!editor.timeline.playing);
+
+    editor.run_timeline_action(TimelineAction::TogglePlay);
+    tap(&mut editor, &context, Key::Escape, egui::Modifiers::NONE);
+    assert!(!editor.timeline.playing);
+    assert_eq!(editor.status, "Playback stopped");
+
+    // With nothing playing, Esc keeps its old meaning.
+    tap(&mut editor, &context, Key::Escape, egui::Modifiers::NONE);
+    assert_eq!(editor.status, "Edit cancelled");
+}
+
+#[test]
+fn esc_stops_playback_and_leaves_an_open_options_window() {
+    let context = egui::Context::default();
+    let (mut editor, _) = keyed();
+    editor.open_primitive_options(Primitive::Cube);
+    editor.run_timeline_action(TimelineAction::TogglePlay);
+    run(&mut editor, &context, Vec::new());
+    tap(&mut editor, &context, Key::Escape, egui::Modifiers::NONE);
+    assert!(!editor.timeline.playing);
+    // The window is still open: the next Esc is the one that closes it.
+    run(&mut editor, &context, vec![]);
+    let esc = egui::RawInput {
+        events: vec![press(Key::Escape, egui::Modifiers::NONE)],
+        ..Default::default()
+    };
+    let mut closed = false;
+    let mut output = context.run_ui(esc, |ui| {
+        closed = editor.escape_closes_primitive_options(ui.ctx());
+    });
+    output.textures_delta.clear();
+    assert!(closed);
+}
+
+fn slider_point(context: &egui::Context, fraction: f32) -> egui::Pos2 {
+    let rect = context.read_response(time_slider_id()).unwrap().rect;
+    egui::pos2(
+        rect.left() + 10.0 + (rect.width() - 20.0) * fraction,
+        rect.center().y,
+    )
+}
+
+/// The bottom panel settles over its first frames, so the slider rect is read after them.
+fn settle(editor: &mut Editor, context: &egui::Context) {
+    for _ in 0..3 {
+        run(editor, context, Vec::new());
+    }
+}
+
+fn slider_frame(editor: &mut Editor, context: &egui::Context, fraction: f32) {
+    settle(editor, context);
+    let at = slider_point(context, fraction);
+    let mut output = crate::app::tests::click_at(editor, context, egui::vec2(1440.0, 900.0), at);
+    output.textures_delta.clear();
+}
+
+#[test]
+fn a_click_on_the_time_slider_moves_the_time_and_writes_the_pose() {
+    let context = egui::Context::default();
+    let (mut editor, id) = keyed();
+    editor
+        .apply_operation(Operation::SetPlaybackRange {
+            start: 1.0,
+            end: 25.0,
+        })
+        .unwrap();
+    slider_frame(&mut editor, &context, 0.5);
+    assert_eq!(editor.timeline.current, 13);
+    assert_eq!(tx(&editor, id), 12.0);
+    assert_eq!(editor.channels[0], "12");
+    assert!(!editor.has_draft());
+}
+
+#[test]
+fn a_drag_on_the_time_slider_scrubs_with_no_undo_entry() {
+    let context = egui::Context::default();
+    let (mut editor, id) = keyed();
+    editor
+        .apply_operation(Operation::SetPlaybackRange {
+            start: 1.0,
+            end: 25.0,
+        })
+        .unwrap();
+    let depth = undo_depth(&mut editor);
+    settle(&mut editor, &context);
+    let from = slider_point(&context, 0.25);
+    let to = slider_point(&context, 0.75);
+    let button = |pos, pressed| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    };
+    run(&mut editor, &context, vec![egui::Event::PointerMoved(from)]);
+    run(&mut editor, &context, vec![button(from, true)]);
+    assert_eq!(editor.timeline.current, 7);
+    run(&mut editor, &context, vec![egui::Event::PointerMoved(to)]);
+    run(&mut editor, &context, vec![egui::Event::PointerMoved(to)]);
+    assert_eq!(editor.timeline.current, 19);
+    assert_eq!(tx(&editor, id), 18.0);
+    run(&mut editor, &context, vec![button(to, false)]);
+    assert_eq!(undo_depth(&mut editor), depth);
+}
+
+#[test]
+fn the_time_slider_does_nothing_under_a_file_modal() {
+    let context = egui::Context::default();
+    let (mut editor, _) = keyed();
+    editor.apply_operation(Operation::NewScene).unwrap();
+    assert!(editor.files.is_modal());
+    slider_frame(&mut editor, &context, 0.5);
+    assert_eq!(editor.timeline.current, 1);
+}
+
+#[test]
+fn a_time_field_acts_on_leaving_it_and_esc_abandons_the_text() {
+    let context = egui::Context::default();
+    let (mut editor, id) = keyed();
+    run(&mut editor, &context, Vec::new());
+    assert_eq!(editor.timeline.time_field.text, "1");
+    context.memory_mut(|memory| memory.request_focus(time_field_id()));
+    run(&mut editor, &context, Vec::new());
+    assert!(text_edit_focused(&context));
+    editor.timeline.time_field.text = "13".into();
+    run(&mut editor, &context, Vec::new());
+    assert_eq!(editor.timeline.current, 1);
+    tap(&mut editor, &context, Key::Enter, egui::Modifiers::NONE);
+    assert_eq!(editor.timeline.current, 13);
+    assert_eq!(tx(&editor, id), 12.0);
+
+    context.memory_mut(|memory| memory.request_focus(time_field_id()));
+    run(&mut editor, &context, Vec::new());
+    editor.timeline.time_field.text = "20".into();
+    tap(&mut editor, &context, Key::Escape, egui::Modifiers::NONE);
+    run(&mut editor, &context, Vec::new());
+    assert_eq!(editor.timeline.current, 13);
+    assert_eq!(editor.timeline.time_field.text, "13");
+}
+
+#[test]
+fn a_bad_time_field_text_is_refused_and_the_field_recovers() {
+    let context = egui::Context::default();
+    let (mut editor, _) = keyed();
+    run(&mut editor, &context, Vec::new());
+    for text in ["soon", "1.5", "NaN", "inf"] {
+        context.memory_mut(|memory| memory.request_focus(time_field_id()));
+        run(&mut editor, &context, Vec::new());
+        editor.timeline.time_field.text = text.into();
+        tap(&mut editor, &context, Key::Enter, egui::Modifiers::NONE);
+        assert_eq!(editor.status, "Enter a whole frame", "{text}");
+        assert!(editor.error);
+        run(&mut editor, &context, Vec::new());
+        assert_eq!(editor.timeline.current, 1);
+        assert_eq!(editor.timeline.time_field.text, "1");
+    }
+}
+
+#[test]
+fn the_range_fields_set_the_playback_range_and_refuse_an_inverted_one() {
+    let context = egui::Context::default();
+    let (mut editor, _) = keyed();
+    run(&mut editor, &context, Vec::new());
+    context.memory_mut(|memory| memory.request_focus(end_field_id()));
+    run(&mut editor, &context, Vec::new());
+    editor.timeline.end_field.text = "30".into();
+    tap(&mut editor, &context, Key::Enter, egui::Modifiers::NONE);
+    assert_eq!((editor.timeline.start, editor.timeline.end), (1, 30));
+
+    context.memory_mut(|memory| memory.request_focus(start_field_id()));
+    run(&mut editor, &context, Vec::new());
+    editor.timeline.start_field.text = "99".into();
+    tap(&mut editor, &context, Key::Enter, egui::Modifiers::NONE);
+    assert_eq!((editor.timeline.start, editor.timeline.end), (1, 30));
+    assert!(editor.error);
+}
+
+#[test]
+fn a_focused_field_stops_playback_in_the_real_frame_loop() {
+    let context = egui::Context::default();
+    let (mut editor, id) = keyed();
+    editor.run_timeline_action(TimelineAction::TogglePlay);
+    run(&mut editor, &context, Vec::new());
+    assert!(editor.timeline.playing);
+    context.memory_mut(|memory| memory.request_focus(name_edit_id()));
+    run(&mut editor, &context, Vec::new());
+    assert!(!editor.timeline.playing);
+    assert_eq!(editor.status, "Playback stopped: a text field is focused");
+    assert_eq!(tx(&editor, id), 0.0);
+}
+
+#[test]
+fn a_hidden_window_stops_playback() {
+    let (mut editor, _) = keyed();
+    editor.run_timeline_action(TimelineAction::TogglePlay);
+    let context = egui::Context::default();
+    let mut input = egui::RawInput::default();
+    input
+        .viewports
+        .get_mut(&egui::ViewportId::ROOT)
+        .unwrap()
+        .minimized = Some(true);
+    let mut native_frame = eframe::Frame::_new_kittest();
+    let mut output = context.run_ui(input, |ui| {
+        eframe::App::logic(&mut editor, ui.ctx(), &mut native_frame);
+    });
+    output.textures_delta.clear();
+    assert!(!editor.timeline.playing);
+}
+
+#[test]
+fn the_ruler_step_keeps_room_for_labels_and_stays_bounded() {
+    assert_eq!(ruler_step(47.0, 1000.0), 2);
+    assert_eq!(ruler_step(4.0, 1000.0), 1);
+    assert_eq!(ruler_step(2_000_000.0, 1000.0), 100_000);
+    assert!(ruler_step(2_000_000.0, 0.001) > 0);
+}
