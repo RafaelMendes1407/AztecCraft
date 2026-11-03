@@ -211,6 +211,81 @@ fn keys_refuse_unknown_nodes_bad_frames_and_other_time_units() {
 }
 
 #[test]
+fn refused_current_frames_preserve_keys_and_pose() {
+    for current in [MAX_FRAME + 1, -MAX_FRAME - 1, i32::MIN, i32::MAX] {
+        let (mut scene, id) = keyed_cube();
+        let before = scene.clone();
+        assert_eq!(
+            scene.set_keys(&[id], 3, FX, current),
+            Err(NativeError::InvalidFrame)
+        );
+        assert_eq!(scene, before);
+        assert_eq!(
+            scene.delete_keys(&[id], Some(1), FX, current),
+            Err(NativeError::InvalidFrame)
+        );
+        assert_eq!(scene, before);
+        assert_eq!(
+            scene.delete_keys(&[id], None, ALL_CHANNELS, current),
+            Err(NativeError::InvalidFrame)
+        );
+        assert_eq!(scene, before);
+        scene.validate().unwrap();
+    }
+}
+
+#[test]
+fn empty_key_requests_still_validate_current_frames() {
+    for current in [MAX_FRAME + 1, -MAX_FRAME - 1, i32::MIN, i32::MAX] {
+        let mut scene = NativeScene::default();
+        let id = cube(&mut scene, "a");
+        let before = scene.clone();
+        for nodes in [&[][..], &[id][..]] {
+            for channels in [[false; 9], ALL_CHANNELS] {
+                assert_eq!(
+                    scene.set_keys(nodes, 1, channels, current),
+                    Err(NativeError::InvalidFrame)
+                );
+                assert_eq!(scene, before);
+                assert_eq!(
+                    scene.delete_keys(nodes, None, channels, current),
+                    Err(NativeError::InvalidFrame)
+                );
+                assert_eq!(scene, before);
+                scene.validate().unwrap();
+            }
+        }
+    }
+}
+
+#[test]
+fn empty_channel_masks_preserve_valid_scenes() {
+    let mut scene = NativeScene::default();
+    let id = cube(&mut scene, "a");
+    let before = scene.clone();
+    scene.set_keys(&[id], 1, [false; 9], 1).unwrap();
+    assert_eq!(scene, before);
+    assert!(scene.session_keys.is_empty());
+    scene.validate().unwrap();
+    let (mut scene, id) = keyed_cube();
+    let before = scene.clone();
+    scene.set_keys(&[id], 3, [false; 9], 1).unwrap();
+    scene.delete_keys(&[id], None, [false; 9], 1).unwrap();
+    assert_eq!(scene, before);
+    scene.validate().unwrap();
+}
+
+#[test]
+fn current_frame_bounds_are_inclusive() {
+    let (mut scene, id) = keyed_cube();
+    for current in [-MAX_FRAME, MAX_FRAME] {
+        scene.set_keys(&[id], 3, FX, current).unwrap();
+        scene.delete_keys(&[id], Some(3), FX, current).unwrap();
+        scene.validate().unwrap();
+    }
+}
+
+#[test]
 fn sourced_scenes_refuse_keys_as_a_structural_edit() {
     let source = "//Maya ASCII 2016 scene\nrequires maya \"2016\"; currentUnit -l centimeter -a degree -t film; createNode transform -n \"root\";";
     let mut scene = ascii::decode(source.as_bytes().to_vec().into()).unwrap();

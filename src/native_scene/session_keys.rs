@@ -211,6 +211,7 @@ impl NativeScene {
     ) -> Result<(), NativeError> {
         self.check_time_unit()?;
         check_frame(frame)?;
+        check_frame(current_frame)?;
         self.structural_edit()?;
         let mut unique = HashSet::new();
         let mut targets = Vec::new();
@@ -222,6 +223,9 @@ impl NativeScene {
                 return Err(NativeError::NonFinite);
             }
             targets.push((*id, values));
+        }
+        if !channels.contains(&true) {
+            return Ok(());
         }
         let added = targets
             .iter()
@@ -270,6 +274,7 @@ impl NativeScene {
         if let Some(frame) = frame {
             check_frame(frame)?;
         }
+        check_frame(current_frame)?;
         self.structural_edit()?;
         for id in nodes {
             self.node(*id)?;
